@@ -326,7 +326,7 @@ func BenchmarkV2ExclusiveRowsScaling(b *testing.B) {
 
 type step04WireCounter struct {
 	net.Conn
-	reads, writes, readBytes, writeBytes atomic.Int64
+	reads, writes, readBytes, writeBytes, records atomic.Int64
 }
 
 func (c *step04WireCounter) Read(p []byte) (int, error) {
@@ -339,6 +339,17 @@ func (c *step04WireCounter) Write(p []byte) (int, error) {
 	n, err := c.Conn.Write(p)
 	c.writes.Add(1)
 	c.writeBytes.Add(int64(n))
+	// Count complete actual TLS application records independently of Write calls.
+	for at := 0; at+5 <= n; {
+		length := int(binary.BigEndian.Uint16(p[at+3 : at+5]))
+		if at+5+length > n {
+			break
+		}
+		if p[at] == 23 {
+			c.records.Add(1)
+		}
+		at += 5 + length
+	}
 	return n, err
 }
 func (c *step04WireCounter) reset() {
@@ -346,6 +357,7 @@ func (c *step04WireCounter) reset() {
 	c.writes.Store(0)
 	c.readBytes.Store(0)
 	c.writeBytes.Store(0)
+	c.records.Store(0)
 }
 func step04BenchTLS(b testing.TB) (*tls.Conn, *tls.Conn, *step04WireCounter, func()) {
 	b.Helper()
@@ -422,6 +434,7 @@ func BenchmarkV2TLSWriteAmplification(b *testing.B) {
 					b.Fatal(err)
 				}
 				b.ReportMetric(float64(wireCounter.writes.Load())/float64(b.N), "tls-writes/op")
+				b.ReportMetric(float64(wireCounter.records.Load())/float64(b.N), "tls-records/op")
 				b.ReportMetric(float64(wireCounter.writeBytes.Load())/float64(b.N), "tls-wire-B/op")
 				b.ReportMetric(float64(len(parts)), "plaintext-spans/op")
 				b.ReportMetric(0, "driver-gather-B/op")

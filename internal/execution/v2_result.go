@@ -564,6 +564,7 @@ func (r *Rows[R]) startPrefetch() {
 	future := &InternalPageFuture{InternalDone: make(chan struct{})}
 	r.privateStorage.future = future
 	if r.privateStorage.prefetchJobs == nil {
+		perfAdd(4, 1)
 		jobs := make(chan InternalPrefetchJob, 1)
 		r.privateStorage.prefetchJobs = jobs
 		r.privateStorage.InternalRequest.InternalOwner.InternalRetain()

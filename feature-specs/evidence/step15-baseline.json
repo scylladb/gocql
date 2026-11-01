@@ -1,0 +1,145 @@
+{
+  "historical_default_policy_original": {
+    "adapter_files_sha256": {
+      "/extra/scylladb/gocql-api-test-cluster/step15/baseline/step15_equivalence_test.go": "63767f102f1ad0aebe6202e8c8ea7593e4ddcb96a512b6434818e8817988ce10",
+      "/extra/scylladb/gocql-api-test-cluster/step15/baseline/step15_performance_integration_test.go": "134860c7c51429c9afefb3f472451706d148a4600f517a19404980099a76bebc"
+    },
+    "classification": "historical default-policy comparison; coalesce200us, old one-per-shard vs initial typed one-per-host; not matched latency credit",
+    "root": "/extra/scylladb/gocql-api-test-cluster/step15/baseline"
+  },
+  "historical_original_microbench": {
+    "classification": "includes historical unchecked scalars and separately named UTF8/output-matched microcases; no universal speedup claim",
+    "log": "/extra/scylladb/gocql-api-test-cluster/step15/micro/original-baseline.log",
+    "sha256": "9671daaa42841a3c5b77258f22ae64edee3dde523412dab432e57fe5cc283b70"
+  },
+  "matched_configuration": {
+    "baseline_revision": "82b52574146b42f34ed3fe967d2d5e17cc53996b",
+    "baseline_root": "/extra/scylladb/gocql-api-test-cluster/step15/baseline-matched",
+    "legitimate_differences": {
+      "TLS_verification": "v2 verifies certificate chain plus fixture URI; original fixture SslOpts disables peer-name verification (InsecureSkipVerify). Both negotiate and record same server certificate/cipher/version; cold verification is outside measured intervals, no TLS security equivalence claim.",
+      "connection_setup": "old and typed physical feature probing differ; setup outside steady interval",
+      "heartbeat": "original mandatory first1s then30s; initial1.1s settled before steady measurement; typed configured30s",
+      "safety": "v2 typed metadata/state/lease/width checks and independently retained page lifetime have no equivalent old public API",
+      "serializer": "old reflection Scan vs typed codecs provide same completed owned output but different internal public contracts"
+    },
+    "matched": {
+      "CQL": "SELECT id,payload,pieces WHERE cell=? AND id<?",
+      "GOMAXPROCS": 4,
+      "TLS_compression_protocol": "same per native mode",
+      "consistency": "QUORUM",
+      "idempotent": false,
+      "page_sizes": [
+        1,
+        32,
+        128
+      ],
+      "pool": "one connection per discovered shard, or one per Cassandra host",
+      "prefetch": 0,
+      "query_handles": "prepared/cache warmed; per-worker original Query and shared immutable v2 Bound constructed outside intervals",
+      "request_timeout_seconds": 60,
+      "result_storage": "same preallocated scalar/blob/list output; every byte/ordinal/nested element validated",
+      "retry_max_attempts": 6,
+      "routing": "token aware, shuffled replicas, round-robin fallback",
+      "serial_consistency": "LOCAL_SERIAL",
+      "socket_keepalive": "disabled in raw dial hooks",
+      "source_port_range": [
+        32768,
+        65535
+      ],
+      "speculation": false,
+      "wire_coalesce_wait_ns": 0
+    },
+    "tracked_baseline_diff_empty": true
+  },
+  "matched_original_driver": {
+    "adapter_files_sha256": {
+      "/extra/scylladb/gocql-api-test-cluster/step15/baseline-matched/step15_performance_integration_test.go": "cc6447b1bb7cc943f1e08dd10a15785cd94b8eaca2b2b70775e2d8e1c318f99b"
+    },
+    "per_mode_sources": {
+      "cassandra": {
+        "cassandra21-v5-lz4": {
+          "revision": "82b52574146b42f34ed3fe967d2d5e17cc53996b",
+          "root": "/extra/scylladb/gocql-api-test-cluster/step15/baseline-matched",
+          "sha256": "8413ff694eb067cbf5146d28b074bd7ac164052c27022ed0ef607a78bdae1c25",
+          "snapshot": "/extra/scylladb/gocql-api-test-cluster/step15/accepted/cassandra21-v5-lz4-baseline-source.json"
+        },
+        "cassandra21-v5-lz4-tls": {
+          "revision": "82b52574146b42f34ed3fe967d2d5e17cc53996b",
+          "root": "/extra/scylladb/gocql-api-test-cluster/step15/baseline-matched",
+          "sha256": "8413ff694eb067cbf5146d28b074bd7ac164052c27022ed0ef607a78bdae1c25",
+          "snapshot": "/extra/scylladb/gocql-api-test-cluster/step15/accepted/cassandra21-v5-lz4-tls-baseline-source.json"
+        },
+        "cassandra21-v5-no-compression": {
+          "revision": "82b52574146b42f34ed3fe967d2d5e17cc53996b",
+          "root": "/extra/scylladb/gocql-api-test-cluster/step15/baseline-matched",
+          "sha256": "8413ff694eb067cbf5146d28b074bd7ac164052c27022ed0ef607a78bdae1c25",
+          "snapshot": "/extra/scylladb/gocql-api-test-cluster/step15/accepted/cassandra21-v5-no-compression-baseline-source.json"
+        },
+        "cassandra21-v5-no-compression-tls": {
+          "revision": "82b52574146b42f34ed3fe967d2d5e17cc53996b",
+          "root": "/extra/scylladb/gocql-api-test-cluster/step15/baseline-matched",
+          "sha256": "8413ff694eb067cbf5146d28b074bd7ac164052c27022ed0ef607a78bdae1c25",
+          "snapshot": "/extra/scylladb/gocql-api-test-cluster/step15/accepted/cassandra21-v5-no-compression-tls-baseline-source.json"
+        }
+      },
+      "stable": {
+        "stable20-v3-raw": {
+          "revision": "82b52574146b42f34ed3fe967d2d5e17cc53996b",
+          "root": "/extra/scylladb/gocql-api-test-cluster/step15/baseline-matched",
+          "sha256": "8413ff694eb067cbf5146d28b074bd7ac164052c27022ed0ef607a78bdae1c25",
+          "snapshot": "/extra/scylladb/gocql-api-test-cluster/step15/final-policy/stable20-v3-raw-baseline-source.json"
+        },
+        "stable20-v3-tls": {
+          "revision": "82b52574146b42f34ed3fe967d2d5e17cc53996b",
+          "root": "/extra/scylladb/gocql-api-test-cluster/step15/baseline-matched",
+          "sha256": "8413ff694eb067cbf5146d28b074bd7ac164052c27022ed0ef607a78bdae1c25",
+          "snapshot": "/extra/scylladb/gocql-api-test-cluster/step15/final-policy/stable20-v3-tls-baseline-source.json"
+        },
+        "stable20-v4-lz4": {
+          "revision": "82b52574146b42f34ed3fe967d2d5e17cc53996b",
+          "root": "/extra/scylladb/gocql-api-test-cluster/step15/baseline-matched",
+          "sha256": "8413ff694eb067cbf5146d28b074bd7ac164052c27022ed0ef607a78bdae1c25",
+          "snapshot": "/extra/scylladb/gocql-api-test-cluster/step15/final-policy/stable20-v4-lz4-baseline-source.json"
+        },
+        "stable20-v4-lz4-tls": {
+          "revision": "82b52574146b42f34ed3fe967d2d5e17cc53996b",
+          "root": "/extra/scylladb/gocql-api-test-cluster/step15/baseline-matched",
+          "sha256": "8413ff694eb067cbf5146d28b074bd7ac164052c27022ed0ef607a78bdae1c25",
+          "snapshot": "/extra/scylladb/gocql-api-test-cluster/step15/final-policy/stable20-v4-lz4-tls-baseline-source.json"
+        },
+        "stable20-v4-no-compression": {
+          "revision": "82b52574146b42f34ed3fe967d2d5e17cc53996b",
+          "root": "/extra/scylladb/gocql-api-test-cluster/step15/baseline-matched",
+          "sha256": "8413ff694eb067cbf5146d28b074bd7ac164052c27022ed0ef607a78bdae1c25",
+          "snapshot": "/extra/scylladb/gocql-api-test-cluster/step15/final-policy/stable20-v4-no-compression-baseline-source.json"
+        },
+        "stable20-v4-no-compression-tls": {
+          "revision": "82b52574146b42f34ed3fe967d2d5e17cc53996b",
+          "root": "/extra/scylladb/gocql-api-test-cluster/step15/baseline-matched",
+          "sha256": "8413ff694eb067cbf5146d28b074bd7ac164052c27022ed0ef607a78bdae1c25",
+          "snapshot": "/extra/scylladb/gocql-api-test-cluster/step15/final-policy/stable20-v4-no-compression-tls-baseline-source.json"
+        },
+        "stable20-v4-snappy": {
+          "revision": "82b52574146b42f34ed3fe967d2d5e17cc53996b",
+          "root": "/extra/scylladb/gocql-api-test-cluster/step15/baseline-matched",
+          "sha256": "8413ff694eb067cbf5146d28b074bd7ac164052c27022ed0ef607a78bdae1c25",
+          "snapshot": "/extra/scylladb/gocql-api-test-cluster/step15/final-policy/stable20-v4-snappy-baseline-source.json"
+        },
+        "stable20-v4-snappy-tls": {
+          "revision": "82b52574146b42f34ed3fe967d2d5e17cc53996b",
+          "root": "/extra/scylladb/gocql-api-test-cluster/step15/baseline-matched",
+          "sha256": "8413ff694eb067cbf5146d28b074bd7ac164052c27022ed0ef607a78bdae1c25",
+          "snapshot": "/extra/scylladb/gocql-api-test-cluster/step15/final-policy/stable20-v4-snappy-tls-baseline-source.json"
+        }
+      }
+    },
+    "root": "/extra/scylladb/gocql-api-test-cluster/step15/baseline-matched",
+    "tracked_production_diff_empty": true
+  },
+  "pinned_original_revision": "82b52574146b42f34ed3fe967d2d5e17cc53996b",
+  "typed_normal_harness": {
+    "native_input_snapshot_sha256": "f49b9406cedad53fe46af038ad6c39ca4194aae4d800aa5ab526de105b7f44f3",
+    "path": "/extra/scylladb/gocql/step15_performance_integration_test.go",
+    "sha256": "559005302594f2e93173bf15f72ad9e820d807b5e4a6eefa94b214032d9a36a8"
+  }
+}

@@ -36,6 +36,7 @@ type Lease struct {
 // exactly once on the final Release; it may be nil.
 func NewLease(chain Chain, release func()) *Lease {
 	l := &Lease{chain: chain, release: release}
+	perfLease(chain.Len())
 	l.refs.Store(1)
 	return l
 }
@@ -51,6 +52,7 @@ func (l *Lease) Retain() bool {
 			return false
 		}
 		if l.refs.CompareAndSwap(n, n+1) {
+			perfAdd(7, 1)
 			return true
 		}
 	}
@@ -73,8 +75,12 @@ func (l *Lease) Release() {
 			return
 		}
 		if l.refs.CompareAndSwap(n, n-1) {
-			if n == 1 && l.release != nil {
-				l.release()
+			perfAdd(8, 1)
+			if n == 1 {
+				perfLease(-l.chain.Len())
+				if l.release != nil {
+					l.release()
+				}
 			}
 			return
 		}

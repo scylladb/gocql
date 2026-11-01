@@ -716,6 +716,8 @@ func TestV2PreparedRetryRepreparePagingNeverReencodes(t *testing.T) {
 	}()
 	input := []byte("canonical-payload")
 	bound := codecTestMust(BindBorrowed(handle, input))
+	spy := &step15CanonicalWriter{step15Writer: conns[0].InternalW, payload: input}
+	conns[0].InternalW = spy
 	defer bound.Close()
 	serverDone := make(chan error, 1)
 	go func() {
@@ -779,6 +781,10 @@ func TestV2PreparedRetryRepreparePagingNeverReencodes(t *testing.T) {
 	if err := <-serverDone; err != nil {
 		t.Fatal(err)
 	}
+	if spy.bytes.Load() != int64(4*len(input)) {
+		t.Fatal("canonical writer bytes", spy.bytes.Load())
+	}
+	t.Logf("canonical writer attempts=4 payload_backing_bytes=%d", spy.bytes.Load())
 	_ = conns
 }
 func TestV2PreparedHostRoutingChangesFailBeforeResend(t *testing.T) {

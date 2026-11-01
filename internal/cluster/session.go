@@ -33,6 +33,7 @@ import (
 	"errors"
 	"fmt"
 	implSettings "github.com/scylladb/gocql/v2/internal/settings"
+	"github.com/scylladb/gocql/v2/internal/wire"
 
 	mrand "math/rand/v2"
 
@@ -115,6 +116,7 @@ func newSessionCommonWithRuntime(cfg InternalClusterSettings, typedConfig *Confi
 	}
 	s.privateStorage.InternalConnCfg = connCfg
 	if runtimeConfig != nil {
+		connCfg.InternalReceiveCache = new(wire.ReceiveCache)
 		connCfg.TypedConfig = implSettings.InternalConnectivityConfigPointer(*runtimeConfig)
 		connCfg.TypedAuth = runtimeConfig.Auth
 		connCfg.TypedLimits = runtimeConfig.Limits
@@ -535,6 +537,9 @@ func (s *Session) Close() error {
 		s.privateStorage.InternalCancel()
 	}
 	InternalSessionCloseV2Peripheral(s)
+	if s.privateStorage.InternalConnCfg != nil {
+		s.privateStorage.InternalConnCfg.InternalReceiveCache.Close()
+	}
 
 	if s.privateStorage.InternalPool != nil {
 		s.privateStorage.InternalPool.Close()

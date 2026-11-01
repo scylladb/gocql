@@ -260,6 +260,7 @@ type InternalRoutingHostIndex struct {
 func InternalBuildRoutingHostIndex(hosts []HostSnapshot) *InternalRoutingHostIndex {
 	x := &InternalRoutingHostIndex{enabledDC: make(map[string]int), enabledRack: make(map[routingLocality]int), byID: make(map[UUID]int, len(hosts)), dc: make(map[string][]int), rack: make(map[routingLocality][]int)}
 	for i, h := range hosts {
+		perfAdd(2, 1)
 		x.byID[h.ID] = i
 		x.all = append(x.all, i)
 		x.dc[h.Datacenter] = append(x.dc[h.Datacenter], i)
@@ -363,6 +364,7 @@ func (p *InternalRoutingPolicy) Plan(info RoutingInfo, m *MetadataSnapshot) Quer
 	return plan
 }
 func (p *InternalLazyRoutingPlan) host(t Target) (HostSnapshot, bool) {
+	perfAdd(0, 1)
 	i, ok := p.index.byID[t.HostID]
 	if !ok {
 		return HostSnapshot{}, false
@@ -469,6 +471,7 @@ func (p *InternalLazyRoutingPlan) Next() (Target, bool) {
 			for p.cursor < len(ids) {
 				i := (p.cursor + p.rotation) % len(ids)
 				p.cursor++
+				perfAdd(1, 1)
 				h := SnapshotData(p.metadata).InternalHosts[ids[i]]
 				if !p.eligible(h) || connected && (!h.Connected || !h.Up) {
 					continue

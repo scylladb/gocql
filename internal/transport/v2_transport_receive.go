@@ -36,7 +36,33 @@ func (c *Conn) receiveTypedCall(ctx context.Context, call *InternalCallReq, src 
 			body = src.InternalChain
 		}
 	} else {
-		data := make([]byte, head.Length)
+		var cache *wire.ReceiveCache
+		if c.InternalCfg != nil {
+			cache = c.InternalCfg.InternalReceiveCache
+		}
+		// An unextended custom decoder may alias its input. Leave that original
+		// ownership unpooled; built-ins support checked final-arena decoding.
+		decoder, pooledDecode := c.InternalCompressor.(interface {
+			DecodedLen([]byte) (int, error)
+			DecodeTo([]byte, []byte) ([]byte, error)
+		})
+		if head.Flags&frm.FlagCompress != 0 && !pooledDecode {
+			cache = nil
+		}
+		data, epoch := cache.Acquire(head.Length)
+		cacheInput := data
+		returned := false
+		var output []byte
+		var outputEpoch uint64
+		outputReturned := false
+		defer func() {
+			if output != nil && !outputReturned {
+				cache.Release(output, outputEpoch)
+			}
+			if !returned {
+				cache.Release(cacheInput, epoch)
+			}
+		}()
 		if _, err = io.ReadFull(src.InternalR, data); err != nil {
 			fatal = true
 		} else {
@@ -65,7 +91,22 @@ func (c *Conn) receiveTypedCall(ctx context.Context, call *InternalCallReq, src 
 						err = ErrFrameTooBig
 					}
 					if err == nil {
-						data, err = c.InternalCompressor.Decode(data)
+						if pooledDecode {
+							checkedSize, checkErr := decoder.DecodedLen(data)
+							if checkErr != nil {
+								err = checkErr
+							} else if uint64(checkedSize) != size {
+								err = fmt.Errorf("gocql: decoded frame length mismatch")
+							} else {
+								output, outputEpoch = cache.Acquire(checkedSize)
+								data, err = decoder.DecodeTo(output[:0], data)
+							}
+							if err == nil && len(data) > 0 && (len(output) == 0 || &data[0] != &output[0]) {
+								err = segment.ErrDecoderStorage
+							}
+						} else {
+							data, err = c.InternalCompressor.Decode(data)
+						}
 						if err == nil && uint64(len(data)) != size {
 							err = fmt.Errorf("gocql: decoded frame length mismatch")
 						}
@@ -77,7 +118,15 @@ func (c *Conn) receiveTypedCall(ctx context.Context, call *InternalCallReq, src 
 			}
 			if err == nil {
 				body, _ = wire.NewChain(wire.Borrow(data))
-				owner = wire.NewLease(body, nil)
+				if c.InternalVersion < 5 && head.Flags&frm.FlagCompress == 0 {
+					returned = true
+					owner = wire.NewLease(body, func() { cache.Release(data, epoch) })
+				} else if pooledDecode && head.Flags&frm.FlagCompress != 0 {
+					outputReturned = true
+					owner = wire.NewLease(body, func() { cache.Release(output, outputEpoch) })
+				} else {
+					owner = wire.NewLease(body, nil)
+				}
 			}
 		}
 	}

@@ -84,6 +84,8 @@ func (b *Builder) Borrow(s Span) error {
 }
 
 func (b *Builder) writable(n int) ([]byte, error) {
+	perfAdd(5, 1)
+	perfAdd(6, n)
 	total, err := addLength(b.len, n)
 	if err != nil {
 		return nil, err
@@ -94,6 +96,7 @@ func (b *Builder) writable(n int) ([]byte, error) {
 			size = defaultSlabSize
 		}
 		b.slab = make([]byte, max(size, n))
+		perfSlab(len(b.slab))
 		b.used = 0
 		b.currentPart = -1
 	}
@@ -108,6 +111,10 @@ func (b *Builder) writable(n int) ([]byte, error) {
 	b.len = total
 	return b.slab[start:b.used], nil
 }
+
+// ScalarBytes reserves final owned scalar storage. The caller fills it before
+// any further builder operation; the returned range must not escape encoding.
+func (b *Builder) ScalarBytes(n int) ([]byte, error) { return b.writable(n) }
 
 func (b *Builder) Uint8(v uint8) error {
 	p, err := b.writable(1)

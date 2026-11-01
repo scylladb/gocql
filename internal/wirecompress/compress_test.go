@@ -417,11 +417,17 @@ func BenchmarkSpanCompression(b *testing.B) {
 						b.SetBytes(int64(size))
 						b.ReportAllocs()
 						b.ResetTimer()
+						var encoded []byte
 						for i := 0; i < b.N; i++ {
-							if _, err := codec.append(dst, chain); err != nil {
+							var err error
+							if encoded, err = codec.append(dst, chain); err != nil {
 								b.Fatal(err)
 							}
 						}
+						b.StopTimer()
+						b.ReportMetric(float64(len(encoded)), "transformed-output-B/op")
+						b.ReportMetric(float64(size), "transform-input-B/op")
+						b.ReportMetric(float64(len(encoded))/float64(size), "compression-ratio")
 					})
 				}
 			}

@@ -97,6 +97,7 @@ func NewChain(spans ...Span) (Chain, error) {
 	var c Chain
 	count := 0
 	for _, s := range spans {
+		perfAdd(0, 1)
 		if s.Len() == 0 {
 			continue
 		}
@@ -116,6 +117,7 @@ func NewChain(spans ...Span) (Chain, error) {
 	i := 0
 	var end int64
 	for _, s := range spans {
+		perfAdd(0, 1)
 		if s.Len() == 0 {
 			continue
 		}
@@ -131,6 +133,15 @@ func NewChain(spans ...Span) (Chain, error) {
 }
 
 func (c Chain) Len() int64 { return c.len }
+
+// Contiguous returns the borrowed single-span payload, without flattening.
+// A false result leaves segmented callers on their shared-range path.
+func (c Chain) Contiguous() ([]byte, bool) {
+	if len(c.tail) != 0 {
+		return nil, false
+	}
+	return c.head.data, true
+}
 
 func (c Chain) count() int {
 	if c.len == 0 {
@@ -209,6 +220,7 @@ func (c Chain) locate(off int64) int {
 	target := c.base + off
 	lo, hi := 0, len(c.tail)
 	for lo < hi {
+		perfAdd(1, 1)
 		mid := lo + (hi-lo)/2
 		if c.tail[mid].end <= target {
 			lo = mid + 1
@@ -224,7 +236,9 @@ func (c Chain) locate(off int64) int {
 func (c Chain) CopyTo(dst []byte) (int, error) {
 	n := 0
 	for i := 0; i < c.count() && n < len(dst); i++ {
-		n += copy(dst[n:], c.span(i).data)
+		copied := copy(dst[n:], c.span(i).data)
+		perfAdd(4, copied)
+		n += copied
 	}
 	if int64(n) < c.len {
 		return n, io.ErrShortBuffer

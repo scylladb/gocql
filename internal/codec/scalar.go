@@ -24,6 +24,7 @@ type TimeUUID = cqltype.TimeUUID
 
 // scalarCodec contains immutable operations shared by all calls to a codec.
 type scalarCodec[T any] struct {
+	compiled    bool
 	kind        cqltype.Type
 	alternative cqltype.Type
 	encode      func(*ValueWriter, T) error
@@ -38,18 +39,20 @@ func checkScalarType(t cqltype.DataType, kind, alternative cqltype.Type) error {
 	return nil
 }
 func (c scalarCodec[T]) CheckType(t cqltype.DataType) error {
+	perfCheckType()
+
 	return checkScalarType(t, c.kind, c.alternative)
 }
 
 func (c scalarCodec[T]) Encode(w *ValueWriter, v T) error {
-	if err := c.CheckType(w.Type()); err != nil {
+	if err := c.typeGuard(w.Type()); err != nil {
 		return err
 	}
 	return c.encode(w, v)
 }
 func (c scalarCodec[T]) Decode(r ValueReader) (T, error) {
 	var zero T
-	if err := c.CheckType(r.Type()); err != nil {
+	if err := c.typeGuard(r.Type()); err != nil {
 		return zero, err
 	}
 	if err := requirePresent(r); err != nil {
@@ -186,13 +189,19 @@ func decodeBool(r ValueReader) (bool, error) {
 	return v == 1, nil
 }
 func encodeUUID(w *ValueWriter, v cqltype.UUID) error {
-	if err := w.Uint64(binary.BigEndian.Uint64(v[:8])); err != nil {
-		return err
+	p, e := w.scalarBytes(16)
+	if e != nil {
+		return e
 	}
-	return w.Uint64(binary.BigEndian.Uint64(v[8:]))
+	copy(p, v[:])
+	return nil
 }
 func decodeUUID(r ValueReader) (cqltype.UUID, error) {
 	var v cqltype.UUID
+	if data, ok := r.body.Contiguous(); ok && len(data) == 16 {
+		copy(v[:], data)
+		return v, nil
+	}
 	c, e := fixedCursor(r, 16)
 	if e != nil {
 		return v, e
@@ -234,10 +243,12 @@ func encodeInet(w *ValueWriter, v netip.Addr) error {
 		return w.Uint32(binary.BigEndian.Uint32(a[:]))
 	}
 	a := v.As16()
-	if e := w.Uint64(binary.BigEndian.Uint64(a[:8])); e != nil {
+	p, e := w.scalarBytes(16)
+	if e != nil {
 		return e
 	}
-	return w.Uint64(binary.BigEndian.Uint64(a[8:]))
+	copy(p, a[:])
+	return nil
 }
 func decodeInet(r ValueReader) (netip.Addr, error) {
 	c := r.cursorValue()
@@ -268,7 +279,7 @@ func decodeInet(r ValueReader) (netip.Addr, error) {
 	}
 }
 
-type stringEncoder struct{ ascii bool }
+type stringEncoder struct{ ascii, compiled bool }
 
 func checkTextType(t cqltype.DataType, ascii bool) error {
 	if ascii {
@@ -280,9 +291,12 @@ func checkTextType(t cqltype.DataType, ascii bool) error {
 	}
 	return fmt.Errorf("gocql: incompatible text type %s", t.Kind())
 }
-func (c stringEncoder) CheckType(t cqltype.DataType) error { return checkTextType(t, c.ascii) }
+func (c stringEncoder) CheckType(t cqltype.DataType) error {
+	perfCheckType()
+	return checkTextType(t, c.ascii)
+}
 func (c stringEncoder) Encode(w *ValueWriter, v string) error {
-	if e := c.CheckType(w.Type()); e != nil {
+	if e := c.typeGuard(w.Type()); e != nil {
 		return e
 	}
 	if c.ascii {
@@ -297,26 +311,31 @@ func (c stringEncoder) Encode(w *ValueWriter, v string) error {
 	return w.BorrowString(v)
 }
 
-type bytesEncoder struct{}
+type bytesEncoder struct{ compiled bool }
 
 func (bytesEncoder) CheckType(t cqltype.DataType) error {
+	perfCheckType()
+
 	if t.Kind() != cqltype.TypeBlob {
 		return fmt.Errorf("gocql: blob codec cannot use %s", t.Kind())
 	}
 	return nil
 }
 func (c bytesEncoder) Encode(w *ValueWriter, v []byte) error {
-	if e := c.CheckType(w.Type()); e != nil {
+	if e := c.typeGuard(w.Type()); e != nil {
 		return e
 	}
 	return w.BorrowBytes(v)
 }
 
-type textCodec struct{ ascii bool }
+type textCodec struct{ ascii, compiled bool }
 
-func (c textCodec) CheckType(t cqltype.DataType) error { return checkTextType(t, c.ascii) }
+func (c textCodec) CheckType(t cqltype.DataType) error {
+	perfCheckType()
+	return checkTextType(t, c.ascii)
+}
 func (c textCodec) Encode(w *ValueWriter, v cqltype.Text) error {
-	if e := c.CheckType(w.Type()); e != nil {
+	if e := c.typeGuard(w.Type()); e != nil {
 		return e
 	}
 	if e := validateText(v.Bytes(), c.ascii); e != nil {
@@ -325,7 +344,7 @@ func (c textCodec) Encode(w *ValueWriter, v cqltype.Text) error {
 	return w.borrowView(v.Bytes())
 }
 func (c textCodec) Decode(r ValueReader) (cqltype.Text, error) {
-	if e := c.CheckType(r.Type()); e != nil {
+	if e := c.typeGuard(r.Type()); e != nil {
 		return cqltype.Text{}, e
 	}
 	if e := requirePresent(r); e != nil {
@@ -398,6 +417,23 @@ func (v *textValidation) finish() error {
 	return nil
 }
 func validateText(b cqltype.Bytes, ascii bool) error {
+	if e := cqltype.CheckBytesAlive(b); e != nil {
+		return e
+	}
+	if data, ok := cqltype.BytesChain(b).Contiguous(); ok {
+		if !ascii {
+			if !utf8.Valid(data) {
+				return errors.New("gocql: invalid UTF-8")
+			}
+			return nil
+		}
+		for _, c := range data {
+			if c >= utf8.RuneSelf {
+				return errors.New("gocql: invalid ASCII")
+			}
+		}
+		return nil
+	}
 	v := newTextValidation(ascii)
 	if err := cqltype.EachBytes(b, func(s wire.Span) error { return v.write(s.Bytes()) }); err != nil {
 		return err
@@ -420,6 +456,8 @@ type namedScalar[A, B any] struct {
 }
 
 func (c namedScalar[A, B]) CheckType(t cqltype.DataType) error {
+	perfCheckType()
+
 	if cqltype.DescriptorOf(c.typ) != nil {
 		if c.typ.Equal(t) {
 			return nil
@@ -432,7 +470,7 @@ func (c namedScalar[A, B]) CheckType(t cqltype.DataType) error {
 	return c.base.CheckType(t)
 }
 func (c namedScalar[A, B]) Encode(w *ValueWriter, v A) error {
-	if e := c.CheckType(w.Type()); e != nil {
+	if e := c.typeGuard(w.Type()); e != nil {
 		return e
 	}
 	encoder := c.encoder
@@ -443,7 +481,7 @@ func (c namedScalar[A, B]) Encode(w *ValueWriter, v A) error {
 }
 func (c namedScalar[A, B]) Decode(r ValueReader) (A, error) {
 	var zero A
-	if e := c.CheckType(r.Type()); e != nil {
+	if e := c.typeGuard(r.Type()); e != nil {
 		return zero, e
 	}
 	decoder := c.decoder
@@ -474,6 +512,8 @@ type nullableEncoder[T any] struct {
 }
 
 func (c nullableEncoder[T]) CheckType(t cqltype.DataType) error {
+	perfCheckType()
+
 	if cqltype.DescriptorOf(c.typ) != nil {
 		if c.typ.Equal(t) {
 			return nil
@@ -486,7 +526,7 @@ func (c nullableEncoder[T]) CheckType(t cqltype.DataType) error {
 	return c.base.CheckType(t)
 }
 func (c nullableEncoder[T]) Encode(w *ValueWriter, v cqltype.Nullable[T]) error {
-	if e := c.CheckType(w.Type()); e != nil {
+	if e := c.typeGuard(w.Type()); e != nil {
 		return e
 	}
 	if !v.Valid {
@@ -501,6 +541,8 @@ type nullableDecoder[T any] struct {
 }
 
 func (c nullableDecoder[T]) CheckType(t cqltype.DataType) error {
+	perfCheckType()
+
 	if cqltype.DescriptorOf(c.typ) != nil {
 		if c.typ.Equal(t) {
 			return nil
@@ -513,7 +555,7 @@ func (c nullableDecoder[T]) CheckType(t cqltype.DataType) error {
 	return c.base.CheckType(t)
 }
 func (c nullableDecoder[T]) Decode(r ValueReader) (cqltype.Nullable[T], error) {
-	if e := c.CheckType(r.Type()); e != nil {
+	if e := c.typeGuard(r.Type()); e != nil {
 		return cqltype.Nullable[T]{}, e
 	}
 	if r.err != nil {
@@ -544,7 +586,10 @@ type nullableCodec[T any] struct {
 	nullableDecoder[T]
 }
 
-func (c nullableCodec[T]) CheckType(t cqltype.DataType) error { return c.nullableEncoder.CheckType(t) }
+func (c nullableCodec[T]) CheckType(t cqltype.DataType) error {
+	perfCheckType()
+	return c.nullableEncoder.CheckType(t)
+}
 func BindEncoder[T any](base Encoder[T]) Encoder[cqltype.BindValue[T]] {
 	return bindEncoder[T]{base: base}
 }
@@ -555,6 +600,8 @@ type bindEncoder[T any] struct {
 }
 
 func (c bindEncoder[T]) CheckType(t cqltype.DataType) error {
+	perfCheckType()
+
 	if cqltype.DescriptorOf(c.typ) != nil {
 		if c.typ.Equal(t) {
 			return nil
@@ -567,7 +614,7 @@ func (c bindEncoder[T]) CheckType(t cqltype.DataType) error {
 	return c.base.CheckType(t)
 }
 func (c bindEncoder[T]) Encode(w *ValueWriter, v cqltype.BindValue[T]) error {
-	if e := c.CheckType(w.Type()); e != nil {
+	if e := c.typeGuard(w.Type()); e != nil {
 		return e
 	}
 	switch v.State {
@@ -601,6 +648,8 @@ func emptySupported(t cqltype.DataType) bool {
 	return false
 }
 func (c emptyCodec[T]) CheckType(t cqltype.DataType) error {
+	perfCheckType()
+
 	if cqltype.DescriptorOf(c.typ) != nil {
 		if c.typ.Equal(t) {
 			return nil
@@ -619,7 +668,7 @@ func (c emptyCodec[T]) CheckType(t cqltype.DataType) error {
 	return nil
 }
 func (c emptyCodec[T]) Encode(w *ValueWriter, v cqltype.EmptyValueOf[T]) error {
-	if e := c.CheckType(w.Type()); e != nil {
+	if e := c.typeGuard(w.Type()); e != nil {
 		return e
 	}
 	if v.Empty {
@@ -631,7 +680,7 @@ func (c emptyCodec[T]) Encode(w *ValueWriter, v cqltype.EmptyValueOf[T]) error {
 	return c.base.Encode(w, v.Value)
 }
 func (c emptyCodec[T]) Decode(r ValueReader) (cqltype.EmptyValueOf[T], error) {
-	if e := c.CheckType(r.Type()); e != nil {
+	if e := c.typeGuard(r.Type()); e != nil {
 		return cqltype.EmptyValueOf[T]{}, e
 	}
 	if r.err != nil {
@@ -685,7 +734,7 @@ func (c nullableDecoder[T]) DecodeInto(r ValueReader, dst *cqltype.Nullable[T]) 
 		return cqltype.TypeValidation("destination", "nil nullable destination")
 	}
 	*dst = cqltype.Nullable[T]{}
-	if err := c.CheckType(r.Type()); err != nil {
+	if err := c.typeGuard(r.Type()); err != nil {
 		return err
 	}
 	if r.err != nil {
@@ -735,7 +784,7 @@ func (c emptyCodec[T]) DecodeInto(r ValueReader, dst *cqltype.EmptyValueOf[T]) e
 		return cqltype.TypeValidation("destination", "nil empty destination")
 	}
 	*dst = cqltype.EmptyValueOf[T]{}
-	if err := c.CheckType(r.Type()); err != nil {
+	if err := c.typeGuard(r.Type()); err != nil {
 		return err
 	}
 	if r.err != nil {
@@ -776,4 +825,141 @@ func (c namedScalar[A, B]) compileValueDecoder(t cqltype.DataType) (Decoder[A], 
 	}
 	c.decoder, c.typ = base, t
 	return c, nil
+}
+
+// Compiled scalar codecs retain constant metadata safety guards while moving
+// the CheckType contract to compilation. They still check state/lease/width and
+// content exactly as the standalone public codecs do.
+func (c scalarCodec[T]) typeGuard(t cqltype.DataType) error {
+	if c.compiled {
+		return checkScalarType(t, c.kind, c.alternative)
+	}
+	return c.CheckType(t)
+}
+func (c scalarCodec[T]) compileValueDecoder(t cqltype.DataType) (Decoder[T], error) {
+	if e := c.CheckType(t); e != nil {
+		return nil, e
+	}
+	c.compiled = true
+	return c, nil
+}
+func (c scalarCodec[T]) compileValueEncoder(t cqltype.DataType) (Encoder[T], error) {
+	if e := c.CheckType(t); e != nil {
+		return nil, e
+	}
+	c.compiled = true
+	return c, nil
+}
+func (c textCodec) typeGuard(t cqltype.DataType) error {
+	if c.compiled {
+		return checkTextType(t, c.ascii)
+	}
+	return c.CheckType(t)
+}
+func (c textCodec) compileValueDecoder(t cqltype.DataType) (Decoder[cqltype.Text], error) {
+	if e := c.CheckType(t); e != nil {
+		return nil, e
+	}
+	c.compiled = true
+	return c, nil
+}
+func (c textCodec) compileValueEncoder(t cqltype.DataType) (Encoder[cqltype.Text], error) {
+	if e := c.CheckType(t); e != nil {
+		return nil, e
+	}
+	c.compiled = true
+	return c, nil
+}
+func (c stringEncoder) typeGuard(t cqltype.DataType) error {
+	if c.compiled {
+		return checkTextType(t, c.ascii)
+	}
+	return c.CheckType(t)
+}
+func (c stringEncoder) compileValueEncoder(t cqltype.DataType) (Encoder[string], error) {
+	if e := c.CheckType(t); e != nil {
+		return nil, e
+	}
+	c.compiled = true
+	return c, nil
+}
+func (c bytesEncoder) typeGuard(t cqltype.DataType) error {
+	if c.compiled {
+		return checkScalarType(t, cqltype.TypeBlob, 0)
+	}
+	return c.CheckType(t)
+}
+func (c bytesEncoder) compileValueEncoder(t cqltype.DataType) (Encoder[[]byte], error) {
+	if e := c.CheckType(t); e != nil {
+		return nil, e
+	}
+	c.compiled = true
+	return c, nil
+}
+
+func (c namedScalar[A, B]) typeGuard(t cqltype.DataType) error {
+	if cqltype.DescriptorOf(c.typ) == nil {
+		return c.CheckType(t)
+	}
+	if !c.typ.Equal(t) {
+		return cqltype.TypeValidation("type", "compiled wrapper metadata changed")
+	}
+	return nil
+}
+
+func (c nullableEncoder[T]) typeGuard(t cqltype.DataType) error {
+	if cqltype.DescriptorOf(c.typ) == nil {
+		return c.CheckType(t)
+	}
+	if !c.typ.Equal(t) {
+		return cqltype.TypeValidation("type", "compiled wrapper metadata changed")
+	}
+	return nil
+}
+
+func (c nullableDecoder[T]) typeGuard(t cqltype.DataType) error {
+	if cqltype.DescriptorOf(c.typ) == nil {
+		return c.CheckType(t)
+	}
+	if !c.typ.Equal(t) {
+		return cqltype.TypeValidation("type", "compiled wrapper metadata changed")
+	}
+	return nil
+}
+
+func (c bindEncoder[T]) typeGuard(t cqltype.DataType) error {
+	if cqltype.DescriptorOf(c.typ) == nil {
+		return c.CheckType(t)
+	}
+	if !c.typ.Equal(t) {
+		return cqltype.TypeValidation("type", "compiled wrapper metadata changed")
+	}
+	return nil
+}
+
+func (c emptyCodec[T]) typeGuard(t cqltype.DataType) error {
+	if cqltype.DescriptorOf(c.typ) == nil {
+		return c.CheckType(t)
+	}
+	if !c.typ.Equal(t) {
+		return cqltype.TypeValidation("type", "compiled wrapper metadata changed")
+	}
+	return nil
+}
+
+func (c scalarCodec[T]) decodeCompiled(r ValueReader) (T, error) {
+	c.compiled = true
+	return c.Decode(r)
+}
+func (c scalarCodec[T]) encodeCompiled(w *ValueWriter, v T) error {
+	c.compiled = true
+	return c.Encode(w, v)
+}
+func (c textCodec) decodeCompiled(r ValueReader) (cqltype.Text, error) {
+	c.compiled = true
+	return c.Decode(r)
+}
+func (c textCodec) encodeCompiled(w *ValueWriter, v cqltype.Text) error {
+	c.compiled = true
+	return c.Encode(w, v)
 }

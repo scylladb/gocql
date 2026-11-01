@@ -616,7 +616,7 @@ func TestStep07StreamPartialFirstRowNeverReplays(t *testing.T) {
 }
 
 func TestStep07StreamReprepareCanonicalInputAndNoRepairAfterOutput(t *testing.T) {
-	s, _, peer := step07StreamSession(t, 4, nil)
+	s, connection, peer := step07StreamSession(t, 4, nil)
 	implCluster.SessionData(s).InternalCfg.Keyspace = "ks"
 	typ := codecTestMust(ScalarType(TypeBlob))
 	columns := NewColumns(ColumnSpec{Keyspace: "ks", Table: "tbl", Name: "value", Type: typ})
@@ -637,6 +637,8 @@ func TestStep07StreamReprepareCanonicalInputAndNoRepairAfterOutput(t *testing.T)
 	}()
 	input := []byte("canonical-input")
 	bound := codecTestMust(BindBorrowed(prepared, input))
+	spy := &step15CanonicalWriter{step15Writer: connection.InternalW, payload: input}
+	connection.InternalW = spy
 	done := make(chan error, 1)
 	go func() {
 		for step := 0; step < 4; step++ {
@@ -692,6 +694,10 @@ func TestStep07StreamReprepareCanonicalInputAndNoRepairAfterOutput(t *testing.T)
 	if count != 1 || cursor.Info().DeliveredRows != 1 || cursor.Info().Result.Attempts != 3 {
 		t.Fatal(count, cursor.Info())
 	}
+	if spy.bytes.Load() != int64(3*len(input)) {
+		t.Fatal("canonical stream writer", spy.bytes.Load())
+	}
+	t.Logf("canonical stream attempts=3 payload_backing_bytes=%d", spy.bytes.Load())
 	info := cursor.Info()
 	if len(info.Result.Warnings) != 1 || info.Result.Warnings[0] != "terminal" || len(info.Result.TraceIDs) != 1 || info.Result.TraceIDs[0][15] != 7 || len(info.Result.CustomPayload) != 1 || string(info.Result.CustomPayload[0].Value.Value.OwnedBytes()) != "new" {
 		t.Fatal("terminal attempt metadata missing", info)

@@ -1,0 +1,4898 @@
+[
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-lz4",
+    "shape": {
+      "Cell": 32,
+      "Concurrency": 1,
+      "Name": "small",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 5.668565576393778,
+    "v2_over_original_cpu": 1.5105386416861826,
+    "v2_over_original_end_p50": 2.4151358828418963
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-lz4",
+    "shape": {
+      "Cell": 32,
+      "Concurrency": 1,
+      "Name": "small",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 5.664981117583051,
+    "v2_over_original_cpu": 1.5831381733021077,
+    "v2_over_original_end_p50": 2.335420910031155
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-lz4",
+    "shape": {
+      "Cell": 32,
+      "Concurrency": 1,
+      "Name": "small",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 73.13275299238302,
+    "v2_over_original_cpu": 3.8723653395784545,
+    "v2_over_original_end_p50": 2.088940919675886
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-lz4",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "page1",
+      "Page": 1,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 5.845919224311825,
+    "v2_over_original_cpu": 1.9568438121913467,
+    "v2_over_original_end_p50": 1.4902560113625254
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-lz4",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "page1",
+      "Page": 1,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 5.876571769520501,
+    "v2_over_original_cpu": 1.9268814034053217,
+    "v2_over_original_end_p50": 1.3068194393181314
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-lz4",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "page1",
+      "Page": 1,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 4.387034022009673,
+    "v2_over_original_cpu": 1.2112478808874474,
+    "v2_over_original_end_p50": 1.1459414885029344
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-lz4",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "page32",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 1.0650438995749425,
+    "v2_over_original_cpu": 1.848116646415553,
+    "v2_over_original_end_p50": 1.4947470726496535
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-lz4",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "page32",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 1.0645603751754626,
+    "v2_over_original_cpu": 2.1073677234066057,
+    "v2_over_original_end_p50": 1.4557715477031268
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-lz4",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "page32",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.5197776281154637,
+    "v2_over_original_cpu": 1.2625648956147133,
+    "v2_over_original_end_p50": 1.0474645576902983
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-lz4",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "rows1",
+      "Page": 128,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 2.846062372933369,
+    "v2_over_original_cpu": 1.714759535655058,
+    "v2_over_original_end_p50": 1.1310846433056847
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-lz4",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "rows1",
+      "Page": 128,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 2.8477502013886227,
+    "v2_over_original_cpu": 2.0646766169154227,
+    "v2_over_original_end_p50": 1.2050733538512497
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-lz4",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "rows1",
+      "Page": 128,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 42.69270014193103,
+    "v2_over_original_cpu": 6.845771144278607,
+    "v2_over_original_end_p50": 1.7118428861255641
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-lz4",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "rows128",
+      "Page": 128,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 1.0503818828733038,
+    "v2_over_original_cpu": 1.812530237058539,
+    "v2_over_original_end_p50": 1.3836702875499738
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-lz4",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "rows128",
+      "Page": 128,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 1.0501080566841572,
+    "v2_over_original_cpu": 1.863933236574746,
+    "v2_over_original_end_p50": 1.4110350542347054
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-lz4",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "rows128",
+      "Page": 128,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.4881129103708358,
+    "v2_over_original_cpu": 1.0626511852926948,
+    "v2_over_original_end_p50": 1.0497537642263013
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-lz4",
+    "shape": {
+      "Cell": 262144,
+      "Concurrency": 1,
+      "Name": "cell256K",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.9516319644282332,
+    "v2_over_original_cpu": 1.4072527734701181,
+    "v2_over_original_end_p50": 0.9942661612927799
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-lz4",
+    "shape": {
+      "Cell": 262144,
+      "Concurrency": 1,
+      "Name": "cell256K",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.9511693786484688,
+    "v2_over_original_cpu": 1.5712751998091374,
+    "v2_over_original_end_p50": 1.044905118866491
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-lz4",
+    "shape": {
+      "Cell": 262144,
+      "Concurrency": 1,
+      "Name": "cell256K",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.9488348568766242,
+    "v2_over_original_cpu": 1.3188595968030539,
+    "v2_over_original_end_p50": 1.014687685937992
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-lz4",
+    "shape": {
+      "Cell": 8388608,
+      "Concurrency": 1,
+      "Name": "cell8M",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 1.0049250705920358,
+    "v2_over_original_cpu": 1.0583532529941417,
+    "v2_over_original_end_p50": 0.9921907886557801
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-lz4",
+    "shape": {
+      "Cell": 8388608,
+      "Concurrency": 1,
+      "Name": "cell8M",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 1.0048659596607785,
+    "v2_over_original_cpu": 1.0613566837170707,
+    "v2_over_original_end_p50": 0.9707537967104991
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-lz4",
+    "shape": {
+      "Cell": 8388608,
+      "Concurrency": 1,
+      "Name": "cell8M",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.03386386061470386,
+    "v2_over_original_cpu": 0.8094090982276663,
+    "v2_over_original_end_p50": 0.9282361463415698
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-lz4",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 4,
+      "Name": "concurrent",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 1.0451451900364186,
+    "v2_over_original_cpu": 1.9948375211533107,
+    "v2_over_original_end_p50": 1.2425412326290042
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-lz4",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 4,
+      "Name": "concurrent",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 1.0445758114124413,
+    "v2_over_original_cpu": 1.7877814193603667,
+    "v2_over_original_end_p50": 1.1119432285569832
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-lz4",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 4,
+      "Name": "concurrent",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.5103814786357462,
+    "v2_over_original_cpu": 1.1608936872094766,
+    "v2_over_original_end_p50": 2.353800325215102
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-lz4",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "slow",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": true
+    },
+    "v2_over_original_allocated_bytes": 0.9610561192977571,
+    "v2_over_original_cpu": 1.5262388818297332,
+    "v2_over_original_end_p50": 1.0082333547362832
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-lz4",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "slow",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": true
+    },
+    "v2_over_original_allocated_bytes": 0.9603970074842517,
+    "v2_over_original_cpu": 1.2950444726810673,
+    "v2_over_original_end_p50": 1.0020833104605436
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-lz4",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "slow",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": true
+    },
+    "v2_over_original_allocated_bytes": 0.4700859511427814,
+    "v2_over_original_cpu": 1.1347522236340533,
+    "v2_over_original_end_p50": 0.9998917486856529
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-lz4-tls",
+    "shape": {
+      "Cell": 32,
+      "Concurrency": 1,
+      "Name": "small",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 1.7487937927095847,
+    "v2_over_original_cpu": 2.425708362128542,
+    "v2_over_original_end_p50": 2.884316897184711
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-lz4-tls",
+    "shape": {
+      "Cell": 32,
+      "Concurrency": 1,
+      "Name": "small",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 1.7485574745465646,
+    "v2_over_original_cpu": 1.2798894263994471,
+    "v2_over_original_end_p50": 2.2963353386282814
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-lz4-tls",
+    "shape": {
+      "Cell": 32,
+      "Concurrency": 1,
+      "Name": "small",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 22.52222375391402,
+    "v2_over_original_cpu": 3.871458189357291,
+    "v2_over_original_end_p50": 2.2022500499809166
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-lz4-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "page1",
+      "Page": 1,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 5.752419971508368,
+    "v2_over_original_cpu": 2.3379726378556103,
+    "v2_over_original_end_p50": 1.6679168344669153
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-lz4-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "page1",
+      "Page": 1,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 5.781593607270141,
+    "v2_over_original_cpu": 2.331717239265513,
+    "v2_over_original_end_p50": 1.5040816612736851
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-lz4-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "page1",
+      "Page": 1,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 4.318460625176826,
+    "v2_over_original_cpu": 1.709688205299674,
+    "v2_over_original_end_p50": 1.2315771738085006
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-lz4-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "page32",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 1.158724688513224,
+    "v2_over_original_cpu": 2.5259528468921815,
+    "v2_over_original_end_p50": 1.523618744155264
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-lz4-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "page32",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 1.0566846795407736,
+    "v2_over_original_cpu": 1.7791445345261392,
+    "v2_over_original_end_p50": 1.5458954926408526
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-lz4-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "page32",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.516136544383042,
+    "v2_over_original_cpu": 1.2407045009784736,
+    "v2_over_original_end_p50": 1.297587697930125
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-lz4-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "rows1",
+      "Page": 128,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 2.8472296522735956,
+    "v2_over_original_cpu": 2.6973058637083995,
+    "v2_over_original_end_p50": 1.0861645927743422
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-lz4-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "rows1",
+      "Page": 128,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 2.8401987008024454,
+    "v2_over_original_cpu": 2.2979397781299524,
+    "v2_over_original_end_p50": 1.0402468641245837
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-lz4-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "rows1",
+      "Page": 128,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 42.55766144440199,
+    "v2_over_original_cpu": 8.210776545166402,
+    "v2_over_original_end_p50": 1.8379484739991487
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-lz4-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "rows128",
+      "Page": 128,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 1.0271042334060292,
+    "v2_over_original_cpu": 1.7301163918525704,
+    "v2_over_original_end_p50": 1.2093284551589503
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-lz4-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "rows128",
+      "Page": 128,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 1.0266417622322164,
+    "v2_over_original_cpu": 1.7680649854510184,
+    "v2_over_original_end_p50": 1.236099309705554
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-lz4-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "rows128",
+      "Page": 128,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.4772998862604739,
+    "v2_over_original_cpu": 1.0786857419980602,
+    "v2_over_original_end_p50": 0.9189834483824076
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-lz4-tls",
+    "shape": {
+      "Cell": 262144,
+      "Concurrency": 1,
+      "Name": "cell256K",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.924470992319043,
+    "v2_over_original_cpu": 1.253666035950804,
+    "v2_over_original_end_p50": 0.8744325379235878
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-lz4-tls",
+    "shape": {
+      "Cell": 262144,
+      "Concurrency": 1,
+      "Name": "cell256K",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.9238488436658094,
+    "v2_over_original_cpu": 1.2531929990539261,
+    "v2_over_original_end_p50": 1.0024011444825145
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-lz4-tls",
+    "shape": {
+      "Cell": 262144,
+      "Concurrency": 1,
+      "Name": "cell256K",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.9219404913201398,
+    "v2_over_original_cpu": 1.1609508041627248,
+    "v2_over_original_end_p50": 0.8953138818922615
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-lz4-tls",
+    "shape": {
+      "Cell": 8388608,
+      "Concurrency": 1,
+      "Name": "cell8M",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 1.00548483932869,
+    "v2_over_original_cpu": 1.0460961876195707,
+    "v2_over_original_end_p50": 0.9905297043806377
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-lz4-tls",
+    "shape": {
+      "Cell": 8388608,
+      "Concurrency": 1,
+      "Name": "cell8M",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 1.005417423817728,
+    "v2_over_original_cpu": 1.0526020386609294,
+    "v2_over_original_end_p50": 1.0639028072085357
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-lz4-tls",
+    "shape": {
+      "Cell": 8388608,
+      "Concurrency": 1,
+      "Name": "cell8M",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.03396581564771574,
+    "v2_over_original_cpu": 0.799767044665866,
+    "v2_over_original_end_p50": 0.966501206740891
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-lz4-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 4,
+      "Name": "concurrent",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 1.071349573523492,
+    "v2_over_original_cpu": 1.6726335928472655,
+    "v2_over_original_end_p50": 1.1562944761556817
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-lz4-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 4,
+      "Name": "concurrent",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 1.070914996482881,
+    "v2_over_original_cpu": 1.5945521016839992,
+    "v2_over_original_end_p50": 1.207175419943585
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-lz4-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 4,
+      "Name": "concurrent",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.5235556047832818,
+    "v2_over_original_cpu": 1.019075221155121,
+    "v2_over_original_end_p50": 1.9103653329620798
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-lz4-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "slow",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": true
+    },
+    "v2_over_original_allocated_bytes": 0.9618811471289248,
+    "v2_over_original_cpu": 1.2419066305037798,
+    "v2_over_original_end_p50": 1.0006355295486946
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-lz4-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "slow",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": true
+    },
+    "v2_over_original_allocated_bytes": 0.9599826712324716,
+    "v2_over_original_cpu": 1.0424721565006636,
+    "v2_over_original_end_p50": 1.0019533072663496
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-lz4-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "slow",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": true
+    },
+    "v2_over_original_allocated_bytes": 0.46971901373881464,
+    "v2_over_original_cpu": 0.9345605632177275,
+    "v2_over_original_end_p50": 1.0000647968856122
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-no-compression",
+    "shape": {
+      "Cell": 32,
+      "Concurrency": 1,
+      "Name": "small",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 6.647952913783067,
+    "v2_over_original_cpu": 1.5108481262327416,
+    "v2_over_original_end_p50": 2.51554950873911
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-no-compression",
+    "shape": {
+      "Cell": 32,
+      "Concurrency": 1,
+      "Name": "small",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 6.63993273397581,
+    "v2_over_original_cpu": 0.9072978303747534,
+    "v2_over_original_end_p50": 2.2574462164021614
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-no-compression",
+    "shape": {
+      "Cell": 32,
+      "Concurrency": 1,
+      "Name": "small",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 40.9249725114805,
+    "v2_over_original_cpu": 1.9854043392504932,
+    "v2_over_original_end_p50": 2.3495373412388587
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-no-compression",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "page1",
+      "Page": 1,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 7.106809563381762,
+    "v2_over_original_cpu": 2.0670108800974503,
+    "v2_over_original_end_p50": 1.4444017851666955
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-no-compression",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "page1",
+      "Page": 1,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 7.067672961381589,
+    "v2_over_original_cpu": 1.7728468204091803,
+    "v2_over_original_end_p50": 1.2233247754804397
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-no-compression",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "page1",
+      "Page": 1,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 5.298663845666454,
+    "v2_over_original_cpu": 1.324146618310678,
+    "v2_over_original_end_p50": 1.0556179787230648
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-no-compression",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "page32",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 1.11103320694651,
+    "v2_over_original_cpu": 1.7904531497162,
+    "v2_over_original_end_p50": 1.191464605851217
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-no-compression",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "page32",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 1.1107208316352548,
+    "v2_over_original_cpu": 1.745138178096213,
+    "v2_over_original_end_p50": 1.1240589757039092
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-no-compression",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "page32",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.32710474601369416,
+    "v2_over_original_cpu": 0.9835302875220991,
+    "v2_over_original_end_p50": 0.8952245743985092
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-no-compression",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "rows1",
+      "Page": 128,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 8.671185634439292,
+    "v2_over_original_cpu": 2.36734693877551,
+    "v2_over_original_end_p50": 1.1535809475819818
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-no-compression",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "rows1",
+      "Page": 128,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 8.659531454394102,
+    "v2_over_original_cpu": 1.6734693877551021,
+    "v2_over_original_end_p50": 1.0818559134366754
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-no-compression",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "rows1",
+      "Page": 128,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 69.83244143179927,
+    "v2_over_original_cpu": 5.359183673469388,
+    "v2_over_original_end_p50": 1.122498773421028
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-no-compression",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "rows128",
+      "Page": 128,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 1.1098771094955433,
+    "v2_over_original_cpu": 1.8697263057248714,
+    "v2_over_original_end_p50": 1.0792928408892
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-no-compression",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "rows128",
+      "Page": 128,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 1.109584845955014,
+    "v2_over_original_cpu": 1.8935102187163857,
+    "v2_over_original_end_p50": 1.0543669334147192
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-no-compression",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "rows128",
+      "Page": 128,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.28516081485600836,
+    "v2_over_original_cpu": 0.9456196964264372,
+    "v2_over_original_end_p50": 0.8249127421191136
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-no-compression",
+    "shape": {
+      "Cell": 262144,
+      "Concurrency": 1,
+      "Name": "cell256K",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 1.0521653355047258,
+    "v2_over_original_cpu": 1.412110331320385,
+    "v2_over_original_end_p50": 1.678708341145066
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-no-compression",
+    "shape": {
+      "Cell": 262144,
+      "Concurrency": 1,
+      "Name": "cell256K",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 1.0517418046785127,
+    "v2_over_original_cpu": 1.4765790762200097,
+    "v2_over_original_end_p50": 1.5562203712135416
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-no-compression",
+    "shape": {
+      "Cell": 262144,
+      "Concurrency": 1,
+      "Name": "cell256K",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.576238736584775,
+    "v2_over_original_cpu": 1.196670474946956,
+    "v2_over_original_end_p50": 1.2996848523805697
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-no-compression",
+    "shape": {
+      "Cell": 8388608,
+      "Concurrency": 1,
+      "Name": "cell8M",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 1.004189351237731,
+    "v2_over_original_cpu": 1.0143769968051117,
+    "v2_over_original_end_p50": 1.0635234886265825
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-no-compression",
+    "shape": {
+      "Cell": 8388608,
+      "Concurrency": 1,
+      "Name": "cell8M",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 1.0041280008435531,
+    "v2_over_original_cpu": 1.0127476038338659,
+    "v2_over_original_end_p50": 1.0010837510867356
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-no-compression",
+    "shape": {
+      "Cell": 8388608,
+      "Concurrency": 1,
+      "Name": "cell8M",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.018803360264034008,
+    "v2_over_original_cpu": 0.5601277955271565,
+    "v2_over_original_end_p50": 0.8610802043279109
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-no-compression",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 4,
+      "Name": "concurrent",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 1.1100056396483153,
+    "v2_over_original_cpu": 1.9778774913910049,
+    "v2_over_original_end_p50": 1.317834180699696
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-no-compression",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 4,
+      "Name": "concurrent",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 1.1093978831021198,
+    "v2_over_original_cpu": 1.591380569758948,
+    "v2_over_original_end_p50": 1.1270067090255382
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-no-compression",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 4,
+      "Name": "concurrent",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.32691782937575925,
+    "v2_over_original_cpu": 0.9277679223625169,
+    "v2_over_original_end_p50": 2.342895253425835
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-no-compression",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "slow",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": true
+    },
+    "v2_over_original_allocated_bytes": 1.1131157261939653,
+    "v2_over_original_cpu": 1.2738797369669852,
+    "v2_over_original_end_p50": 1.0003472944934213
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-no-compression",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "slow",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": true
+    },
+    "v2_over_original_allocated_bytes": 1.1106995099409067,
+    "v2_over_original_cpu": 1.322283235034913,
+    "v2_over_original_end_p50": 1.000105080422931
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-no-compression",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "slow",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": true
+    },
+    "v2_over_original_allocated_bytes": 0.3284537579148974,
+    "v2_over_original_cpu": 1.0094230899600027,
+    "v2_over_original_end_p50": 1.0010795423601586
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-no-compression-tls",
+    "shape": {
+      "Cell": 32,
+      "Concurrency": 1,
+      "Name": "small",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 6.550136707572964,
+    "v2_over_original_cpu": 2.789647577092511,
+    "v2_over_original_end_p50": 3.976105442878234
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-no-compression-tls",
+    "shape": {
+      "Cell": 32,
+      "Concurrency": 1,
+      "Name": "small",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 6.54403255547784,
+    "v2_over_original_cpu": 1.8920704845814977,
+    "v2_over_original_end_p50": 2.823219867866481
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-no-compression-tls",
+    "shape": {
+      "Cell": 32,
+      "Concurrency": 1,
+      "Name": "small",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 40.24639155592293,
+    "v2_over_original_cpu": 3.967511013215859,
+    "v2_over_original_end_p50": 3.9470971041149445
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-no-compression-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "page1",
+      "Page": 1,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 7.066537513125387,
+    "v2_over_original_cpu": 3.722999485833356,
+    "v2_over_original_end_p50": 2.2325478140326434
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-no-compression-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "page1",
+      "Page": 1,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 7.0276397532703845,
+    "v2_over_original_cpu": 3.4914350661651286,
+    "v2_over_original_end_p50": 1.9250358116059847
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-no-compression-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "page1",
+      "Page": 1,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 5.273043596431001,
+    "v2_over_original_cpu": 2.862325115687495,
+    "v2_over_original_end_p50": 1.4827212580526503
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-no-compression-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "page32",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 1.1107429254227956,
+    "v2_over_original_cpu": 1.888032118276829,
+    "v2_over_original_end_p50": 1.299849365405264
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-no-compression-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "page32",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 1.1103632339317202,
+    "v2_over_original_cpu": 1.7967117002294162,
+    "v2_over_original_end_p50": 1.3801044665190603
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-no-compression-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "page32",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.32753611330573645,
+    "v2_over_original_cpu": 1.149885291868468,
+    "v2_over_original_end_p50": 1.1666549862127382
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-no-compression-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "rows1",
+      "Page": 128,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 8.464078794901507,
+    "v2_over_original_cpu": 3.042087542087542,
+    "v2_over_original_end_p50": 1.172265133824322
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-no-compression-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "rows1",
+      "Page": 128,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 8.455967555040557,
+    "v2_over_original_cpu": 2.387205387205387,
+    "v2_over_original_end_p50": 1.0298314044496908
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-no-compression-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "rows1",
+      "Page": 128,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 68.08482039397451,
+    "v2_over_original_cpu": 6.425925925925926,
+    "v2_over_original_end_p50": 1.9471759603787626
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-no-compression-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "rows128",
+      "Page": 128,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 1.1098567194009799,
+    "v2_over_original_cpu": 1.7661910756749195,
+    "v2_over_original_end_p50": 1.443871427782325
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-no-compression-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "rows128",
+      "Page": 128,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 1.1093967040190746,
+    "v2_over_original_cpu": 1.5543432647922786,
+    "v2_over_original_end_p50": 1.159122179762078
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-no-compression-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "rows128",
+      "Page": 128,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.2859664670863725,
+    "v2_over_original_cpu": 1.1104350258777451,
+    "v2_over_original_end_p50": 1.010541525853541
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-no-compression-tls",
+    "shape": {
+      "Cell": 262144,
+      "Concurrency": 1,
+      "Name": "cell256K",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 1.0522397226061266,
+    "v2_over_original_cpu": 2.197827518104016,
+    "v2_over_original_end_p50": 1.7049514782565016
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-no-compression-tls",
+    "shape": {
+      "Cell": 262144,
+      "Concurrency": 1,
+      "Name": "cell256K",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 1.052012261085792,
+    "v2_over_original_cpu": 2.269914417379855,
+    "v2_over_original_end_p50": 1.3384138036294226
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-no-compression-tls",
+    "shape": {
+      "Cell": 262144,
+      "Concurrency": 1,
+      "Name": "cell256K",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.5765867488197022,
+    "v2_over_original_cpu": 1.6662277814351547,
+    "v2_over_original_end_p50": 1.3453245054607488
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-no-compression-tls",
+    "shape": {
+      "Cell": 8388608,
+      "Concurrency": 1,
+      "Name": "cell8M",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 1.004204709110095,
+    "v2_over_original_cpu": 1.1090628001218055,
+    "v2_over_original_end_p50": 1.2524978898957762
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-no-compression-tls",
+    "shape": {
+      "Cell": 8388608,
+      "Concurrency": 1,
+      "Name": "cell8M",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 1.0041278874207873,
+    "v2_over_original_cpu": 1.1593700467702013,
+    "v2_over_original_end_p50": 1.1707100247049425
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-no-compression-tls",
+    "shape": {
+      "Cell": 8388608,
+      "Concurrency": 1,
+      "Name": "cell8M",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.019526117204092454,
+    "v2_over_original_cpu": 0.7613314281698719,
+    "v2_over_original_end_p50": 1.0055651133443517
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-no-compression-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 4,
+      "Name": "concurrent",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 1.1097649960706382,
+    "v2_over_original_cpu": 2.030015519187359,
+    "v2_over_original_end_p50": 1.3959943740319583
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-no-compression-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 4,
+      "Name": "concurrent",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 1.1093250182419447,
+    "v2_over_original_cpu": 1.8384946388261851,
+    "v2_over_original_end_p50": 1.229832730996179
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-no-compression-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 4,
+      "Name": "concurrent",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.32744046144244615,
+    "v2_over_original_cpu": 1.3550719525959367,
+    "v2_over_original_end_p50": 1.5302762505626688
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-no-compression-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "slow",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": true
+    },
+    "v2_over_original_allocated_bytes": 1.1122223868977348,
+    "v2_over_original_cpu": 1.41411503558138,
+    "v2_over_original_end_p50": 1.0062480260146465
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-no-compression-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "slow",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": true
+    },
+    "v2_over_original_allocated_bytes": 1.111813537349258,
+    "v2_over_original_cpu": 1.141476790494222,
+    "v2_over_original_end_p50": 1.0031928936629635
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "cassandra/v5-no-compression-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "slow",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": true
+    },
+    "v2_over_original_allocated_bytes": 0.32909833342702804,
+    "v2_over_original_cpu": 0.898021805836652,
+    "v2_over_original_end_p50": 1.0013642332593065
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v3-raw",
+    "shape": {
+      "Cell": 32,
+      "Concurrency": 1,
+      "Name": "small",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 4.397379214829809,
+    "v2_over_original_cpu": 1.0568561872909699,
+    "v2_over_original_end_p50": 1.109674172851931
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v3-raw",
+    "shape": {
+      "Cell": 32,
+      "Concurrency": 1,
+      "Name": "small",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 4.387577904437224,
+    "v2_over_original_cpu": 0.8013377926421404,
+    "v2_over_original_end_p50": 1.0839602465718958
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v3-raw",
+    "shape": {
+      "Cell": 32,
+      "Concurrency": 1,
+      "Name": "small",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 4.687796303201406,
+    "v2_over_original_cpu": 1.1210702341137124,
+    "v2_over_original_end_p50": 1.497597182035476
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v3-raw",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "page1",
+      "Page": 1,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 3.1375745692271217,
+    "v2_over_original_cpu": 1.8874150636424538,
+    "v2_over_original_end_p50": 1.4279183454111064
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v3-raw",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "page1",
+      "Page": 1,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 3.1351851839621925,
+    "v2_over_original_cpu": 1.9328930998181644,
+    "v2_over_original_end_p50": 1.445090200036862
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v3-raw",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "page1",
+      "Page": 1,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 2.9509416542233278,
+    "v2_over_original_cpu": 2.021705426356589,
+    "v2_over_original_end_p50": 1.58226005653328
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v3-raw",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "page32",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 2.990200175820375,
+    "v2_over_original_cpu": 3.142026175472613,
+    "v2_over_original_end_p50": 1.8818938866024233
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v3-raw",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "page32",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 2.9878799233307873,
+    "v2_over_original_cpu": 2.995395055744062,
+    "v2_over_original_end_p50": 1.7973019276895061
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v3-raw",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "page32",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 1.3615054259320643,
+    "v2_over_original_cpu": 4.115123606398448,
+    "v2_over_original_end_p50": 2.40876103503105
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v3-raw",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "rows1",
+      "Page": 128,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 5.5192900283495625,
+    "v2_over_original_cpu": 1.6536082474226803,
+    "v2_over_original_end_p50": 1.1247038985024291
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v3-raw",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "rows1",
+      "Page": 128,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 5.504005916430421,
+    "v2_over_original_cpu": 1.597938144329897,
+    "v2_over_original_end_p50": 1.0495041554583049
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v3-raw",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "rows1",
+      "Page": 128,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 6.628374214224085,
+    "v2_over_original_cpu": 2.7938144329896906,
+    "v2_over_original_end_p50": 1.6492552294535672
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v3-raw",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "rows128",
+      "Page": 128,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.6186848594964117,
+    "v2_over_original_cpu": 2.688429752066116,
+    "v2_over_original_end_p50": 1.811922845746134
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v3-raw",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "rows128",
+      "Page": 128,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.6188788213453036,
+    "v2_over_original_cpu": 2.403030303030303,
+    "v2_over_original_end_p50": 1.6613250145297573
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v3-raw",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "rows128",
+      "Page": 128,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.17391450636709457,
+    "v2_over_original_cpu": 4.211019283746556,
+    "v2_over_original_end_p50": 2.6031414080701003
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v3-raw",
+    "shape": {
+      "Cell": 262144,
+      "Concurrency": 1,
+      "Name": "cell256K",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.412096580668549,
+    "v2_over_original_cpu": 1.5159438775510203,
+    "v2_over_original_end_p50": 1.4025639894735296
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v3-raw",
+    "shape": {
+      "Cell": 262144,
+      "Concurrency": 1,
+      "Name": "cell256K",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.4116574847975819,
+    "v2_over_original_cpu": 1.7735969387755102,
+    "v2_over_original_end_p50": 1.5725459062908893
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v3-raw",
+    "shape": {
+      "Cell": 262144,
+      "Concurrency": 1,
+      "Name": "cell256K",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.4488989415747203,
+    "v2_over_original_cpu": 1.4706632653061225,
+    "v2_over_original_end_p50": 1.3530631147179464
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v3-raw",
+    "shape": {
+      "Cell": 8388608,
+      "Concurrency": 1,
+      "Name": "cell8M",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.014653751135239205,
+    "v2_over_original_cpu": 1.1993718099725166,
+    "v2_over_original_end_p50": 1.3491415454278646
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v3-raw",
+    "shape": {
+      "Cell": 8388608,
+      "Concurrency": 1,
+      "Name": "cell8M",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.014621808353473015,
+    "v2_over_original_cpu": 1.026043711556079,
+    "v2_over_original_end_p50": 1.231118716196386
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v3-raw",
+    "shape": {
+      "Cell": 8388608,
+      "Concurrency": 1,
+      "Name": "cell8M",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.01595687143683714,
+    "v2_over_original_cpu": 0.6861143829341709,
+    "v2_over_original_end_p50": 0.8968056894889104
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v3-raw",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 4,
+      "Name": "concurrent",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 2.736085972308533,
+    "v2_over_original_cpu": 2.4447593527774916,
+    "v2_over_original_end_p50": 1.1959983949855295
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v3-raw",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 4,
+      "Name": "concurrent",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 2.6528374408317346,
+    "v2_over_original_cpu": 2.5152530145315883,
+    "v2_over_original_end_p50": 1.1271360756329742
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v3-raw",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 4,
+      "Name": "concurrent",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 1.2256916876075332,
+    "v2_over_original_cpu": 3.639441409873235,
+    "v2_over_original_end_p50": 2.1729189800959543
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v3-raw",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "slow",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": true
+    },
+    "v2_over_original_allocated_bytes": 2.168951471165974,
+    "v2_over_original_cpu": 1.2213187650870283,
+    "v2_over_original_end_p50": 1.0026099903717745
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v3-raw",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "slow",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": true
+    },
+    "v2_over_original_allocated_bytes": 2.1670285135330727,
+    "v2_over_original_cpu": 1.042053106339728,
+    "v2_over_original_end_p50": 1.0037386112107696
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v3-raw",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "slow",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": true
+    },
+    "v2_over_original_allocated_bytes": 1.022062320368877,
+    "v2_over_original_cpu": 1.3832422817939272,
+    "v2_over_original_end_p50": 1.0069012992847728
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v3-tls",
+    "shape": {
+      "Cell": 32,
+      "Concurrency": 1,
+      "Name": "small",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 4.289823581147498,
+    "v2_over_original_cpu": 1.839000693962526,
+    "v2_over_original_end_p50": 2.20825716455269
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v3-tls",
+    "shape": {
+      "Cell": 32,
+      "Concurrency": 1,
+      "Name": "small",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 4.281856278131305,
+    "v2_over_original_cpu": 1.5267175572519085,
+    "v2_over_original_end_p50": 2.1442753888123294
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v3-tls",
+    "shape": {
+      "Cell": 32,
+      "Concurrency": 1,
+      "Name": "small",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 4.574163174504631,
+    "v2_over_original_cpu": 1.4642609299097848,
+    "v2_over_original_end_p50": 1.9653514075990663
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v3-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "page1",
+      "Page": 1,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 3.126965907436243,
+    "v2_over_original_cpu": 2.8585659052153507,
+    "v2_over_original_end_p50": 1.9141471409048059
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v3-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "page1",
+      "Page": 1,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 3.1243429484446557,
+    "v2_over_original_cpu": 2.832075503554002,
+    "v2_over_original_end_p50": 1.9500052296509434
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v3-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "page1",
+      "Page": 1,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 2.940914880750144,
+    "v2_over_original_cpu": 2.4306505259248,
+    "v2_over_original_end_p50": 1.7064662729074296
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v3-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "page32",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 2.6196287566661876,
+    "v2_over_original_cpu": 1.9415278575531303,
+    "v2_over_original_end_p50": 1.4727279343975932
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v3-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "page32",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 2.6161338926782913,
+    "v2_over_original_cpu": 2.1198161975875935,
+    "v2_over_original_end_p50": 1.59095540783153
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v3-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "page32",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 1.1983694802718365,
+    "v2_over_original_cpu": 1.6212521539345204,
+    "v2_over_original_end_p50": 1.3034984715415596
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v3-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "rows1",
+      "Page": 128,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 4.969472403495189,
+    "v2_over_original_cpu": 2.679324894514768,
+    "v2_over_original_end_p50": 2.2770497746931166
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v3-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "rows1",
+      "Page": 128,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 4.95409799800907,
+    "v2_over_original_cpu": 2.0443037974683542,
+    "v2_over_original_end_p50": 1.9667478116745223
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v3-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "rows1",
+      "Page": 128,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 5.97168454816945,
+    "v2_over_original_cpu": 2.5147679324894514,
+    "v2_over_original_end_p50": 2.2718703061065937
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v3-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "rows128",
+      "Page": 128,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.6009820230925015,
+    "v2_over_original_cpu": 1.8047483134405813,
+    "v2_over_original_end_p50": 1.4944318944990536
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v3-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "rows128",
+      "Page": 128,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.5196700507614214,
+    "v2_over_original_cpu": 1.8181110534509601,
+    "v2_over_original_end_p50": 1.5949325355638317
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v3-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "rows128",
+      "Page": 128,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.14775551668814602,
+    "v2_over_original_cpu": 1.341593149974053,
+    "v2_over_original_end_p50": 1.260550094633372
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v3-tls",
+    "shape": {
+      "Cell": 262144,
+      "Concurrency": 1,
+      "Name": "cell256K",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.4189590232311231,
+    "v2_over_original_cpu": 1.291625371655104,
+    "v2_over_original_end_p50": 1.507745815225866
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v3-tls",
+    "shape": {
+      "Cell": 262144,
+      "Concurrency": 1,
+      "Name": "cell256K",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.4180135999393311,
+    "v2_over_original_cpu": 1.2874132804757186,
+    "v2_over_original_end_p50": 1.2845375222882867
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v3-tls",
+    "shape": {
+      "Cell": 262144,
+      "Concurrency": 1,
+      "Name": "cell256K",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.4536666750928992,
+    "v2_over_original_cpu": 1.32804757185332,
+    "v2_over_original_end_p50": 1.2953443752161031
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v3-tls",
+    "shape": {
+      "Cell": 8388608,
+      "Concurrency": 1,
+      "Name": "cell8M",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.019749318781128733,
+    "v2_over_original_cpu": 0.9536755244183909,
+    "v2_over_original_end_p50": 0.9875106676918115
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v3-tls",
+    "shape": {
+      "Cell": 8388608,
+      "Concurrency": 1,
+      "Name": "cell8M",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.019816471531964863,
+    "v2_over_original_cpu": 0.9455360607855553,
+    "v2_over_original_end_p50": 0.9638532652187551
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v3-tls",
+    "shape": {
+      "Cell": 8388608,
+      "Concurrency": 1,
+      "Name": "cell8M",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.020687015374622305,
+    "v2_over_original_cpu": 0.811628096979105,
+    "v2_over_original_end_p50": 0.8878820843790055
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v3-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 4,
+      "Name": "concurrent",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 2.630626491200486,
+    "v2_over_original_cpu": 1.9342245550725827,
+    "v2_over_original_end_p50": 1.05882540088946
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v3-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 4,
+      "Name": "concurrent",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 2.549726527378555,
+    "v2_over_original_cpu": 1.8781541321523278,
+    "v2_over_original_end_p50": 1.0331051482168003
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v3-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 4,
+      "Name": "concurrent",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 1.1993182647349308,
+    "v2_over_original_cpu": 1.628639383252686,
+    "v2_over_original_end_p50": 0.803215145209514
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v3-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "slow",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": true
+    },
+    "v2_over_original_allocated_bytes": 2.1763207239523887,
+    "v2_over_original_cpu": 1.63099025141098,
+    "v2_over_original_end_p50": 1.003874072909357
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v3-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "slow",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": true
+    },
+    "v2_over_original_allocated_bytes": 2.15754932333279,
+    "v2_over_original_cpu": 1.3483837865572088,
+    "v2_over_original_end_p50": 1.0029842561955837
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v3-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "slow",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": true
+    },
+    "v2_over_original_allocated_bytes": 0.9991643567585194,
+    "v2_over_original_cpu": 1.5918932786044124,
+    "v2_over_original_end_p50": 1.004316609859785
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-lz4",
+    "shape": {
+      "Cell": 32,
+      "Concurrency": 1,
+      "Name": "small",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 1.4514890800794176,
+    "v2_over_original_cpu": 1.1934023285899094,
+    "v2_over_original_end_p50": 1.531934282115194
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-lz4",
+    "shape": {
+      "Cell": 32,
+      "Concurrency": 1,
+      "Name": "small",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 1.4482745580032146,
+    "v2_over_original_cpu": 0.7483829236739974,
+    "v2_over_original_end_p50": 1.1466055586824262
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-lz4",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "page1",
+      "Page": 1,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 1.7340464527620878,
+    "v2_over_original_cpu": 1.57642090581535,
+    "v2_over_original_end_p50": 1.2184496353125405
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-lz4",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "page1",
+      "Page": 1,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 1.732989664143249,
+    "v2_over_original_cpu": 1.564797954360544,
+    "v2_over_original_end_p50": 1.18044061783672
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-lz4",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "page32",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.1676471143380248,
+    "v2_over_original_cpu": 1.1773127753303965,
+    "v2_over_original_end_p50": 1.3983181848338089
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-lz4",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "page32",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.16749139617845615,
+    "v2_over_original_cpu": 1.194273127753304,
+    "v2_over_original_end_p50": 1.3297253366947521
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-lz4",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "rows1",
+      "Page": 128,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 1.3839130535536348,
+    "v2_over_original_cpu": 1.8316633266533067,
+    "v2_over_original_end_p50": 1.615503956146248
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-lz4",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "rows1",
+      "Page": 128,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 1.3824299585196858,
+    "v2_over_original_cpu": 1.8677354709418839,
+    "v2_over_original_end_p50": 1.6009722294047681
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-lz4",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "rows128",
+      "Page": 128,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.13301908316867941,
+    "v2_over_original_cpu": 1.1114097968936678,
+    "v2_over_original_end_p50": 1.4035654467713858
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-lz4",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "rows128",
+      "Page": 128,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.13297528668966607,
+    "v2_over_original_cpu": 1.037037037037037,
+    "v2_over_original_end_p50": 1.3359067321264697
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-lz4",
+    "shape": {
+      "Cell": 262144,
+      "Concurrency": 1,
+      "Name": "cell256K",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.07053498725717247,
+    "v2_over_original_cpu": 0.8741044012282497,
+    "v2_over_original_end_p50": 1.179635199927628
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-lz4",
+    "shape": {
+      "Cell": 262144,
+      "Concurrency": 1,
+      "Name": "cell256K",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.07042747515765503,
+    "v2_over_original_cpu": 0.8705220061412487,
+    "v2_over_original_end_p50": 1.0725133435860321
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-lz4",
+    "shape": {
+      "Cell": 8388608,
+      "Concurrency": 1,
+      "Name": "cell8M",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.0070802801956587015,
+    "v2_over_original_cpu": 0.8293397098119522,
+    "v2_over_original_end_p50": 0.9949351057083675
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-lz4",
+    "shape": {
+      "Cell": 8388608,
+      "Concurrency": 1,
+      "Name": "cell8M",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.00704608507338914,
+    "v2_over_original_cpu": 0.8084996129161152,
+    "v2_over_original_end_p50": 0.968541588289233
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-lz4",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 4,
+      "Name": "concurrent",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.2642290450705666,
+    "v2_over_original_cpu": 0.9863173525668222,
+    "v2_over_original_end_p50": 0.8696233117230503
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-lz4",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 4,
+      "Name": "concurrent",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.2677037750192225,
+    "v2_over_original_cpu": 1.0560033941450997,
+    "v2_over_original_end_p50": 0.9067482904888555
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-lz4",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "slow",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": true
+    },
+    "v2_over_original_allocated_bytes": 0.16977819979822148,
+    "v2_over_original_cpu": 1.3498421290031575,
+    "v2_over_original_end_p50": 1.0073900641589157
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-lz4",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "slow",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": true
+    },
+    "v2_over_original_allocated_bytes": 0.16805090066312045,
+    "v2_over_original_cpu": 1.3433468651330627,
+    "v2_over_original_end_p50": 1.007387693837467
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-lz4-tls",
+    "shape": {
+      "Cell": 32,
+      "Concurrency": 1,
+      "Name": "small",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 2.1706774747389455,
+    "v2_over_original_cpu": 1.5581708137188972,
+    "v2_over_original_end_p50": 1.7723703992427196
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-lz4-tls",
+    "shape": {
+      "Cell": 32,
+      "Concurrency": 1,
+      "Name": "small",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 2.171155957105463,
+    "v2_over_original_cpu": 1.4552790854068594,
+    "v2_over_original_end_p50": 2.33000167047163
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-lz4-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "page1",
+      "Page": 1,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 1.7759900367754284,
+    "v2_over_original_cpu": 1.7970261061281756,
+    "v2_over_original_end_p50": 1.4604874743773804
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-lz4-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "page1",
+      "Page": 1,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 1.77504802260834,
+    "v2_over_original_cpu": 1.7231547827829834,
+    "v2_over_original_end_p50": 1.3853805070555665
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-lz4-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "page32",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.16660307398442878,
+    "v2_over_original_cpu": 1.273507686164903,
+    "v2_over_original_end_p50": 1.4941249672329013
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-lz4-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "page32",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.1665640600689454,
+    "v2_over_original_cpu": 1.0106807746057098,
+    "v2_over_original_end_p50": 1.2894134185229889
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-lz4-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "rows1",
+      "Page": 128,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.986044217966631,
+    "v2_over_original_cpu": 1.2921810699588476,
+    "v2_over_original_end_p50": 1.3770741618692854
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-lz4-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "rows1",
+      "Page": 128,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.9835456562833895,
+    "v2_over_original_cpu": 1.1152263374485596,
+    "v2_over_original_end_p50": 1.30625634947511
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-lz4-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "rows128",
+      "Page": 128,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.13026122214647098,
+    "v2_over_original_cpu": 1.0087577035355173,
+    "v2_over_original_end_p50": 1.4496068545203835
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-lz4-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "rows128",
+      "Page": 128,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.1302946577983357,
+    "v2_over_original_cpu": 0.8743647961941832,
+    "v2_over_original_end_p50": 1.2225578841369922
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-lz4-tls",
+    "shape": {
+      "Cell": 262144,
+      "Concurrency": 1,
+      "Name": "cell256K",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.06387634233958044,
+    "v2_over_original_cpu": 0.7111022682053323,
+    "v2_over_original_end_p50": 0.9161853599469522
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-lz4-tls",
+    "shape": {
+      "Cell": 262144,
+      "Concurrency": 1,
+      "Name": "cell256K",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.06379691983648494,
+    "v2_over_original_cpu": 0.7112349117920148,
+    "v2_over_original_end_p50": 0.9542654506664616
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-lz4-tls",
+    "shape": {
+      "Cell": 8388608,
+      "Concurrency": 1,
+      "Name": "cell8M",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.007082895225023996,
+    "v2_over_original_cpu": 0.8130842898521331,
+    "v2_over_original_end_p50": 0.9729032474022217
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-lz4-tls",
+    "shape": {
+      "Cell": 8388608,
+      "Concurrency": 1,
+      "Name": "cell8M",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.007080705977795767,
+    "v2_over_original_cpu": 0.8356160910652376,
+    "v2_over_original_end_p50": 1.001337650304038
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-lz4-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 4,
+      "Name": "concurrent",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.28679595656722995,
+    "v2_over_original_cpu": 1.0868425832230613,
+    "v2_over_original_end_p50": 0.8814011902876151
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-lz4-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 4,
+      "Name": "concurrent",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.27648739055157867,
+    "v2_over_original_cpu": 0.9971458965776705,
+    "v2_over_original_end_p50": 0.8683942550817088
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-lz4-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "slow",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": true
+    },
+    "v2_over_original_allocated_bytes": 0.159792870122771,
+    "v2_over_original_cpu": 1.1450360961841177,
+    "v2_over_original_end_p50": 1.0029333682059511
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-lz4-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "slow",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": true
+    },
+    "v2_over_original_allocated_bytes": 0.15936295004949252,
+    "v2_over_original_cpu": 0.853335504532378,
+    "v2_over_original_end_p50": 1.000108348969446
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-no-compression",
+    "shape": {
+      "Cell": 32,
+      "Concurrency": 1,
+      "Name": "small",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 5.382837218312133,
+    "v2_over_original_cpu": 1.618979151689432,
+    "v2_over_original_end_p50": 1.56301677297425
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-no-compression",
+    "shape": {
+      "Cell": 32,
+      "Concurrency": 1,
+      "Name": "small",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 5.37315167559889,
+    "v2_over_original_cpu": 0.8015815959741194,
+    "v2_over_original_end_p50": 1.18905031892275
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-no-compression",
+    "shape": {
+      "Cell": 32,
+      "Concurrency": 1,
+      "Name": "small",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 5.735455543358946,
+    "v2_over_original_cpu": 1.1998562185478074,
+    "v2_over_original_end_p50": 1.6627096621781243
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-no-compression",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "page1",
+      "Page": 1,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 4.028707271544378,
+    "v2_over_original_cpu": 2.0562883704613224,
+    "v2_over_original_end_p50": 1.382378105349964
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-no-compression",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "page1",
+      "Page": 1,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 4.0261528666657895,
+    "v2_over_original_cpu": 1.9439747412734607,
+    "v2_over_original_end_p50": 1.33826041497931
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-no-compression",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "page1",
+      "Page": 1,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 3.7845697545156574,
+    "v2_over_original_cpu": 1.573022276793545,
+    "v2_over_original_end_p50": 1.2100262123197902
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-no-compression",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "page32",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 3.2811149076669097,
+    "v2_over_original_cpu": 2.367552045944006,
+    "v2_over_original_end_p50": 1.5791945947826747
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-no-compression",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "page32",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 3.279794218144124,
+    "v2_over_original_cpu": 1.954235463029433,
+    "v2_over_original_end_p50": 1.2930799426834398
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-no-compression",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "page32",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 1.5350174684224671,
+    "v2_over_original_cpu": 3.1421392677674085,
+    "v2_over_original_end_p50": 2.0012937347179562
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-no-compression",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "rows1",
+      "Page": 128,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 6.015486414191187,
+    "v2_over_original_cpu": 1.459051724137931,
+    "v2_over_original_end_p50": 1.3291650088103222
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-no-compression",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "rows1",
+      "Page": 128,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 5.994650147824863,
+    "v2_over_original_cpu": 1.6982758620689655,
+    "v2_over_original_end_p50": 1.3815722162223611
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-no-compression",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "rows1",
+      "Page": 128,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 7.24778262705899,
+    "v2_over_original_cpu": 2.6163793103448274,
+    "v2_over_original_end_p50": 2.011993406468482
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-no-compression",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "rows128",
+      "Page": 128,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.7221455737825545,
+    "v2_over_original_cpu": 2.455878817023323,
+    "v2_over_original_end_p50": 1.964115837933867
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-no-compression",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "rows128",
+      "Page": 128,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.721667287519028,
+    "v2_over_original_cpu": 2.419091127674922,
+    "v2_over_original_end_p50": 1.8494765898106935
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-no-compression",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "rows128",
+      "Page": 128,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.2042535285109201,
+    "v2_over_original_cpu": 3.5390718922817985,
+    "v2_over_original_end_p50": 2.638135398957
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-no-compression",
+    "shape": {
+      "Cell": 262144,
+      "Concurrency": 1,
+      "Name": "cell256K",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.3630196578969451,
+    "v2_over_original_cpu": 1.1922418710781517,
+    "v2_over_original_end_p50": 1.0648852480332878
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-no-compression",
+    "shape": {
+      "Cell": 262144,
+      "Concurrency": 1,
+      "Name": "cell256K",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.3627988322741064,
+    "v2_over_original_cpu": 1.2800912721049629,
+    "v2_over_original_end_p50": 1.1728886288277744
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-no-compression",
+    "shape": {
+      "Cell": 262144,
+      "Concurrency": 1,
+      "Name": "cell256K",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.3925749592576726,
+    "v2_over_original_cpu": 1.2390188248716485,
+    "v2_over_original_end_p50": 1.0975879331642937
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-no-compression",
+    "shape": {
+      "Cell": 8388608,
+      "Concurrency": 1,
+      "Name": "cell8M",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.013515842950670378,
+    "v2_over_original_cpu": 0.9725548797171301,
+    "v2_over_original_end_p50": 1.410881802143234
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-no-compression",
+    "shape": {
+      "Cell": 8388608,
+      "Concurrency": 1,
+      "Name": "cell8M",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.013495466482270582,
+    "v2_over_original_cpu": 0.8792961926209669,
+    "v2_over_original_end_p50": 1.3536157244980473
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-no-compression",
+    "shape": {
+      "Cell": 8388608,
+      "Concurrency": 1,
+      "Name": "cell8M",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.014596288754933694,
+    "v2_over_original_cpu": 0.6150737692841959,
+    "v2_over_original_end_p50": 0.7495217883893963
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-no-compression",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 4,
+      "Name": "concurrent",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 2.9779140336607646,
+    "v2_over_original_cpu": 2.194165492797746,
+    "v2_over_original_end_p50": 1.087057621975203
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-no-compression",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 4,
+      "Name": "concurrent",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 2.8881379032789907,
+    "v2_over_original_cpu": 2.117326305266506,
+    "v2_over_original_end_p50": 1.206937516749799
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-no-compression",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 4,
+      "Name": "concurrent",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 1.370046891037944,
+    "v2_over_original_cpu": 3.262552824101422,
+    "v2_over_original_end_p50": 2.1964643090949574
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-no-compression",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "slow",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": true
+    },
+    "v2_over_original_allocated_bytes": 3.7495749921937342,
+    "v2_over_original_cpu": 1.143244071954211,
+    "v2_over_original_end_p50": 1.0017360708181275
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-no-compression",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "slow",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": true
+    },
+    "v2_over_original_allocated_bytes": 3.741907504423551,
+    "v2_over_original_cpu": 1.01880621422731,
+    "v2_over_original_end_p50": 1.0044652611184606
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-no-compression",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "slow",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": true
+    },
+    "v2_over_original_allocated_bytes": 1.7773306040315027,
+    "v2_over_original_cpu": 1.1676206050695013,
+    "v2_over_original_end_p50": 1.0032236364912952
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-no-compression-tls",
+    "shape": {
+      "Cell": 32,
+      "Concurrency": 1,
+      "Name": "small",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 5.2557847871072925,
+    "v2_over_original_cpu": 1.947172619047619,
+    "v2_over_original_end_p50": 2.181289285192223
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-no-compression-tls",
+    "shape": {
+      "Cell": 32,
+      "Concurrency": 1,
+      "Name": "small",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 5.246817583244497,
+    "v2_over_original_cpu": 2.2983630952380953,
+    "v2_over_original_end_p50": 2.889255956731472
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-no-compression-tls",
+    "shape": {
+      "Cell": 32,
+      "Concurrency": 1,
+      "Name": "small",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 5.597291026525365,
+    "v2_over_original_cpu": 1.9308035714285714,
+    "v2_over_original_end_p50": 2.621838912439702
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-no-compression-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "page1",
+      "Page": 1,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 3.9976449308628825,
+    "v2_over_original_cpu": 3.147984049623394,
+    "v2_over_original_end_p50": 2.1163769132538355
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-no-compression-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "page1",
+      "Page": 1,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 3.994187309865276,
+    "v2_over_original_cpu": 3.2115810640400806,
+    "v2_over_original_end_p50": 2.220630227162359
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-no-compression-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "page1",
+      "Page": 1,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 3.7556948601649007,
+    "v2_over_original_cpu": 2.652721447803415,
+    "v2_over_original_end_p50": 1.9224097555711435
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-no-compression-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "page32",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 3.225842167079365,
+    "v2_over_original_cpu": 2.368360864040661,
+    "v2_over_original_end_p50": 1.6530522413992819
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-no-compression-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "page32",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 3.2221914672372134,
+    "v2_over_original_cpu": 2.3359593392630242,
+    "v2_over_original_end_p50": 1.6479709641298892
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-no-compression-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "page32",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 1.515010510723931,
+    "v2_over_original_cpu": 1.9156289707750953,
+    "v2_over_original_end_p50": 1.4047955519518127
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-no-compression-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "rows1",
+      "Page": 128,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 5.849270222343473,
+    "v2_over_original_cpu": 1.9431438127090301,
+    "v2_over_original_end_p50": 1.8525462962962962
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-no-compression-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "rows1",
+      "Page": 128,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 5.834947483290137,
+    "v2_over_original_cpu": 2.265886287625418,
+    "v2_over_original_end_p50": 2.1661111111111113
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-no-compression-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "rows1",
+      "Page": 128,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 7.063974901104897,
+    "v2_over_original_cpu": 3.0836120401337794,
+    "v2_over_original_end_p50": 2.4996296296296294
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-no-compression-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "rows128",
+      "Page": 128,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.6288976967210843,
+    "v2_over_original_cpu": 1.6843878697117185,
+    "v2_over_original_end_p50": 1.4768890231574545
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-no-compression-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "rows128",
+      "Page": 128,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.6285274774007832,
+    "v2_over_original_cpu": 1.7982029202545864,
+    "v2_over_original_end_p50": 1.5745907068078036
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-no-compression-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "rows128",
+      "Page": 128,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.18022751660047595,
+    "v2_over_original_cpu": 1.4236865094221889,
+    "v2_over_original_end_p50": 1.2997629643400765
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-no-compression-tls",
+    "shape": {
+      "Cell": 262144,
+      "Concurrency": 1,
+      "Name": "cell256K",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 4.937588069516205,
+    "v2_over_original_cpu": 1.5399888143176734,
+    "v2_over_original_end_p50": 1.438484313534702
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-no-compression-tls",
+    "shape": {
+      "Cell": 262144,
+      "Concurrency": 1,
+      "Name": "cell256K",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 4.93124706434946,
+    "v2_over_original_cpu": 1.6434563758389262,
+    "v2_over_original_end_p50": 1.4569299842926844
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-no-compression-tls",
+    "shape": {
+      "Cell": 262144,
+      "Concurrency": 1,
+      "Name": "cell256K",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 5.327559887271019,
+    "v2_over_original_cpu": 1.6238814317673378,
+    "v2_over_original_end_p50": 1.5466215370928955
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-no-compression-tls",
+    "shape": {
+      "Cell": 8388608,
+      "Concurrency": 1,
+      "Name": "cell8M",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.020011792808530385,
+    "v2_over_original_cpu": 0.8221285687848046,
+    "v2_over_original_end_p50": 0.8649316374107228
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-no-compression-tls",
+    "shape": {
+      "Cell": 8388608,
+      "Concurrency": 1,
+      "Name": "cell8M",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.01934437067942164,
+    "v2_over_original_cpu": 0.8896179276232776,
+    "v2_over_original_end_p50": 0.8762024283813281
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-no-compression-tls",
+    "shape": {
+      "Cell": 8388608,
+      "Concurrency": 1,
+      "Name": "cell8M",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.02075454682282415,
+    "v2_over_original_cpu": 0.7662141018523192,
+    "v2_over_original_end_p50": 0.8301039725216921
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-no-compression-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 4,
+      "Name": "concurrent",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 2.7008830527086385,
+    "v2_over_original_cpu": 1.97327961241843,
+    "v2_over_original_end_p50": 1.1548177996459479
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-no-compression-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 4,
+      "Name": "concurrent",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 2.6198572474377744,
+    "v2_over_original_cpu": 1.8423966778722562,
+    "v2_over_original_end_p50": 1.094187708251991
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-no-compression-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 4,
+      "Name": "concurrent",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 1.2645436798438263,
+    "v2_over_original_cpu": 1.5828801661063872,
+    "v2_over_original_end_p50": 1.052373172405166
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-no-compression-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "slow",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": true
+    },
+    "v2_over_original_allocated_bytes": 2.294693946496062,
+    "v2_over_original_cpu": 1.3427776516011811,
+    "v2_over_original_end_p50": 1.0026021573513904
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-no-compression-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "slow",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": true
+    },
+    "v2_over_original_allocated_bytes": 2.2969320749139586,
+    "v2_over_original_cpu": 0.9332273449920508,
+    "v2_over_original_end_p50": 0.999604375228969
+  },
+  {
+    "api": "stream",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-no-compression-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "slow",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": true
+    },
+    "v2_over_original_allocated_bytes": 1.098963282025295,
+    "v2_over_original_cpu": 1.027708380649557,
+    "v2_over_original_end_p50": 1.0036604135145661
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-snappy",
+    "shape": {
+      "Cell": 32,
+      "Concurrency": 1,
+      "Name": "small",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 4.318204882449118,
+    "v2_over_original_cpu": 1.2497076023391813,
+    "v2_over_original_end_p50": 1.501416946156046
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-snappy",
+    "shape": {
+      "Cell": 32,
+      "Concurrency": 1,
+      "Name": "small",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 4.311552122681401,
+    "v2_over_original_cpu": 0.7128654970760234,
+    "v2_over_original_end_p50": 1.1661856849439722
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-snappy",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "page1",
+      "Page": 1,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 1.8638096960065715,
+    "v2_over_original_cpu": 1.7262873882207832,
+    "v2_over_original_end_p50": 1.2889932999257943
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-snappy",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "page1",
+      "Page": 1,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 1.8625964740352852,
+    "v2_over_original_cpu": 1.6931390687634906,
+    "v2_over_original_end_p50": 1.2872324866456686
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-snappy",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "page32",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.21812162252742917,
+    "v2_over_original_cpu": 1.2512242341418973,
+    "v2_over_original_end_p50": 1.268608986629315
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-snappy",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "page32",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.2180244718012593,
+    "v2_over_original_cpu": 1.3183008768932922,
+    "v2_over_original_end_p50": 1.3787324236969503
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-snappy",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "rows1",
+      "Page": 128,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 2.337062991211429,
+    "v2_over_original_cpu": 1.3097514340344167,
+    "v2_over_original_end_p50": 1.2609653416878794
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-snappy",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "rows1",
+      "Page": 128,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 2.3324944829455263,
+    "v2_over_original_cpu": 1.282982791586998,
+    "v2_over_original_end_p50": 1.2629234384178578
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-snappy",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "rows128",
+      "Page": 128,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.13646912833468247,
+    "v2_over_original_cpu": 1.1895721925133689,
+    "v2_over_original_end_p50": 1.3524282536715428
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-snappy",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "rows128",
+      "Page": 128,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.1363356965583497,
+    "v2_over_original_cpu": 1.1288770053475936,
+    "v2_over_original_end_p50": 1.3167090515211453
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-snappy",
+    "shape": {
+      "Cell": 262144,
+      "Concurrency": 1,
+      "Name": "cell256K",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.11644787449803452,
+    "v2_over_original_cpu": 0.6839708561020036,
+    "v2_over_original_end_p50": 0.8563009789984171
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-snappy",
+    "shape": {
+      "Cell": 262144,
+      "Concurrency": 1,
+      "Name": "cell256K",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.11633965827119166,
+    "v2_over_original_cpu": 0.6344869459623558,
+    "v2_over_original_end_p50": 0.8415555085044816
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-snappy",
+    "shape": {
+      "Cell": 8388608,
+      "Concurrency": 1,
+      "Name": "cell8M",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.0021937244230696134,
+    "v2_over_original_cpu": 0.753072284015589,
+    "v2_over_original_end_p50": 0.892246676444636
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-snappy",
+    "shape": {
+      "Cell": 8388608,
+      "Concurrency": 1,
+      "Name": "cell8M",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.0021902077119072706,
+    "v2_over_original_cpu": 0.7299092538332432,
+    "v2_over_original_end_p50": 0.8448254906372868
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-snappy",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 4,
+      "Name": "concurrent",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.2808392907079524,
+    "v2_over_original_cpu": 0.9694663035787036,
+    "v2_over_original_end_p50": 0.9969470499172102
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-snappy",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 4,
+      "Name": "concurrent",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.29133332763274894,
+    "v2_over_original_cpu": 0.816476188434076,
+    "v2_over_original_end_p50": 0.856021220660382
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-snappy",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "slow",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": true
+    },
+    "v2_over_original_allocated_bytes": 0.21883395819735585,
+    "v2_over_original_cpu": 0.8893370165745856,
+    "v2_over_original_end_p50": 0.9996156443084631
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-snappy",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "slow",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": true
+    },
+    "v2_over_original_allocated_bytes": 0.21867710973826546,
+    "v2_over_original_cpu": 0.9150276243093922,
+    "v2_over_original_end_p50": 1.0026954874774856
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-snappy-tls",
+    "shape": {
+      "Cell": 32,
+      "Concurrency": 1,
+      "Name": "small",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 4.3154708520179375,
+    "v2_over_original_cpu": 1.4275595621377979,
+    "v2_over_original_end_p50": 1.7768153335790637
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-snappy-tls",
+    "shape": {
+      "Cell": 32,
+      "Concurrency": 1,
+      "Name": "small",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 4.300448430493273,
+    "v2_over_original_cpu": 1.1043142305215712,
+    "v2_over_original_end_p50": 1.7243431098941604
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-snappy-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "page1",
+      "Page": 1,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 1.8628863648125642,
+    "v2_over_original_cpu": 1.9771114292172078,
+    "v2_over_original_end_p50": 1.4658185913639599
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-snappy-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "page1",
+      "Page": 1,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 1.861503315112769,
+    "v2_over_original_cpu": 1.9895878851804416,
+    "v2_over_original_end_p50": 1.4841403891784757
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-snappy-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "page32",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.21878965438043327,
+    "v2_over_original_cpu": 1.6155971367575035,
+    "v2_over_original_end_p50": 1.7129566475646525
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-snappy-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "page32",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.21859733925873345,
+    "v2_over_original_cpu": 1.6365691322365943,
+    "v2_over_original_end_p50": 1.5980003442187192
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-snappy-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "rows1",
+      "Page": 128,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 2.3300053759311883,
+    "v2_over_original_cpu": 1.7686116700201207,
+    "v2_over_original_end_p50": 1.501245786311007
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-snappy-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "rows1",
+      "Page": 128,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 2.3234774594885184,
+    "v2_over_original_cpu": 1.8832997987927564,
+    "v2_over_original_end_p50": 1.538863647466901
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-snappy-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "rows128",
+      "Page": 128,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.1357266504017482,
+    "v2_over_original_cpu": 1.2788609903212231,
+    "v2_over_original_end_p50": 1.4725945779256626
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-snappy-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "rows128",
+      "Page": 128,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.13573990504374472,
+    "v2_over_original_cpu": 1.2618880628419133,
+    "v2_over_original_end_p50": 1.4120235888025523
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-snappy-tls",
+    "shape": {
+      "Cell": 262144,
+      "Concurrency": 1,
+      "Name": "cell256K",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.11562549095219732,
+    "v2_over_original_cpu": 0.6990762486300297,
+    "v2_over_original_end_p50": 1.0259742489270387
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-snappy-tls",
+    "shape": {
+      "Cell": 262144,
+      "Concurrency": 1,
+      "Name": "cell256K",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.11549159489838182,
+    "v2_over_original_cpu": 0.7267887897291373,
+    "v2_over_original_end_p50": 1.020761087267525
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-snappy-tls",
+    "shape": {
+      "Cell": 8388608,
+      "Concurrency": 1,
+      "Name": "cell8M",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.002267760581960469,
+    "v2_over_original_cpu": 0.7405169953383438,
+    "v2_over_original_end_p50": 0.9333904064489056
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-snappy-tls",
+    "shape": {
+      "Cell": 8388608,
+      "Concurrency": 1,
+      "Name": "cell8M",
+      "Page": 1,
+      "Rows": 1,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.0022552297386657497,
+    "v2_over_original_cpu": 0.7456815123880455,
+    "v2_over_original_end_p50": 0.9547332168503125
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-snappy-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 4,
+      "Name": "concurrent",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.29431636647799914,
+    "v2_over_original_cpu": 0.8591843848030672,
+    "v2_over_original_end_p50": 0.9471868988352079
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-snappy-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 4,
+      "Name": "concurrent",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": false
+    },
+    "v2_over_original_allocated_bytes": 0.3244400524229584,
+    "v2_over_original_cpu": 1.0379513255284687,
+    "v2_over_original_end_p50": 0.9896833928259835
+  },
+  {
+    "api": "row",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-snappy-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "slow",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": true
+    },
+    "v2_over_original_allocated_bytes": 0.2198572103699703,
+    "v2_over_original_cpu": 1.0243362831858407,
+    "v2_over_original_end_p50": 1.0026535670043046
+  },
+  {
+    "api": "into",
+    "baseline": "legacy-scan",
+    "interpretation": "same completed output, query/result bytes/shapes/concurrency; differences include required v2 typed safety, request lifetime and independently retained-page lease semantics; no universal speedup claim",
+    "mode": "stable/v4-snappy-tls",
+    "shape": {
+      "Cell": 4096,
+      "Concurrency": 1,
+      "Name": "slow",
+      "Page": 32,
+      "Rows": 128,
+      "Slow": true
+    },
+    "v2_over_original_allocated_bytes": 0.21970024304617877,
+    "v2_over_original_cpu": 0.9903638151425762,
+    "v2_over_original_end_p50": 1.003789211729988
+  }
+]

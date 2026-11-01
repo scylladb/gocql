@@ -83,7 +83,9 @@ func AppendLZ4(dst []byte, source wire.Chain) ([]byte, error) {
 	if literalLen >= 15 {
 		dst = appendLZ4Length(dst, literalLen-15)
 	}
-	return input.appendRange(dst, anchor, n), nil
+	out := input.appendRange(dst, anchor, n)
+	perfOutput(out, n)
+	return out, nil
 }
 
 // AppendSnappy appends a standard Snappy block, including the varint
@@ -116,7 +118,9 @@ func AppendSnappy(dst []byte, source wire.Chain) ([]byte, error) {
 		dst = appendSnappyCopy(dst, position-reference, length)
 		anchor = position + length
 	}
-	return appendSnappyLiteral(dst, &input, anchor, n), nil
+	out := appendSnappyLiteral(dst, &input, anchor, n)
+	perfOutput(out, n)
+	return out, nil
 }
 
 func checkSize(dstLen int, sourceLen int64, divisor uint64) (int, error) {
@@ -314,7 +318,10 @@ func matchHash(word uint32) uint32 { return (word * 0x9e3779b1) >> (32 - 14) }
 
 func (f *matchFinder) next(begin int) (position, reference, length int, ok bool) {
 	scan, candidate := sourceCursor{input: f.input}, sourceCursor{input: f.input}
-	for position = begin; position <= f.lastStart; position++ {
+	skip, step := 32, 1
+	for position = begin; position <= f.lastStart; position += min(step, f.lastStart-position+1) {
+		step = skip >> 5
+		skip++
 		word := scan.word(position)
 		hash := matchHash(word)
 		entry := f.table[hash]

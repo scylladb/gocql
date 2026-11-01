@@ -159,23 +159,30 @@ func BenchmarkCursorCrossSpanScalar(b *testing.B) {
 func FuzzCursorTake(f *testing.F) {
 	f.Add([]byte("segmented payload"), uint8(3), uint64(5))
 	f.Add([]byte{}, uint8(0), uint64(0))
+	f.Add(bytes.Repeat([]byte("x"), 1024), uint8(0), uint64(513))
 	f.Fuzz(func(t *testing.T, data []byte, width uint8, requested uint64) {
 		c := segmented(t, data, int(width)+1)
-		cur := NewCursor(c)
-		n := int64(requested)
-		view, err := cur.Take(n)
-		if n < 0 || n > int64(len(data)) {
-			if err == nil || cur.Remaining() != int64(len(data)) {
-				t.Fatal("invalid take advanced cursor or succeeded")
+		for _, nested := range []bool{false, true} {
+			cur := NewCursor(c)
+			take := cur.Take
+			if nested {
+				take = cur.TakeNested
 			}
-			return
-		}
-		if err != nil || !bytes.Equal(payload(t, view), data[:int(n)]) {
-			t.Fatalf("valid take failed: %v", err)
-		}
-		rest, err := cur.Take(cur.Remaining())
-		if err != nil || !bytes.Equal(payload(t, rest), data[int(n):]) {
-			t.Fatalf("remainder failed: %v", err)
+			n := int64(requested)
+			view, err := take(n)
+			if n < 0 || n > int64(len(data)) {
+				if err == nil || cur.Remaining() != int64(len(data)) {
+					t.Fatal("invalid take advanced cursor or succeeded")
+				}
+				continue
+			}
+			if err != nil || !bytes.Equal(payload(t, view), data[:int(n)]) {
+				t.Fatalf("valid take failed: %v", err)
+			}
+			rest, err := take(cur.Remaining())
+			if err != nil || !bytes.Equal(payload(t, rest), data[int(n):]) {
+				t.Fatalf("remainder failed: %v", err)
+			}
 		}
 	})
 }

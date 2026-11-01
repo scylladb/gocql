@@ -97,20 +97,33 @@ func (s LZ4Compressor) Encode(data []byte) ([]byte, error) {
 	return buf[:n+dataLengthSize], nil
 }
 
-func (s LZ4Compressor) Decode(data []byte) ([]byte, error) {
+func (s LZ4Compressor) Decode(data []byte) ([]byte, error) { return s.DecodeTo(nil, data) }
+
+// DecodeTo decodes the ordinary length-prefixed frame directly into final
+// owned output capacity, reusing the same checked block decoder as v5.
+func (s LZ4Compressor) DecodedLen(data []byte) (int, error) {
 	if len(data) < dataLengthSize {
-		return nil, fmt.Errorf("cassandra lz4 block size should be >4, got=%d", len(data))
+		return 0, fmt.Errorf("cassandra lz4 block size should be >4, got=%d", len(data))
 	}
 	uncompressedLength := binary.BigEndian.Uint32(data[:dataLengthSize])
 	if uncompressedLength == 0 {
-		return nil, nil
+		return 0, nil
 	}
 	if uncompressedLength > maxDecompressedSize {
-		return nil, fmt.Errorf("cassandra lz4 uncompressed length %d exceeds maximum of %d", uncompressedLength, maxDecompressedSize)
+		return 0, fmt.Errorf("cassandra lz4 uncompressed length %d exceeds maximum of %d", uncompressedLength, maxDecompressedSize)
 	}
-	buf := make([]byte, uncompressedLength)
-	n, err := lz4.UncompressBlock(data[dataLengthSize:], buf)
-	return buf[:n], err
+	return int(uncompressedLength), nil
+}
+
+func (s LZ4Compressor) DecodeTo(dst, data []byte) ([]byte, error) {
+	n, e := s.DecodedLen(data)
+	if e != nil {
+		return nil, e
+	}
+	if n == 0 {
+		return dst[:0], nil
+	}
+	return s.AppendDecompressed(dst[:0], data[dataLengthSize:], uint32(n))
 }
 
 func (s LZ4Compressor) AppendCompressed(dst, src []byte) ([]byte, error) {

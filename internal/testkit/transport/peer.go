@@ -6,6 +6,7 @@ package transport
 
 import (
 	"context"
+	"github.com/scylladb/gocql/v2/internal/wire"
 	"net"
 	"testing"
 
@@ -27,6 +28,11 @@ func NewPair(t testing.TB, proto byte, compressor protocol.Compressor) (*runtime
 	if proto == 5 && compressor != nil {
 		c.InternalSegCompressor = compressor.(segment.Compressor)
 	}
+	if c.InternalCfg == nil {
+		c.InternalCfg = new(runtime.ConnConfig)
+	}
+	c.InternalCfg.InternalReceiveCache = new(wire.ReceiveCache)
+	t.Cleanup(c.InternalCfg.InternalReceiveCache.Close)
 	c.InternalInitFramerCache()
 	t.Cleanup(func() { c.Close(); server.Close() })
 	return c, server

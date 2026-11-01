@@ -178,6 +178,9 @@ func (c *Conn) InternalReserveExclusiveWithLimits(ctx context.Context, limits St
 		c.InternalMu.Unlock()
 		return nil, ErrNoStreams
 	}
+	if c.InternalCfg != nil {
+		c.InternalCfg.InternalReceiveCache.Clear()
+	}
 	c.InternalExclusiveFlag.Store(true)
 	c.changeLocked()
 	c.InternalMu.Unlock()

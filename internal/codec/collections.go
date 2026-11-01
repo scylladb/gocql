@@ -237,6 +237,8 @@ func sequenceElement(typ cqltype.DataType, kind cqltype.Type) (cqltype.DataType,
 	return element, width, err
 }
 func (c sequenceEncoder[T]) CheckType(typ cqltype.DataType) error {
+	perfCheckType()
+
 	_, err := c.compileValueEncoder(typ)
 	return err
 }
@@ -318,6 +320,8 @@ func VectorDecoder[T any](element Decoder[T]) Decoder[Sequence[T]] {
 	return sequenceDecoder[T]{kind: cqltype.TypeCustom, element: element}
 }
 func (c sequenceDecoder[T]) CheckType(typ cqltype.DataType) error {
+	perfCheckType()
+
 	_, err := c.compileValueDecoder(typ)
 	return err
 }
@@ -363,6 +367,8 @@ func MapEncoder[K, V any](key Encoder[K], value Encoder[V]) Encoder[[]Entry[K, V
 	return mapEncoder[K, V]{key: key, value: value}
 }
 func (c mapEncoder[K, V]) CheckType(typ cqltype.DataType) error {
+	perfCheckType()
+
 	_, err := c.compileValueEncoder(typ)
 	return err
 }
@@ -421,6 +427,8 @@ func MapDecoder[K, V any](key Decoder[K], value Decoder[V]) Decoder[Mapping[K, V
 	return mapDecoder[K, V]{key: key, value: value}
 }
 func (c mapDecoder[K, V]) CheckType(typ cqltype.DataType) error {
+	perfCheckType()
+
 	_, err := c.compileValueDecoder(typ)
 	return err
 }

@@ -456,6 +456,7 @@ func (l *InternalLogicalExecution) InternalFinish(result Result, err error) {
 			rt.cancelled.Add(1)
 		}
 		if l.observer != nil {
+			perfAdd(0, 1)
 			event := RequestEvent{ID: l.id, Statement: l.request.InternalStatement, Parameters: l.request.InternalValues.Columns, Routing: l.request.InternalRouting, Result: cloneResult(result), Err: err}
 			if l.request.InternalPrepared != nil {
 				event.Parameters = l.request.InternalPrepared.InternalParameters
@@ -744,6 +745,7 @@ func (s *InternalSessionRuntime) executePage(ctx context.Context, request *Inter
 			if request.InternalLogical != nil {
 				event.RequestID = request.InternalLogical.id
 				if request.InternalLogical.observer != nil {
+					perfAdd(1, 1)
 					implCluster.InternalSessionObserveSafely(s.Session, func() { request.InternalLogical.observer.ObserveAttempt(event) })
 				}
 			}
@@ -774,10 +776,12 @@ func (s *InternalSessionRuntime) executePage(ctx context.Context, request *Inter
 		if !request.InternalOptions.InternalOptions.Idempotent || request.InternalRouting.Kind != OrdinaryStatement || request.InternalOptions.InternalProfile.Speculation == nil {
 			return
 		}
+		perfAdd(2, 1)
 		delay, ok := request.InternalOptions.InternalProfile.Speculation.Delay(startedCount, s.Session.Metrics())
 		if !ok || delay < 0 {
 			return
 		}
+		perfAdd(3, 1)
 		timer = time.NewTimer(delay)
 		speculate = timer.C
 	}
@@ -896,6 +900,7 @@ func (s *InternalSessionRuntime) executePage(ctx context.Context, request *Inter
 				request.InternalOwner.InternalRetain()
 				go func(wait time.Duration, next delayedAttempt) {
 					defer request.InternalOwner.InternalRelease()
+					perfAdd(5, 1)
 					timer := time.NewTimer(wait)
 					defer timer.Stop()
 					select {

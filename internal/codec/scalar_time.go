@@ -67,13 +67,39 @@ func encodeDuration(w *ValueWriter, v cqltype.Duration) error {
 	if !durationSignsValid(v) {
 		return errors.New("gocql: duration components must have compatible signs")
 	}
-	if err := writeSignedVInt(w, int64(v.Months)); err != nil {
-		return err
+	values := [3]uint64{(uint64(int64(v.Months)) << 1) ^ uint64(int64(v.Months)>>63), (uint64(int64(v.Days)) << 1) ^ uint64(int64(v.Days)>>63), (uint64(v.Nanoseconds) << 1) ^ uint64(v.Nanoseconds>>63)}
+	size := 0
+	for _, v := range values {
+		if v < 128 {
+			size++
+		} else {
+			size += 1 + min(8, (bits.Len64(v)-1)/7)
+		}
 	}
-	if err := writeSignedVInt(w, int64(v.Days)); err != nil {
-		return err
+	data, e := w.scalarBytes(size)
+	if e != nil {
+		return e
 	}
-	return writeSignedVInt(w, v.Nanoseconds)
+	at := 0
+	for _, v := range values {
+		if v < 128 {
+			data[at] = byte(v)
+			at++
+			continue
+		}
+		extra := min(8, (bits.Len64(v)-1)/7)
+		if extra == 8 {
+			data[at] = 0xff
+		} else {
+			data[at] = byte(0xff<<uint(8-extra)) | byte(v>>uint(extra*8))
+		}
+		at++
+		for i := extra - 1; i >= 0; i-- {
+			data[at] = byte(v >> uint(i*8))
+			at++
+		}
+	}
+	return nil
 }
 func writeSignedVInt(w *ValueWriter, v int64) error {
 	return scalarWriteUnsignedVInt(w, (uint64(v)<<1)^uint64(v>>63))

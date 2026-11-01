@@ -21,6 +21,7 @@ package wire
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"math"
 	"testing"
 )
@@ -236,5 +237,27 @@ func BenchmarkBuilderScalarAndBorrow(b *testing.B) {
 		_ = builder.Borrow(Borrow(data))
 		_ = builder.PatchUint32(mark, uint32(len(data)))
 		allocationChain, _ = builder.Freeze()
+	}
+}
+
+// Reports arena/slab/descriptor work separately from per-scalar serialization.
+func BenchmarkStep15ScalarArena(b *testing.B) {
+	for _, count := range []int{1, 1024} {
+		b.Run(fmt.Sprint(count), func(b *testing.B) {
+			b.ReportAllocs()
+			b.SetBytes(int64(8 * count))
+			for i := 0; i < b.N; i++ {
+				builder := NewBuilder(8 * count)
+				for j := 0; j < count; j++ {
+					if e := builder.Uint64(uint64(j)); e != nil {
+						b.Fatal(e)
+					}
+				}
+				if _, e := builder.Freeze(); e != nil {
+					b.Fatal(e)
+				}
+			}
+			b.ReportMetric(float64(count), "scalar-writes/op")
+		})
 	}
 }

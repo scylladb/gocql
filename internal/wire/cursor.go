@@ -92,6 +92,7 @@ func (c *Cursor) Uint64() (uint64, error) { return c.scalar(8) }
 func (c *Cursor) advance(n int64) {
 	c.remaining -= n
 	for n > 0 {
+		perfAdd(2, 1)
 		available := c.chain.span(c.index).Len() - c.offset
 		if n < int64(available) {
 			c.offset += int(n)
@@ -115,6 +116,7 @@ func (c *Cursor) check(n int64) error {
 
 // Take advances over n bytes and returns a descriptor-only view of them.
 func (c *Cursor) Take(n int64) (Chain, error) {
+	perfAdd(3, 1)
 	if err := c.check(n); err != nil {
 		return Chain{}, err
 	}
@@ -154,4 +156,70 @@ func (c *Cursor) RequireEnd() error {
 		return ErrTrailingBytes
 	}
 	return nil
+}
+
+// TakeNested returns the same shared immutable range as Take. Small scalars and
+// local ranges stay sequential; a bulk nested skip visits at most eight spans
+// before using the existing shared index. Ordinary row traversal uses Take.
+func (c *Cursor) TakeNested(n int64) (Chain, error) {
+	if n <= 32 {
+		return c.Take(n)
+	}
+	perfAdd(3, 1)
+	if err := c.check(n); err != nil {
+		return Chain{}, err
+	}
+	if n == 0 {
+		return Chain{}, nil
+	}
+	// Capture the first descriptor and advance once in wire order. Constructing
+	// a sequential range must not perform the random-access index search per cell.
+	first, offset, base := c.index, c.offset, c.chain.base+c.chain.Len()-c.remaining
+	head := c.chain.span(first)
+	if n <= int64(head.Len()-offset) {
+		head, _ = head.Slice(offset, int(n))
+		c.advanceNested(n)
+		return Chain{head: head, len: n}, nil
+	}
+	head, _ = head.Slice(offset, head.Len()-offset)
+	c.advanceNested(n)
+	last, lastLen := c.index, c.offset
+	if lastLen == 0 {
+		last--
+		lastLen = c.chain.span(last).Len()
+	}
+	return Chain{head: head, tail: c.chain.tail[first:last], len: n,
+		lastLen: lastLen, base: base}, nil
+}
+
+func (c *Cursor) advanceNested(n int64) {
+	c.remaining -= n
+	for visits := 0; n > 0; visits++ {
+		if visits == 8 {
+			if c.remaining == 0 {
+				c.index = c.chain.count()
+				c.offset = 0
+				return
+			}
+			target := c.chain.Len() - c.remaining
+			c.index = c.chain.locate(target)
+			start := int64(0)
+			if c.index == 1 {
+				start = int64(c.chain.head.Len())
+			} else if c.index > 1 {
+				start = c.chain.tail[c.index-2].end - c.chain.base
+			}
+			c.offset = int(target - start)
+			return
+		}
+		perfAdd(2, 1)
+		available := c.chain.span(c.index).Len() - c.offset
+		if n < int64(available) {
+			c.offset += int(n)
+			return
+		}
+		n -= int64(available)
+		c.index++
+		c.offset = 0
+	}
 }

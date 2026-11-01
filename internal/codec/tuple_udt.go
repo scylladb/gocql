@@ -50,6 +50,8 @@ func recordColumns(typ cqltype.DataType, kind cqltype.Type) (cqltype.Columns, er
 	return cqltype.DescriptorOf(typ).Fields, nil
 }
 func (c recordEncoder[T]) CheckType(typ cqltype.DataType) error {
+	perfCheckType()
+
 	_, err := c.compileValueEncoder(typ)
 	return err
 }
@@ -125,6 +127,8 @@ func UDTDecoder[T any](codec RowDecoder[T], options UDTOptions) Decoder[T] {
 	return recordDecoder[T]{kind: cqltype.TypeUDT, codec: codec, options: options}
 }
 func (c recordDecoder[T]) CheckType(typ cqltype.DataType) error {
+	perfCheckType()
+
 	_, err := c.compileValueDecoder(typ)
 	return err
 }

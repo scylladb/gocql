@@ -1,0 +1,32 @@
+[
+  {
+    "error": "internal/codec/dynamic.go",
+    "name": "source-drift",
+    "rejected": true,
+    "writes": []
+  },
+  {
+    "error": "",
+    "name": "missing-required-check",
+    "rejected": true,
+    "writes": []
+  },
+  {
+    "error": "('baseline-source-drift', 'step15_performance_integration_test.go')",
+    "name": "matched-original-adapter-hash-drift",
+    "rejected": true,
+    "writes": []
+  },
+  {
+    "error": "",
+    "name": "missing-result-shape",
+    "rejected": true,
+    "writes": []
+  },
+  {
+    "error": "('negotiated configuration mismatch', 'stable', 'v4-no-compression')",
+    "name": "actual-negotiated-capacity-mismatch",
+    "rejected": true,
+    "writes": []
+  }
+]

@@ -40,7 +40,10 @@ func (s SnappyCompressor) Encode(data []byte) ([]byte, error) {
 	return s2.EncodeSnappy(nil, data), nil
 }
 
-func (s SnappyCompressor) Decode(data []byte) ([]byte, error) {
+func (s SnappyCompressor) Decode(data []byte) ([]byte, error) { return s.DecodeTo(nil, data) }
+
+// DecodeTo reuses caller output capacity after the same expansion check.
+func (s SnappyCompressor) DecodedLen(data []byte) (int, error) {
 	// s2.Decode allocates the decoded block from the length varint at the head of
 	// data -- a length the peer declared, which s2 itself only refuses above 4 GiB.
 	// The frame reader bounds the *compressed* body it accepts against
@@ -64,11 +67,18 @@ func (s SnappyCompressor) Decode(data []byte) ([]byte, error) {
 	// already returns ErrTooLarge rather than panicking in makeslice.
 	n, err := s2.DecodedLen(data)
 	if err != nil {
-		return nil, err
+		return 0, err
 	}
 	if n > frm.MaxFrameSize {
-		return nil, fmt.Errorf("gocql: snappy uncompressed length %d exceeds maximum of %d", n, frm.MaxFrameSize)
+		return 0, fmt.Errorf("gocql: snappy uncompressed length %d exceeds maximum of %d", n, frm.MaxFrameSize)
 	}
 
-	return s2.Decode(nil, data)
+	return n, nil
+}
+
+func (s SnappyCompressor) DecodeTo(dst, data []byte) ([]byte, error) {
+	if _, e := s.DecodedLen(data); e != nil {
+		return nil, e
+	}
+	return s2.Decode(dst[:0], data)
 }

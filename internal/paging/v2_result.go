@@ -35,13 +35,16 @@ func (h *InternalPagingHistory) InternalAdd(state PageState) error {
 		h.InternalSeed = maphash.MakeSeed()
 		h.InternalEntries = make(map[uint64]InternalPagingHistoryEntry)
 	}
+	perfAdd(0, len(model.PageToken(state)))
 	hash := maphash.Bytes(h.InternalSeed, model.PageToken(state))
 	entry, exists := h.InternalEntries[hash]
 	if exists {
+		perfAdd(1, 1)
 		if bytes.Equal(model.PageToken(entry.InternalState), model.PageToken(state)) {
 			return ErrPagingNoProgress
 		}
 		for p := entry.InternalNext; p != nil; p = p.InternalNext {
+			perfAdd(1, 1)
 			if bytes.Equal(model.PageToken(p.InternalState), model.PageToken(state)) {
 				return ErrPagingNoProgress
 			}
@@ -63,6 +66,7 @@ func (h *InternalPagingHistory) InternalAdd(state PageState) error {
 		candidate.InternalNext = &previous
 	}
 	h.InternalEntries[hash] = candidate
+	perfAdd(2, 1)
 	h.InternalCount++
 	h.InternalBytes += int64(len(model.PageToken(state)))
 	return nil

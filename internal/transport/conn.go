@@ -133,6 +133,7 @@ type SslOptions struct {
 }
 
 type ConnConfig struct {
+	InternalReceiveCache    *wire.ReceiveCache
 	TypedConfig             *Config
 	TypedAuth               AuthProvider
 	TypedLimits             ProtocolLimits

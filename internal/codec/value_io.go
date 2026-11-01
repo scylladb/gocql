@@ -124,6 +124,16 @@ func (w *ValueWriter) borrowView(b cqltype.Bytes) error {
 		return w.builder.Borrow(s)
 	}))
 }
+func (w *ValueWriter) scalarBytes(n int) ([]byte, error) {
+	if e := w.payload(); e != nil {
+		return nil, e
+	}
+	p, e := w.builder.ScalarBytes(n)
+	if e != nil {
+		return nil, w.fail(e)
+	}
+	return p, nil
+}
 func (w *ValueWriter) Uint8(v uint8) error {
 	if err := w.payload(); err != nil {
 		return err
@@ -313,7 +323,7 @@ func (c *ValueCursor) Take(n int64) (cqltype.Bytes, error) {
 	if err := c.check(); err != nil {
 		return cqltype.Bytes{}, err
 	}
-	body, err := c.cursor.Take(n)
+	body, err := c.cursor.TakeNested(n)
 	if err != nil {
 		return cqltype.Bytes{}, c.failure(err)
 	}
@@ -323,7 +333,7 @@ func (c *ValueCursor) Child(typ cqltype.DataType) (ValueReader, error) {
 	if err := c.check(); err != nil {
 		return ValueReader{}, err
 	}
-	r, err := ReadValue(&c.cursor, typ, c.lease, false)
+	r, err := readFramedValue(&c.cursor, typ, c.lease, false, true)
 	if err != nil {
 		return ValueReader{}, c.failure(err)
 	}
@@ -339,6 +349,9 @@ func (c *ValueCursor) RequireEnd() error {
 // readValue validates a full framed cell before advancing the caller's cursor.
 // Zero-length cells remain Present; EmptyCodec interprets scalar empty values.
 func ReadValue(cursor *wire.Cursor, typ cqltype.DataType, lease *wire.Lease, allowUnset bool) (ValueReader, error) {
+	return readFramedValue(cursor, typ, lease, allowUnset, false)
+}
+func readFramedValue(cursor *wire.Cursor, typ cqltype.DataType, lease *wire.Lease, allowUnset, nested bool) (ValueReader, error) {
 	if err := cqltype.ValidateDataType(typ); err != nil {
 		return ValueReader{}, err
 	}
@@ -367,7 +380,12 @@ func ReadValue(cursor *wire.Cursor, typ cqltype.DataType, lease *wire.Lease, all
 	if length < 0 {
 		return fail(fmt.Errorf("invalid cell length %d", length))
 	}
-	body, err := cursor.Take(int64(length))
+	var body wire.Chain
+	if nested {
+		body, err = cursor.TakeNested(int64(length))
+	} else {
+		body, err = cursor.Take(int64(length))
+	}
 	if err != nil {
 		return fail(err)
 	}

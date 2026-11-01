@@ -200,6 +200,7 @@ func Params[P any](fields ...InputField[P]) ParamEncoder[P] {
 // mapFields resolves names/positions once. Parameters may repeat one named input;
 // result columns require an explicit positional accessor for duplicate aliases.
 func mapFields(columns cqltype.Columns, locations []fieldLocation, repeatedNames bool) ([]int, error) {
+	perfNameMap()
 	ordered := make([]int, columns.Len())
 	for i := range ordered {
 		ordered[i] = -1
@@ -686,6 +687,7 @@ type compiledValueEncoder[T any] interface {
 }
 
 func compileValueDecoder[T any](decoder Decoder[T], typ cqltype.DataType) (Decoder[T], error) {
+	perfCompile()
 	if decoder == nil {
 		return nil, fmt.Errorf("gocql: nil value decoder")
 	}
@@ -702,6 +704,7 @@ func compileValueDecoder[T any](decoder Decoder[T], typ cqltype.DataType) (Decod
 	return decoder, nil
 }
 func compileValueEncoder[T any](encoder Encoder[T], typ cqltype.DataType) (Encoder[T], error) {
+	perfCompile()
 	if encoder == nil {
 		return nil, fmt.Errorf("gocql: nil value encoder")
 	}

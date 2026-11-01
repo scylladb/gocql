@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"net/netip"
+	"sync"
 
 	cqltype "github.com/scylladb/gocql/v2/internal/cqltype"
 	"github.com/scylladb/gocql/v2/internal/wire"
@@ -278,7 +279,10 @@ var DynamicCodec Codec[Value] = dynamicCodec{}
 
 type dynamicCodec struct{}
 
-func (dynamicCodec) CheckType(t cqltype.DataType) error { return checkDynamicType(t, 0) }
+func (dynamicCodec) CheckType(t cqltype.DataType) error {
+	perfCheckType()
+	return checkDynamicType(t, 0)
+}
 func checkDynamicType(t cqltype.DataType, depth int) error {
 	_, err := checkedTypeHeight(t, depth, make(map[*cqltype.DataTypeDescriptor]int), make(map[*cqltype.DataTypeDescriptor]bool))
 	return err
@@ -513,51 +517,57 @@ func encodeDynamicChecked(w *ValueWriter, v Value) error {
 	}
 	switch v.typ.Kind() {
 	case cqltype.TypeBoolean:
-		return Bool.Encode(w, v.bits != 0)
+		return encodeDynamicScalar(w, Bool, v.bits != 0)
 	case cqltype.TypeTinyInt:
-		return Int8.Encode(w, int8(v.bits))
+		return encodeDynamicScalar(w, Int8, int8(v.bits))
 	case cqltype.TypeSmallInt:
-		return Int16.Encode(w, int16(v.bits))
+		return encodeDynamicScalar(w, Int16, int16(v.bits))
 	case cqltype.TypeInt:
-		return Int32.Encode(w, int32(v.bits))
+		return encodeDynamicScalar(w, Int32, int32(v.bits))
 	case cqltype.TypeBigInt:
-		return Int64.Encode(w, int64(v.bits))
+		return encodeDynamicScalar(w, Int64, int64(v.bits))
 	case cqltype.TypeCounter:
-		return CounterCodec.Encode(w, Counter(v.bits))
+		return encodeDynamicScalar(w, CounterCodec, Counter(v.bits))
 	case cqltype.TypeFloat:
-		return Float32.Encode(w, math.Float32frombits(uint32(v.bits)))
+		return encodeDynamicScalar(w, Float32, math.Float32frombits(uint32(v.bits)))
 	case cqltype.TypeDouble:
-		return Float64.Encode(w, math.Float64frombits(v.bits))
+		return encodeDynamicScalar(w, Float64, math.Float64frombits(v.bits))
 	case cqltype.TypeText, cqltype.TypeVarchar:
-		return TextCodec.Encode(w, cqltype.TextView(v.bytes))
+		return encodeDynamicScalar(w, TextCodec, cqltype.TextView(v.bytes))
 	case cqltype.TypeAscii:
-		return ASCIICodec.Encode(w, cqltype.TextView(v.bytes))
+		return encodeDynamicScalar(w, ASCIICodec, cqltype.TextView(v.bytes))
 	case cqltype.TypeBlob:
-		return BlobCodec.Encode(w, v.bytes)
+		return encodeDynamicScalar(w, BlobCodec, v.bytes)
 	case cqltype.TypeUUID:
-		return UUIDCodec.Encode(w, v.uuid)
+		return encodeDynamicScalar(w, UUIDCodec, v.uuid)
 	case cqltype.TypeTimeUUID:
-		return TimeUUIDCodec.Encode(w, TimeUUID(v.uuid))
+		return encodeDynamicScalar(w, TimeUUIDCodec, TimeUUID(v.uuid))
 	case cqltype.TypeInet:
-		return InetCodec.Encode(w, v.inet)
+		return encodeDynamicScalar(w, InetCodec, v.inet)
 	case cqltype.TypeDate:
-		return DateCodec.Encode(w, Date(v.bits))
+		return encodeDynamicScalar(w, DateCodec, Date(v.bits))
 	case cqltype.TypeTime:
-		return TimeCodec.Encode(w, TimeOfDay(v.bits))
+		return encodeDynamicScalar(w, TimeCodec, TimeOfDay(v.bits))
 	case cqltype.TypeTimestamp:
-		return TimestampCodec.Encode(w, Timestamp(v.bits))
+		return encodeDynamicScalar(w, TimestampCodec, Timestamp(v.bits))
 	case cqltype.TypeDuration:
-		return DurationCodec.Encode(w, v.duration)
+		return encodeDynamicScalar(w, DurationCodec, v.duration)
 	case cqltype.TypeVarint:
-		return VarintCodec.Encode(w, cqltype.VarintView(v.bytes))
+		return encodeDynamicScalar(w, VarintCodec, cqltype.VarintView(v.bytes))
 	case cqltype.TypeDecimal:
-		return DecimalCodec.Encode(w, Decimal{Scale: v.scale, Unscaled: cqltype.VarintView(v.bytes)})
+		return encodeDynamicScalar(w, DecimalCodec, Decimal{Scale: v.scale, Unscaled: cqltype.VarintView(v.bytes)})
 	default:
 		return encodeDynamicAggregate(w, v)
 	}
 }
 func decodeDynamicScalar[T any](r ValueReader, c Decoder[T], makeValue func(T) Value) (Value, error) {
-	payload, err := c.Decode(r)
+	var payload T
+	var err error
+	if builtin, ok := c.(builtinCompiledDecoder[T]); ok {
+		payload, err = builtin.decodeCompiled(r)
+	} else {
+		payload, err = c.Decode(r)
+	}
 	if err != nil {
 		return Value{}, err
 	}
@@ -1046,8 +1056,9 @@ type dynamicRowsPlan struct {
 }
 
 // DynamicRow stores one encoded physical row. Its immutable name index is shared
-// with the compiled plan; each access uses an independent cursor.
+// with the compiled plan. Copied rows share one immutable lazy physical index.
 type DynamicRow struct {
+	physical     *dynamicRowIndex
 	shapes       []*streamValidationPlan
 	columns      cqltype.Columns
 	lookup       map[string]int
@@ -1056,36 +1067,75 @@ type DynamicRow struct {
 }
 
 func (r DynamicRow) Columns() cqltype.Columns { return r.columns }
-func (r DynamicRow) Clone() DynamicRow        { r.body = r.body.Clone(); return r }
+func (r DynamicRow) Clone() DynamicRow {
+	r.body = r.body.Clone()
+	r.physical = &dynamicRowIndex{}
+	return r
+}
+
+type dynamicRowCell struct {
+	offset, length int64
+	state          cqltype.CellState
+}
+type dynamicRowIndex struct {
+	once  sync.Once
+	cells []dynamicRowCell
+	err   error
+}
+
+func (r DynamicRow) buildPhysicalIndex() {
+	r.physical.once.Do(func() {
+		perfDynamicIndex(r.columns.Len())
+		cells := make([]dynamicRowCell, r.columns.Len())
+		chain := cqltype.BytesChain(r.body)
+		cursor := wire.NewCursor(chain)
+		for i, col := range cqltype.ColumnSlice(r.columns) {
+			if r.allowMissing && cursor.Remaining() == 0 {
+				cells[i].state = cqltype.Null
+				continue
+			}
+			value, e := ReadValue(cursor, col.Type, cqltype.BytesLease(r.body), false)
+			if e != nil {
+				r.physical.err = &cqltype.CodecError{Column: col.Name, Index: i, Stage: "decode", Err: e}
+				return
+			}
+			cells[i] = dynamicRowCell{offset: chain.Len() - cursor.Remaining() - value.body.Len(), length: value.body.Len(), state: value.state}
+		}
+		if e := cursor.RequireEnd(); e != nil {
+			r.physical.err = e
+			return
+		}
+		r.physical.cells = cells
+	})
+}
 func (r DynamicRow) At(index int) (Value, error) {
-	if _, ok := r.columns.At(index); !ok {
+	col, ok := r.columns.At(index)
+	if !ok {
 		return Value{}, cqltype.TypeValidation("column", "ordinal %d outside %d columns", index, r.columns.Len())
 	}
-	if err := cqltype.CheckBytesAlive(r.body); err != nil {
-		return Value{}, err
+	if e := cqltype.CheckBytesAlive(r.body); e != nil {
+		return Value{}, e
 	}
-	cursor := wire.NewCursor(cqltype.BytesChain(r.body))
-	for i, col := range cqltype.ColumnSlice(r.columns) {
-		if r.allowMissing && cursor.Remaining() == 0 {
-			if i == index {
-				return NullValue(col.Type), nil
-			}
-			continue
-		}
-		value, err := ReadValue(cursor, col.Type, cqltype.BytesLease(r.body), false)
-		if err == nil && i == index {
-			var decoded Value
-			decoded, err = decodeDynamicWithPlan(value, r.shapes[i])
-			if err == nil {
-				return decoded, nil
-			}
-		}
-		if err != nil {
-			return Value{}, &cqltype.CodecError{Column: col.Name, Index: i, Stage: "decode", Err: err}
-		}
+	if r.physical == nil {
+		return Value{}, cqltype.TypeValidation("row", "uninitialized dynamic row index")
 	}
-	return Value{}, cqltype.TypeValidation("column", "ordinal %d was not present", index)
+	r.buildPhysicalIndex()
+	if r.physical.err != nil {
+		return Value{}, r.physical.err
+	}
+	cell := r.physical.cells[index]
+	body, e := cqltype.BytesChain(r.body).Slice(cell.offset, cell.length)
+	if e != nil {
+		return Value{}, e
+	}
+	value := NewValueReader(col.Type, cell.state, body, cqltype.BytesLease(r.body))
+	decoded, e := decodeDynamicWithPlan(value, r.shapes[index])
+	if e != nil {
+		return Value{}, &cqltype.CodecError{Column: col.Name, Index: index, Stage: "decode", Err: e}
+	}
+	return decoded, nil
 }
+
 func (r DynamicRow) Get(name string) (Value, error) {
 	index, ok := r.lookup[name]
 	if !ok {
@@ -1097,6 +1147,8 @@ func (r DynamicRow) Get(name string) (Value, error) {
 	return r.At(index)
 }
 func (dynamicRowsCodec) Compile(columns cqltype.Columns) (RowPlan[DynamicRow], error) {
+	perfCompile()
+	perfNameMap()
 	if err := checkDynamicColumns(columns); err != nil {
 		return nil, err
 	}
@@ -1141,6 +1193,7 @@ func (p dynamicRowsPlan) DecodeInto(r *RowReader, dst *DynamicRow) error {
 		return err
 	}
 	dst.shapes = p.shapes
+	dst.physical = &dynamicRowIndex{}
 	dst.columns, dst.lookup, dst.body, dst.allowMissing = p.columns, p.lookup, cqltype.BytesView(body, r.lease), r.allowMissing
 	return nil
 }
@@ -1159,14 +1212,16 @@ type checkedDynamicDecoder struct {
 }
 
 func (c checkedDynamicDecoder) CheckType(t cqltype.DataType) error {
+	perfCheckType()
+
 	if !c.typ.Equal(t) {
 		return cqltype.TypeValidation("type", "compiled dynamic metadata changed")
 	}
 	return nil
 }
 func (c checkedDynamicDecoder) Decode(r ValueReader) (Value, error) {
-	if err := c.CheckType(r.Type()); err != nil {
-		return Value{}, err
+	if !c.typ.Equal(r.Type()) {
+		return Value{}, cqltype.TypeValidation("type", "compiled dynamic metadata changed")
 	}
 	return decodeDynamicWithPlan(r, c.shape)
 }
@@ -1195,6 +1250,8 @@ type checkedDynamicEncoder struct {
 }
 
 func (c checkedDynamicEncoder) CheckType(t cqltype.DataType) error {
+	perfCheckType()
+
 	if !c.typ.Equal(t) {
 		return cqltype.TypeValidation("type", "compiled dynamic metadata changed")
 	}
@@ -1204,8 +1261,8 @@ func (c checkedDynamicEncoder) Encode(w *ValueWriter, v Value) error {
 	if w == nil {
 		return cqltype.TypeValidation("writer", "nil writer")
 	}
-	if err := c.CheckType(w.Type()); err != nil {
-		return err
+	if !c.typ.Equal(w.Type()) {
+		return cqltype.TypeValidation("type", "compiled dynamic metadata changed")
 	}
 	v.shape = c.shape
 	return encodeDynamicChecked(w, v)
@@ -1257,4 +1314,17 @@ func compileDynamicColumnShapes(columns cqltype.Columns) ([]*streamValidationPla
 		plans[i] = p
 	}
 	return plans, nil
+}
+
+// Dynamic schema plans already select the scalar kind. Built-in codecs use
+// their compiled entry while preserving their constant kind/state/lease/content
+// guards; custom codecs keep their ordinary Decode/Encode behavior.
+type builtinCompiledDecoder[T any] interface{ decodeCompiled(ValueReader) (T, error) }
+type builtinCompiledEncoder[T any] interface{ encodeCompiled(*ValueWriter, T) error }
+
+func encodeDynamicScalar[T any](w *ValueWriter, c Encoder[T], value T) error {
+	if builtin, ok := c.(builtinCompiledEncoder[T]); ok {
+		return builtin.encodeCompiled(w, value)
+	}
+	return c.Encode(w, value)
 }
