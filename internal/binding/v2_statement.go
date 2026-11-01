@@ -13,7 +13,10 @@ func InternalEncodeParameters[P any](plan ParamPlan[P], columns Columns, value P
 	if columns.Len() > 65535 {
 		return encodedValues{}, typeValidation("parameters", "maximum count is 65535")
 	}
-	b := wire.NewBuilder(4096)
+	// Parameters usually contain a few scalar fields and borrowed payload spans.
+	// Avoid retaining a 4 KiB slab just to frame a small partition key. The builder
+	// allocates larger slabs when an individual encoded scalar needs them.
+	b := wire.NewBuilder(256)
 	writer := newParamWriter(b, columns, allowUnset)
 	codec.SetParamOwnership(writer, owned)
 	if err := plan.Encode(writer, value); err != nil {
