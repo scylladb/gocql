@@ -33,6 +33,46 @@ func check(t testing.TB, err error) {
 	}
 }
 
+func TestBuilderReservePartsPreservesMarksAndFrozenStorage(t *testing.T) {
+	var b Builder
+	b.SetSlabSize(8)
+	b.ReserveParts(4)
+	mark := b.Mark()
+	check(t, b.Uint32(0))
+	payload := []byte{0x11, 0x22}
+	check(t, b.Borrow(Borrow(payload)))
+	firstSlab := b.slab
+	b.ReserveParts(8)
+	check(t, b.PatchUint32(mark, uint32(len(payload))))
+	if &b.slab[0] != &firstSlab[0] {
+		t.Fatal("descriptor reservation relocated scalar bytes")
+	}
+	first, err := b.Freeze()
+	check(t, err)
+	if err := b.PatchUint32(mark, 0); !errors.Is(err, ErrInvalidMark) {
+		t.Fatalf("Freeze retained old mark: %v", err)
+	}
+	// Reuse all reserved descriptors and grow beyond them. The first Chain
+	// owns its index and still borrows the original payload.
+	for i := 0; i < 20; i++ {
+		check(t, b.Borrow(Borrow([]byte{byte(i)})))
+	}
+	_, err = b.Freeze()
+	check(t, err)
+	got := make([]byte, first.Len())
+	_, err = first.CopyTo(got)
+	check(t, err)
+	if !bytes.Equal(got, []byte{0, 0, 0, 2, 0x11, 0x22}) {
+		t.Fatalf("reserved descriptor reuse changed frozen bytes: %x", got)
+	}
+	payload[0] = 0x33
+	_, err = first.CopyTo(got)
+	check(t, err)
+	if got[4] != 0x33 {
+		t.Fatal("reservation copied borrowed payload")
+	}
+}
+
 func TestBuilderSlabSizePreservesPublishedStorageAndMarks(t *testing.T) {
 	var b Builder
 	b.SetSlabSize(8)

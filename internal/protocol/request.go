@@ -145,6 +145,17 @@ func (c Settings) BuildTypedRequest(req *model.AttemptRequest, stream int) (wire
 	// index with their body. Write the known header now and patch only its owned
 	// length field before Freeze; v3/v4 compressors still receive the body alone.
 	inlineHeader := proto >= 5 || c.Compression == ""
+	if inlineHeader && req.Batch == nil && len(req.PreparedID) > 0 && req.Values.Len() > 0 {
+		// Prepared requests need scalar framing, the borrowed ID, parameter
+		// framing and at least one borrowed value span. Extra value spans or
+		// paging fields cross the next descriptor growth threshold. Reserve only
+		// that bounded initial capacity; larger requests still grow normally.
+		parts := 4
+		if _, contiguous := req.Values.Contiguous(); !contiguous || req.PageSize > 0 || req.PagingState != nil {
+			parts = 8
+		}
+		e.b.ReserveParts(parts)
+	}
 	var bodyLength wire.Mark
 	if inlineHeader {
 		e.U8(proto)

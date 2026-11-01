@@ -70,6 +70,16 @@ func NewBuilder(slabSize int) *Builder {
 // already encoded bytes. Nonpositive sizes select the default.
 func (b *Builder) SetSlabSize(slabSize int) { b.slabSize = slabSize }
 
+// ReserveParts reserves storage for at least n span descriptors without changing
+// encoded bytes, borrowed storage, or existing marks.
+func (b *Builder) ReserveParts(n int) {
+	if n > cap(b.parts) {
+		parts := make([]builderPart, len(b.parts), n)
+		copy(parts, b.parts)
+		b.parts = parts
+	}
+}
+
 func (b *Builder) Len() int64 { return b.len }
 
 // Borrow appends a read-only span, retaining its backing storage without copy.
