@@ -130,13 +130,37 @@ func (c Settings) BuildTypedRequest(req *model.AttemptRequest, stream int) (wire
 		Flags |= frm.FlagTracing
 	}
 	if len(req.Payload) > 0 {
+		Flags |= frm.FlagCustomPayload
+	}
+	op := frm.OpQuery
+	switch {
+	case req.Prepare:
+		op = frm.OpPrepare
+	case req.Batch != nil:
+		op = frm.OpBatch
+	case len(req.PreparedID) > 0:
+		op = frm.OpExecute
+	}
+	// Uncompressed native frames can share one scalar slab and immutable span
+	// index with their body. Write the known header now and patch only its owned
+	// length field before Freeze; v3/v4 compressors still receive the body alone.
+	inlineHeader := proto >= 5 || c.Compression == ""
+	var bodyLength wire.Mark
+	if inlineHeader {
+		e.U8(proto)
+		e.U8(Flags)
+		e.U16(uint16(stream))
+		e.U8(byte(op))
+		bodyLength = e.b.Mark()
+		e.U32(0)
+	}
+	if len(req.Payload) > 0 {
 		if proto < 4 {
 			return wire.Chain{}, fmt.Errorf("gocql: custom payload requires Protocol v4")
 		}
 		if len(req.Payload) > math.MaxUint16 {
 			return wire.Chain{}, fmt.Errorf("gocql: too many payload entries")
 		}
-		Flags |= frm.FlagCustomPayload
 		e.U16(uint16(len(req.Payload)))
 		for _, entry := range req.Payload {
 			e.Str(entry.Key, false)
@@ -155,10 +179,8 @@ func (c Settings) BuildTypedRequest(req *model.AttemptRequest, stream int) (wire
 			e.Chain(cqltype.BytesChain(value))
 		}
 	}
-	op := frm.OpQuery
 	switch {
 	case req.Prepare:
-		op = frm.OpPrepare
 		e.Str(req.Statement, true)
 		if proto >= 5 {
 			var f uint32
@@ -171,7 +193,6 @@ func (c Settings) BuildTypedRequest(req *model.AttemptRequest, stream int) (wire
 			e.Str(req.Keyspace, false)
 		}
 	case req.Batch != nil:
-		op = frm.OpBatch
 		if len(req.Batch.Items) > math.MaxUint16 {
 			return wire.Chain{}, fmt.Errorf("gocql: too many batch entries")
 		}
@@ -194,7 +215,6 @@ func (c Settings) BuildTypedRequest(req *model.AttemptRequest, stream int) (wire
 		c.WriteTypedParams(e, req, true)
 	default:
 		if len(req.PreparedID) > 0 {
-			op = frm.OpExecute
 			e.Bytes(req.PreparedID, true)
 			if proto >= 5 || c.MetadataID {
 				e.Bytes(req.ResultMetadataID, true)
@@ -207,14 +227,26 @@ func (c Settings) BuildTypedRequest(req *model.AttemptRequest, stream int) (wire
 			e.U8(req.TabletVersionBlock)
 		}
 	}
-	body, err := e.Freeze()
-	if err != nil {
-		return wire.Chain{}, err
-	}
-	if body.Len() > c.MaxFrameBytes {
-		return wire.Chain{}, ErrFrameTooBig
-	}
-	if proto < 5 && c.Compression != "" {
+	var frame wire.Chain
+	var err error
+	if inlineHeader {
+		if e.err != nil {
+			return wire.Chain{}, e.err
+		}
+		size := e.b.Len() - HeadSize
+		if size > c.MaxFrameBytes {
+			return wire.Chain{}, ErrFrameTooBig
+		}
+		e.check(e.b.PatchUint32(bodyLength, uint32(size)))
+		frame, err = e.Freeze()
+	} else {
+		body, freezeErr := e.Freeze()
+		if freezeErr != nil {
+			return wire.Chain{}, freezeErr
+		}
+		if body.Len() > c.MaxFrameBytes {
+			return wire.Chain{}, ErrFrameTooBig
+		}
 		var out []byte
 		switch c.Compression {
 		case "lz4":
@@ -231,18 +263,18 @@ func (c Settings) BuildTypedRequest(req *model.AttemptRequest, stream int) (wire
 		}
 		body, _ = wire.NewChain(wire.Borrow(out))
 		Flags |= frm.FlagCompress
+		if body.Len() > c.MaxFrameBytes {
+			return wire.Chain{}, ErrFrameTooBig
+		}
+		header := NewTypedEnvelope()
+		header.U8(proto)
+		header.U8(Flags)
+		header.U16(uint16(stream))
+		header.U8(byte(op))
+		header.U32(uint32(body.Len()))
+		header.Chain(body)
+		frame, err = header.Freeze()
 	}
-	if body.Len() > c.MaxFrameBytes {
-		return wire.Chain{}, ErrFrameTooBig
-	}
-	header := NewTypedEnvelope()
-	header.U8(proto)
-	header.U8(Flags)
-	header.U16(uint16(stream))
-	header.U8(byte(op))
-	header.U32(uint32(body.Len()))
-	header.Chain(body)
-	frame, err := header.Freeze()
 	if err != nil || proto < 5 {
 		return frame, err
 	}
