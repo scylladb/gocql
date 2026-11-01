@@ -287,8 +287,8 @@ type InternalLazyRoutingPlan struct {
 	index                      *InternalRoutingHostIndex
 	replicas                   []Target
 	leader                     Option[Target]
-	permutation                []int
-	smallPermutation           [16]int
+	permutation                []int // used only when replicas exceed the inline capacity
+	smallPermutation           [16]uint8
 	emitted                    []Target
 	smallEmitted               [8]Target
 	groups                     [3][]int
@@ -318,20 +318,25 @@ func (p *InternalRoutingPolicy) Plan(info RoutingInfo, m *MetadataSnapshot) Quer
 		plan.replicas, _ = m.placementReplicas(info.Keyspace, info.Table, info.Token.Value)
 	}
 	conditional := info.Conditional || info.Consistency == Serial || info.Consistency == LocalSerial
-	plan.permutation = plan.smallPermutation[:0]
 	if len(plan.replicas) > len(plan.smallPermutation) {
-		plan.permutation = make([]int, 0, len(plan.replicas))
+		plan.permutation = make([]int, len(plan.replicas))
+		for i := range plan.permutation {
+			plan.permutation[i] = i
+		}
+	} else {
+		// These are replica-relative positions, not global host indices. The
+		// inline path has at most sixteen entries; larger sets keep full ints.
+		for i := range plan.replicas {
+			plan.smallPermutation[i] = uint8(i)
+		}
 	}
-	for i := range plan.replicas {
-		plan.permutation = append(plan.permutation, i)
-	}
-	if !conditional && len(plan.permutation) > 1 {
+	if !conditional && len(plan.replicas) > 1 {
 		seed := p.seed
 		if o.ShuffleReplicas {
 			seed = rand.Uint64()
 		}
 		rng := rand.NewPCG(seed, seed^0x9e3779b97f4a7c15)
-		for i := len(plan.permutation) - 1; i > 0; i-- {
+		for i := len(plan.replicas) - 1; i > 0; i-- {
 			bound := uint64(i + 1)
 			threshold := -bound % bound
 			n := rng.Uint64()
@@ -339,7 +344,11 @@ func (p *InternalRoutingPolicy) Plan(info RoutingInfo, m *MetadataSnapshot) Quer
 				n = rng.Uint64()
 			}
 			j := int(n % bound)
-			plan.permutation[i], plan.permutation[j] = plan.permutation[j], plan.permutation[i]
+			if plan.permutation != nil {
+				plan.permutation[i], plan.permutation[j] = plan.permutation[j], plan.permutation[i]
+			} else {
+				plan.smallPermutation[i], plan.smallPermutation[j] = plan.smallPermutation[j], plan.smallPermutation[i]
+			}
 		}
 	}
 	if o.LeaderAware && o.TokenAware && info.Token.Set && info.Consistency != One && info.Consistency != LocalOne {
@@ -463,8 +472,14 @@ func (p *InternalLazyRoutingPlan) Next() (Target, bool) {
 		// Connected replicas: rack, DC, then permitted remote replicas. Remote
 		// replicas precede local nonreplicas.
 		for p.stage >= 1 && p.stage <= 3 {
-			for p.cursor < len(p.permutation) {
-				t := p.replicas[p.permutation[p.cursor]]
+			for p.cursor < len(p.replicas) {
+				var i int
+				if p.permutation != nil {
+					i = p.permutation[p.cursor]
+				} else {
+					i = int(p.smallPermutation[p.cursor])
+				}
+				t := p.replicas[i]
 				p.cursor++
 				h, ok := p.host(t)
 				if !ok || !p.eligible(h) || !h.Connected || !h.Up {
