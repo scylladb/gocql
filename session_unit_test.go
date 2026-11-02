@@ -4424,15 +4424,28 @@ func TestSetKeyspaceInvalidatesRoutingInfo(t *testing.T) {
 	})
 }
 
-// TestCreateRoutingKeyNamedValues pins that a NamedValue bound to a partition
-// key column yields the same routing key as the equivalent positional value.
-// Before the fix the *namedValue wrapper reached Marshal and failed, so the
-// token-aware policy silently fell back to non-token-aware routing.
+// TestCreateRoutingKeyNamedValues pins that NamedValues bound to partition key
+// columns yield the same routing key as the equivalent positional values, in
+// whatever order they are passed. Before the fix the *namedValue wrapper
+// reached Marshal and failed, so the token-aware policy silently fell back to
+// non-token-aware routing.
 func TestCreateRoutingKeyNamedValues(t *testing.T) {
 	t.Parallel()
 
 	intType := NewNativeType(protoVersion4, TypeInt)
 	textType := NewNativeType(protoVersion4, TypeVarchar)
+
+	single := &routingKeyInfo{
+		indexes: []int{0},
+		types:   []TypeInfo{intType},
+		columns: []ColumnInfo{{Name: "id", TypeInfo: intType}},
+	}
+	// Bind markers are (b int, a text); the partition key is (a, b).
+	composite := &routingKeyInfo{
+		indexes: []int{1, 0},
+		types:   []TypeInfo{textType, intType},
+		columns: []ColumnInfo{{Name: "b", TypeInfo: intType}, {Name: "a", TypeInfo: textType}},
+	}
 
 	tests := []struct {
 		name       string
@@ -4442,15 +4455,21 @@ func TestCreateRoutingKeyNamedValues(t *testing.T) {
 	}{
 		{
 			name:       "single column",
-			info:       &routingKeyInfo{indexes: []int{0}, types: []TypeInfo{intType}},
+			info:       single,
 			positional: []any{1},
 			named:      []any{NamedValue("id", 1)},
 		},
 		{
 			name:       "composite",
-			info:       &routingKeyInfo{indexes: []int{1, 0}, types: []TypeInfo{textType, intType}},
+			info:       composite,
 			positional: []any{1, "a"},
 			named:      []any{NamedValue("b", 1), NamedValue("a", "a")},
+		},
+		{
+			name:       "composite out of marker order",
+			info:       composite,
+			positional: []any{1, "a"},
+			named:      []any{NamedValue("a", "a"), NamedValue("b", 1)},
 		},
 	}
 
@@ -4467,6 +4486,95 @@ func TestCreateRoutingKeyNamedValues(t *testing.T) {
 			require.Equal(t, want, got)
 		})
 	}
+}
+
+// TestOrderNamedValues pins how NamedValues are matched to bind markers:
+// by explicit marker name, independent of argument order, and never mixed
+// with positional values.
+func TestOrderNamedValues(t *testing.T) {
+	t.Parallel()
+
+	cols := func(names ...string) []ColumnInfo {
+		c := make([]ColumnInfo, len(names))
+		for i, n := range names {
+			c[i] = ColumnInfo{Name: n}
+		}
+		return c
+	}
+	names := func(values []any) []string {
+		out := make([]string, len(values))
+		for i, v := range values {
+			out[i] = v.(*namedValue).name + "=" + fmt.Sprint(v.(*namedValue).value)
+		}
+		return out
+	}
+
+	t.Run("positional values are returned unchanged", func(t *testing.T) {
+		t.Parallel()
+		values := []any{1, "a"}
+		got, err := orderNamedValues(cols("in(id)", "v"), values)
+		require.NoError(t, err)
+		require.Equal(t, values, got)
+	})
+
+	t.Run("named values in marker order", func(t *testing.T) {
+		t.Parallel()
+		got, err := orderNamedValues(cols("ids", "v"), []any{NamedValue("ids", 1), NamedValue("v", 2)})
+		require.NoError(t, err)
+		require.Equal(t, []string{"ids=1", "v=2"}, names(got))
+	})
+
+	t.Run("named values out of marker order", func(t *testing.T) {
+		t.Parallel()
+		got, err := orderNamedValues(cols("ids", "v"), []any{NamedValue("v", 2), NamedValue("ids", 1)})
+		require.NoError(t, err)
+		require.Equal(t, []string{"ids=1", "v=2"}, names(got))
+	})
+
+	t.Run("repeated marker takes one value", func(t *testing.T) {
+		t.Parallel()
+		// ScyllaDB reports a repeated :x once, Cassandra once per occurrence.
+		got, err := orderNamedValues(cols("x", "y"), []any{NamedValue("y", 2), NamedValue("x", 1)})
+		require.NoError(t, err)
+		require.Equal(t, []string{"x=1", "y=2"}, names(got))
+
+		got, err = orderNamedValues(cols("x", "y", "x"), []any{NamedValue("y", 2), NamedValue("x", 1)})
+		require.NoError(t, err)
+		require.Equal(t, []string{"x=1", "y=2", "x=1"}, names(got))
+	})
+
+	t.Run("name passed more than once", func(t *testing.T) {
+		t.Parallel()
+		// Whether the server reports a repeated :x marker once (ScyllaDB) or
+		// once per occurrence, a second value for it is rejected.
+		for _, columns := range [][]ColumnInfo{cols("x", "y"), cols("x", "y", "x")} {
+			_, err := orderNamedValues(columns, []any{NamedValue("x", 1), NamedValue("y", 2), NamedValue("x", 3)})
+			require.ErrorContains(t, err, `named value "x" passed more than once`)
+		}
+	})
+
+	t.Run("mixed named and positional values", func(t *testing.T) {
+		t.Parallel()
+		for _, values := range [][]any{
+			{NamedValue("a", 1), 2},
+			{1, NamedValue("b", 2)},
+		} {
+			_, err := orderNamedValues(cols("a", "b"), values)
+			require.ErrorContains(t, err, "cannot mix named and positional")
+		}
+	})
+
+	t.Run("unknown name", func(t *testing.T) {
+		t.Parallel()
+		_, err := orderNamedValues(cols("a", "b"), []any{NamedValue("a", 1), NamedValue("c", 2)})
+		require.ErrorContains(t, err, `no bind marker named "c"`)
+	})
+
+	t.Run("marker without a value", func(t *testing.T) {
+		t.Parallel()
+		_, err := orderNamedValues(cols("a", "b"), []any{NamedValue("a", 1)})
+		require.ErrorContains(t, err, `no named value for bind marker "b"`)
+	})
 }
 
 // TestResolveRoutingKeyspaceTable pins the precedence used to pick the keyspace
