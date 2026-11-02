@@ -1768,6 +1768,8 @@ type batchStatment struct {
 	values     []queryValues
 }
 
+var errNamedValuesInBatch = errors.New("gocql: named query values are not supported in batches, please see https://issues.apache.org/jira/browse/CASSANDRA-10246")
+
 type writeBatchFrame struct {
 	customPayload         map[string][]byte
 	nowInSeconds          *int
@@ -1797,7 +1799,7 @@ func (f *framer) writeBatchFrame(streamID int, w *writeBatchFrame, customPayload
 	for i := range w.statements {
 		for j := range w.statements[i].values {
 			if w.statements[i].values[j].name != "" {
-				return fmt.Errorf("gocql: named query values are not supported in batches, please see https://issues.apache.org/jira/browse/CASSANDRA-10246")
+				return errNamedValuesInBatch
 			}
 		}
 		if err := validateShortBytes("prepared id", w.statements[i].preparedID); err != nil {

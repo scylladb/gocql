@@ -360,6 +360,25 @@ func TestNamedBindingRepeatedMarker(t *testing.T) {
 	}
 }
 
+// TestBatchRejectsNamedValues pins that named values in a batch are rejected
+// with the batch error, before they are marshaled by position: here the
+// first value would otherwise be marshaled as the list<int> marker.
+func TestBatchRejectsNamedValues(t *testing.T) {
+	t.Parallel()
+
+	srv, server := newBindMarkerTestServer(t, "127.0.0.1:0", 100)
+	server.define(inStmt,
+		bindMarker{name: "ids", typ: testListType(TypeInt)},
+		bindMarker{name: "c", typ: NewNativeType(protoVersion4, TypeVarchar)},
+	)
+	session := newBindMarkerSession(t, srv)
+
+	batch := session.Batch(UnloggedBatch)
+	batch.Query(inStmt, NamedValue("c", "x"), NamedValue("ids", []int{1}))
+	require.ErrorIs(t, batch.Exec(), errNamedValuesInBatch)
+	require.Empty(t, server.recorded(), "no BATCH may be sent")
+}
+
 // TestReprepareRefreshesBindMetadata pins that when a node answers UNPREPARED
 // (its cache was evicted, or it was upgraded and the statement's metadata
 // changed), the driver prepares the statement again and binds the values
