@@ -66,6 +66,14 @@ func NamedValue(name string, value any) any {
 	}
 }
 
+// unwrapNamedValue returns the value carried by a NamedValue, or v itself.
+func unwrapNamedValue(v any) any {
+	if named, ok := v.(*namedValue); ok {
+		return named.value
+	}
+	return v
+}
+
 const (
 	protoDirectionMask = 0x80
 	protoVersionMask   = 0x7F
