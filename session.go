@@ -3692,7 +3692,7 @@ func createRoutingKey(routingKeyInfo *routingKeyInfo, values []any) ([]byte, err
 		// single column routing key
 		routingKey, err := Marshal(
 			routingKeyInfo.types[0],
-			values[routingKeyInfo.indexes[0]],
+			unwrapNamedValue(values[routingKeyInfo.indexes[0]]),
 		)
 		if err != nil {
 			return nil, err
@@ -3709,7 +3709,7 @@ func createRoutingKey(routingKeyInfo *routingKeyInfo, values []any) ([]byte, err
 	for i := range routingKeyInfo.indexes {
 		encoded, err := Marshal(
 			routingKeyInfo.types[i],
-			values[routingKeyInfo.indexes[i]],
+			unwrapNamedValue(values[routingKeyInfo.indexes[i]]),
 		)
 		if err != nil {
 			return nil, err

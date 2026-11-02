@@ -4424,6 +4424,51 @@ func TestSetKeyspaceInvalidatesRoutingInfo(t *testing.T) {
 	})
 }
 
+// TestCreateRoutingKeyNamedValues pins that a NamedValue bound to a partition
+// key column yields the same routing key as the equivalent positional value.
+// Before the fix the *namedValue wrapper reached Marshal and failed, so the
+// token-aware policy silently fell back to non-token-aware routing.
+func TestCreateRoutingKeyNamedValues(t *testing.T) {
+	t.Parallel()
+
+	intType := NewNativeType(protoVersion4, TypeInt)
+	textType := NewNativeType(protoVersion4, TypeVarchar)
+
+	tests := []struct {
+		name       string
+		info       *routingKeyInfo
+		positional []any
+		named      []any
+	}{
+		{
+			name:       "single column",
+			info:       &routingKeyInfo{indexes: []int{0}, types: []TypeInfo{intType}},
+			positional: []any{1},
+			named:      []any{NamedValue("id", 1)},
+		},
+		{
+			name:       "composite",
+			info:       &routingKeyInfo{indexes: []int{1, 0}, types: []TypeInfo{textType, intType}},
+			positional: []any{1, "a"},
+			named:      []any{NamedValue("b", 1), NamedValue("a", "a")},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			want, err := createRoutingKey(tc.info, tc.positional)
+			require.NoError(t, err)
+			require.NotEmpty(t, want)
+
+			got, err := createRoutingKey(tc.info, tc.named)
+			require.NoError(t, err)
+			require.Equal(t, want, got)
+		})
+	}
+}
+
 // TestResolveRoutingKeyspaceTable pins the precedence used to pick the keyspace
 // and table a prepared statement targets. The default (SetKeyspace override or
 // Cluster.Keyspace) must never shadow the per-column metadata: routingKeyInfo
