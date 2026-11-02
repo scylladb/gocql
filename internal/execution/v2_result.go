@@ -65,6 +65,9 @@ func (p *Page[R]) Next() bool {
 	if p == nil {
 		return false
 	}
+	if !p.privateStorage.cursor.current() {
+		return false
+	}
 	p.privateStorage.mu.Lock()
 	defer p.unlockAfterAdvance()
 	return p.advance(nil, false)
@@ -74,10 +77,13 @@ func (p *Page[R]) NextInto(dst *R) bool {
 		InternalClearDestination(dst)
 		return false
 	}
+	if !p.privateStorage.cursor.current() {
+		return false
+	}
 	p.privateStorage.mu.Lock()
 	defer p.unlockAfterAdvance()
 	ok := p.advance(dst, true)
-	if !ok {
+	if !ok && !codec.PreservesRowDestination(p.privateStorage.InternalPlan) {
 		InternalClearDestination(dst)
 	}
 	return ok
@@ -121,7 +127,9 @@ func (p *Page[R]) advance(dst *R, into bool) bool {
 	var err error
 	if into {
 		// The plan receives the actual application destination, never a row temporary.
-		InternalClearDestination(dst)
+		if !codec.PreservesRowDestination(p.privateStorage.InternalPlan) {
+			InternalClearDestination(dst)
+		}
 		err = p.privateStorage.InternalPlan.DecodeInto(&p.privateStorage.reader, dst)
 	} else {
 		p.privateStorage.current, err = p.privateStorage.InternalPlan.Decode(&p.privateStorage.reader)
@@ -176,6 +184,9 @@ func (p *Page[R]) Err() error {
 func (p *Page[R]) Close() error {
 	if p == nil {
 		return nil
+	}
+	if !p.privateStorage.cursor.current() {
+		return p.Err()
 	}
 	if p.privateStorage.cancel != nil {
 		p.privateStorage.cancel()
@@ -257,6 +268,9 @@ func (r *Rows[R]) Next() bool {
 	if r == nil {
 		return false
 	}
+	if !r.privateStorage.cursor.current() {
+		return false
+	}
 	r.privateStorage.mu.Lock()
 	defer r.unlockAfterAdvance()
 	return r.advance(nil, false)
@@ -266,10 +280,13 @@ func (r *Rows[R]) NextInto(dst *R) bool {
 		InternalClearDestination(dst)
 		return false
 	}
+	if !r.privateStorage.cursor.current() {
+		return false
+	}
 	r.privateStorage.mu.Lock()
 	defer r.unlockAfterAdvance()
 	ok := r.advance(dst, true)
-	if !ok {
+	if !ok && (r.privateStorage.InternalPage == nil || !codec.PreservesRowDestination(r.privateStorage.InternalPage.privateStorage.InternalPlan)) {
 		InternalClearDestination(dst)
 	}
 	return ok
@@ -390,6 +407,9 @@ func (r *Rows[R]) Err() error {
 func (r *Rows[R]) Close() error {
 	if r == nil {
 		return nil
+	}
+	if !r.privateStorage.cursor.current() {
+		return r.Err()
 	}
 	if r.privateStorage.cancel != nil {
 		r.privateStorage.cancel()

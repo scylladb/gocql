@@ -1,5 +1,13 @@
 # gocql v2 implementation and acceptance contract
 
+The reusable-query amendment dated 2026-11-02 in the [API contract](gocql-v2-api.md)
+supersedes the public binding lifetimes and default receive mode described below.
+Streaming decoders now buffer pages by default; exclusive receive and its scratch
+limits apply to explicit `StreamOptions.Incremental`. Historical implementation
+notes remain for provenance. See the [redesign report](../tests/driver-comparison/REDESIGN.md)
+for the experimental implementation and incomplete performance acceptance.
+
+
 This document binds the [public API](gocql-v2-api.md) to concrete implementation
 seams, worker ownership, feature disposition and verification. The reviewed Rust
 specifications describe their pinned source; this document specifies Go choices.

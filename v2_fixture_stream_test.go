@@ -116,7 +116,7 @@ func TestStep08StreamIndependentEverySplitAndTruncation(t *testing.T) {
 						}()
 						b := runtimeQuery(t)
 						ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-						cursor, err := RunStream(ctx, s, b, StreamOneColumn(StreamBlob), StreamOptions{})
+						cursor, err := RunStream(ctx, s, b, StreamOneColumn(StreamBlob), StreamOptions{Incremental: true})
 						if err == nil {
 							dst := make([]byte, 0, 10)
 							var rows [][]byte
@@ -179,7 +179,7 @@ func TestStep08StreamIndependentFirstRowGate(t *testing.T) {
 			defer cancel()
 			b := runtimeQuery(t)
 			defer b.Close()
-			cursor, err := RunStream(ctx, s, b, StreamOneColumn(StreamBlob), StreamOptions{})
+			cursor, err := RunStream(ctx, s, b, StreamOneColumn(StreamBlob), StreamOptions{Incremental: true})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -233,7 +233,7 @@ func TestStep08StreamIndependentCorruptChecksums(t *testing.T) {
 					}()
 					b := runtimeQuery(t)
 					ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-					cursor, err := RunStream(ctx, s, b, StreamOneColumn(StreamBlob), StreamOptions{})
+					cursor, err := RunStream(ctx, s, b, StreamOneColumn(StreamBlob), StreamOptions{Incremental: true})
 					if err == nil {
 						dst := make([]byte, 0, 20)
 						if cursor.NextInto(&dst) {
@@ -292,7 +292,7 @@ func TestStep08StreamCloseDuringFinalCallerAccess(t *testing.T) {
 				ctx, cancel := context.WithCancel(context.Background())
 				defer cancel()
 				decoder := &step08FinalAccess{entered: make(chan struct{}), leave: make(chan struct{})}
-				cursor, err := RunStream(ctx, s, b, decoder, StreamOptions{})
+				cursor, err := RunStream(ctx, s, b, decoder, StreamOptions{Incremental: true})
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -386,7 +386,7 @@ func TestStep08StreamInterruptedRequestWrite(t *testing.T) {
 				b := runtimeQuery(t)
 				ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 				defer cancel()
-				cursor, err := RunStream(ctx, s, b, StreamOneColumn(StreamBlob), StreamOptions{Options: Options{Retry: SafeRetryPolicy{MaxAttempts: 1}}})
+				cursor, err := RunStream(ctx, s, b, StreamOneColumn(StreamBlob), StreamOptions{Incremental: true, Options: Options{Retry: SafeRetryPolicy{MaxAttempts: 1}}})
 				if cursor != nil {
 					cursor.Close()
 				}
@@ -421,7 +421,7 @@ func TestStep08IndependentRawDirectRead(t *testing.T) {
 			}()
 			b := runtimeQuery(t)
 			defer b.Close()
-			cursor, err := RunStream(context.Background(), s, b, StreamOneColumn(StreamBlob), StreamOptions{})
+			cursor, err := RunStream(context.Background(), s, b, StreamOneColumn(StreamBlob), StreamOptions{Incremental: true})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -448,7 +448,9 @@ func TestStep08IndependentRawDirectRead(t *testing.T) {
 				}
 			}
 			spy.mu.Unlock()
-			if direct != len(payload) || otherBulk != 0 {
+			// Native read-ahead may stage one bounded prefix; the bulk must
+			// still land in the caller backing without payload-sized scratch.
+			if direct < len(payload)-(4<<10) || direct > len(payload) || otherBulk > 4<<10 {
 				t.Fatal("unexpected raw payload staging", direct, otherBulk)
 			}
 			cursor.NextInto(&dst)

@@ -1,5 +1,13 @@
 # Streaming receive decoding into caller storage
 
+The reusable-query amendment dated 2026-11-02 in the [API contract](gocql-v2-api.md)
+supersedes the public binding lifetimes and default receive mode described below.
+Streaming decoders now buffer pages by default; exclusive receive and its scratch
+limits apply to explicit `StreamOptions.Incremental`. Historical implementation
+notes remain for provenance. See the [redesign report](../tests/driver-comparison/REDESIGN.md)
+for the experimental implementation and incomplete performance acceptance.
+
+
 Status: normative Go v2 implementation design, reconciled during execution
 preparation on 2026-10-29. Implementation is present; final verification is
 tracked separately in execution step 17. The user authorized

@@ -69,19 +69,14 @@ func ExampleRunBatch_conditional() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	query, err := gocql.NewQuery(prepared, gocql.Options{})
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer query.Close()
 	var entries []gocql.BatchItem
 	for _, value := range []update{{"pk1", "ck1", "b", 1}, {"pk1", "ck2", "B", 0}} {
-		bound, err := gocql.BindOwned(prepared, value)
-		if err != nil {
-			log.Fatal(err)
-		}
-		defer func() {
-			bound.Close()
-			if err := bound.Wait(ctx); err != nil {
-				log.Print(err)
-			}
-		}()
-		entry, err := gocql.BatchEntry(bound)
+		entry, err := query.BatchEntry(value)
 		if err != nil {
 			log.Fatal(err)
 		}

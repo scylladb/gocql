@@ -1,0 +1,222 @@
+{
+  "status": "parked at explicit user request",
+  "parked_at": "2026-11-02T18:32:01.991837+00:00",
+  "resume_policy": "Do not resume implementation, optimization or benchmark loads unless explicitly requested.",
+  "checkpoint_branch": "park-gocql-redesign-20261102T183201Z",
+  "checkpoint_parent": "6129d9545d96e41d4dc8c11903dba7612cd6dcc0",
+  "original_branch": "v2-17-release-verification",
+  "original_branch_unchanged_at": "6129d9545d96e41d4dc8c11903dba7612cd6dcc0",
+  "production_baseline": "7e1ad6f718929342200c5b9bc126e5a5e7fc7d1c",
+  "master_reference": "1ceaac8172bda26e8b8d701ac356982d33729b27",
+  "goal_achieved": false,
+  "performance_accepted": false,
+  "archive": {
+    "archive": "/extra/scylladb/gocql-parks/redesign-20261102T183201Z/changes-and-evidence.tar.zst",
+    "archive_sha256": "704fb54430b9fb42a36ccb88fdf159122278bb3a2fb056b76f449ceaf26bf503",
+    "archive_bytes": 220243585,
+    "verified_entries": 5987,
+    "uncompressed_file_bytes": 949647803,
+    "entry_manifest": "/extra/scylladb/gocql-parks/redesign-20261102T183201Z/archive-inputs.json",
+    "entry_manifest_sha256": "5bf7c7b92e5a7fe0e0e8c0a5f3a92c22d985b242f8607849ea89517f996afe91"
+  },
+  "git_bundle": "/extra/scylladb/gocql-parks/redesign-20261102T183201Z/checkpoint.bundle",
+  "git_receipt": "/extra/scylladb/gocql-parks/redesign-20261102T183201Z/git-receipt.json",
+  "report": "REDESIGN.md",
+  "state": "REDESIGN-STATE.json",
+  "results": "/extra/scylladb/gocql/tests/driver-comparison/results/redesign-20261102T124236Z",
+  "final_build_manifest": "/extra/scylladb/gocql/.codex-cache/driver-comparison/redesign-final-bounded/manifest.json",
+  "stopped_state": {
+    "closed_endpoints": {
+      "10.89.18.41:9042": true,
+      "10.89.18.41:9180": true,
+      "10.89.18.42:9042": true,
+      "10.89.18.42:9180": true,
+      "10.89.18.43:9042": true,
+      "10.89.18.43:9180": true,
+      "127.0.0.2:9042": true,
+      "127.0.0.3:9042": true,
+      "127.0.0.4:9042": true,
+      "127.0.0.1:19080": true
+    },
+    "nodes": [
+      {
+        "name": "codex-gocql-compare-1",
+        "state": {
+          "OciVersion": "1.2.1",
+          "Status": "exited",
+          "Running": false,
+          "Paused": false,
+          "Restarting": false,
+          "OOMKilled": false,
+          "Dead": false,
+          "Pid": 0,
+          "ExitCode": 0,
+          "Error": "",
+          "StartedAt": "2026-11-02T09:51:27.812096137-04:00",
+          "FinishedAt": "2026-11-02T09:52:27.320421764-04:00",
+          "CheckpointedAt": "0001-01-01T00:00:00Z",
+          "RestoredAt": "0001-01-01T00:00:00Z",
+          "StoppedByUser": true
+        },
+        "mounts": [
+          {
+            "Type": "bind",
+            "Source": "/extra/scylladb/gocql/.codex-cache/driver-comparison/data/codex-gocql-compare-1",
+            "Destination": "/var/lib/scylla",
+            "Driver": "",
+            "Mode": "",
+            "Options": [
+              "rbind"
+            ],
+            "RW": true,
+            "Propagation": "rprivate"
+          }
+        ]
+      },
+      {
+        "name": "codex-gocql-compare-2",
+        "state": {
+          "OciVersion": "1.2.1",
+          "Status": "exited",
+          "Running": false,
+          "Paused": false,
+          "Restarting": false,
+          "OOMKilled": false,
+          "Dead": false,
+          "Pid": 0,
+          "ExitCode": 0,
+          "Error": "",
+          "StartedAt": "2026-11-02T09:51:27.875443351-04:00",
+          "FinishedAt": "2026-11-02T09:52:27.312421631-04:00",
+          "CheckpointedAt": "0001-01-01T00:00:00Z",
+          "RestoredAt": "0001-01-01T00:00:00Z",
+          "StoppedByUser": true
+        },
+        "mounts": [
+          {
+            "Type": "bind",
+            "Source": "/extra/scylladb/gocql/.codex-cache/driver-comparison/data/codex-gocql-compare-2",
+            "Destination": "/var/lib/scylla",
+            "Driver": "",
+            "Mode": "",
+            "Options": [
+              "rbind"
+            ],
+            "RW": true,
+            "Propagation": "rprivate"
+          }
+        ]
+      },
+      {
+        "name": "codex-gocql-compare-3",
+        "state": {
+          "OciVersion": "1.2.1",
+          "Status": "exited",
+          "Running": false,
+          "Paused": false,
+          "Restarting": false,
+          "OOMKilled": false,
+          "Dead": false,
+          "Pid": 0,
+          "ExitCode": 0,
+          "Error": "",
+          "StartedAt": "2026-11-02T09:51:27.936869608-04:00",
+          "FinishedAt": "2026-11-02T09:52:28.305438116-04:00",
+          "CheckpointedAt": "0001-01-01T00:00:00Z",
+          "RestoredAt": "0001-01-01T00:00:00Z",
+          "StoppedByUser": true
+        },
+        "mounts": [
+          {
+            "Type": "bind",
+            "Source": "/extra/scylladb/gocql/.codex-cache/driver-comparison/data/codex-gocql-compare-3",
+            "Destination": "/var/lib/scylla",
+            "Driver": "",
+            "Mode": "",
+            "Options": [
+              "rbind"
+            ],
+            "RW": true,
+            "Propagation": "rprivate"
+          }
+        ]
+      }
+    ],
+    "unrelated_running_containers": [
+      "mechanic-pc-minio-1",
+      "mechanic-pc-postgres-1",
+      "mechanic-pc-whatsapp-worker-1",
+      "mechanic-pc-caddy-1",
+      "mechanic-pc-api-1"
+    ]
+  },
+  "data_policy": "Stopped benchmark server data/mounts remain in place; no unrelated service changed.",
+  "validation": {
+    "default": {
+      "passed": true,
+      "log": "/extra/scylladb/gocql/tests/driver-comparison/results/redesign-20261102T124236Z/default-final.log",
+      "sha256": "770c349e88e4b44dae885b2fbeb4cb028495007660edf9a194f5f0c16eb30eb7"
+    },
+    "unit_race": {
+      "passed": true,
+      "log": "/extra/scylladb/gocql/tests/driver-comparison/results/redesign-20261102T124236Z/unit_race-final.log",
+      "sha256": "82ecdd7a50ff27268aa1e49f7dd855196036f08c0e26e85909a02b9dec1e57b0"
+    },
+    "vet": {
+      "passed": true,
+      "log": "/extra/scylladb/gocql/tests/driver-comparison/results/redesign-20261102T124236Z/vet-final.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "query_race_50_repetitions": {
+      "log": "/extra/scylladb/gocql/tests/driver-comparison/results/redesign-20261102T124236Z/query_race_50_repetitions.log",
+      "passed": true,
+      "sha256": "cc5f16d328d5eae70bf16b9a1552a54e6da5402f0a884c1a3cd2428b0cbeacb1"
+    },
+    "integration_compile": {
+      "log": "/extra/scylladb/gocql/tests/driver-comparison/results/redesign-20261102T124236Z/integration_compile.log",
+      "passed": true,
+      "sha256": "91ccf1c909ace6259c3efab8a66f7f761b5e17bcd426317e75bb577001c42ea3"
+    },
+    "python_harness_18_tests": {
+      "log": "/extra/scylladb/gocql/tests/driver-comparison/results/redesign-20261102T124236Z/python_harness_18_tests.log",
+      "passed": true,
+      "sha256": "991da1037fc419712567859a4af810e2a02ea05cd0791a5db4f7241ba2605686"
+    },
+    "live_v4_race": {
+      "passed": true,
+      "log": "/extra/scylladb/gocql/tests/driver-comparison/results/redesign-20261102T124236Z/live-verified-cleanup/v4.log"
+    },
+    "live_v5": {
+      "passed": false,
+      "status": "unavailable: benchmark server replies with native protocol v4 when v5 requested",
+      "log": "/extra/scylladb/gocql/tests/driver-comparison/results/redesign-20261102T124236Z/live-verified-cleanup/v5.log"
+    },
+    "redesign-harness-tests.log": {
+      "passed": true,
+      "log": "/extra/scylladb/gocql/tests/driver-comparison/results/redesign-20261102T124236Z/redesign-harness-tests.log"
+    },
+    "redesign-harness-old-tests.log": {
+      "passed": true,
+      "log": "/extra/scylladb/gocql/tests/driver-comparison/results/redesign-20261102T124236Z/redesign-harness-old-tests.log"
+    },
+    "harness-vet.log": {
+      "passed": true,
+      "log": "/extra/scylladb/gocql/tests/driver-comparison/results/redesign-20261102T124236Z/harness-vet.log"
+    },
+    "transport_final_race": {
+      "passed": true,
+      "log": "/extra/scylladb/gocql/tests/driver-comparison/results/redesign-20261102T124236Z/transport-final-race.log"
+    }
+  },
+  "resume_notes": [
+    "Switch to checkpoint_branch; the original branch stays at checkpoint_parent.",
+    "The checkpoint retains breaking API changes and page-buffered streaming defaults as experimental code; no performance change is accepted.",
+    "Read REDESIGN.md and REDESIGN-STATE.json before continuing. All five measured emulator cases remain below the required 1.10 master ratio.",
+    "Original-v2 maximum observations and unchanged 52503.01/s controls remain unqualified; one isolated control rejected 759 arrivals. Dedicated benchmark storage or a host is the fallback prerequisite.",
+    "The archive contains the parked source changes, raw results, frozen sources/harnesses/binaries and benchmark configuration. Verify its SHA-256 and entry manifest before restore.",
+    "The Git bundle created after the checkpoint commit additionally preserves this checkpoint metadata and the final committed source tree.",
+    "Stopped Scylla data and container mounts are preserved in place rather than copied into this archive. Do not change unrelated services.",
+    "Use a new result directory and retained source identities for future measurements; never overwrite parked observations.",
+    "Remaining work includes request framing storage reuse, query-owned cursor state, remaining scalar fusion and complete emulator/real-Scylla acceptance."
+  ]
+}

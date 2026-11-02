@@ -12,6 +12,7 @@ import (
 )
 
 type PageStorage[R any] struct {
+	cursor            queryCursor
 	pendingRelease    func()
 	mu                sync.Mutex
 	destination       *R

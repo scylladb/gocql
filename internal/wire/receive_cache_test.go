@@ -5,6 +5,24 @@ package wire
 
 import "testing"
 
+func TestReceiveCacheSaturationStatistics(t *testing.T) {
+	cache := new(ReceiveCache)
+	for range 80 {
+		cache.Release(make([]byte, 1024), 0)
+	}
+	stats := cache.Stats()
+	if stats.RetainedObjects != 64 || stats.RetainedBytes != 64*1024 {
+		t.Fatal(stats)
+	}
+	for range 65 {
+		_, _ = cache.Acquire(1024)
+	}
+	stats = cache.Stats()
+	if stats.Hits != 64 || stats.Misses != 1 || stats.RetainedObjects != 0 || stats.RetainedBytes != 0 {
+		t.Fatal(stats)
+	}
+}
+
 func TestStep15ReceiveCacheOwnership(t *testing.T) {
 	cache := new(ReceiveCache)
 	data, epoch := cache.Acquire(4096)

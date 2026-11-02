@@ -49,7 +49,18 @@ type ParamWriter struct {
 	index       int
 	allowUnset  bool
 	ownBorrowed bool
+	capture     []ParamCell
 }
+
+// ParamCell records framing while encoding, avoiding a second parse of the
+// request. Offsets refer to the final contiguous owned parameter buffer.
+type ParamCell struct {
+	Start, End int64
+	State      cqltype.CellState
+}
+
+// CaptureParamCells enables framing capture into exactly one slot per column.
+func CaptureParamCells(w *ParamWriter, cells []ParamCell) { w.capture = cells }
 
 func NewParamWriter(builder *wire.Builder, columns cqltype.Columns, allowUnset bool) *ParamWriter {
 	return &ParamWriter{builder: builder, columns: columns, allowUnset: allowUnset}
@@ -80,6 +91,16 @@ func WriteParam[T any](w *ParamWriter, encoder Encoder[T], value T) error {
 	if err := FinishValueWriter(cell); err != nil {
 		abortValueWriter(cell)
 		return fmt.Errorf("gocql: parameter %d (%s): %w", w.index, column.Name, err)
+	}
+	if w.capture != nil {
+		if w.index >= len(w.capture) {
+			return fmt.Errorf("gocql: missing parameter capture slot")
+		}
+		state := cell.state
+		if state == cqltype.Empty {
+			state = cqltype.Present
+		} // empty has a zero-length present wire body
+		w.capture[w.index] = ParamCell{Start: cell.start + 4, End: w.builder.Len(), State: state}
 	}
 	w.index++
 	return nil
@@ -328,8 +349,12 @@ func (f ignoredField[R]) compile(cqltype.DataType) (OutputField[R], error) { ret
 func (f ignoredField[R]) decode(r *RowReader, _ *R) error                  { return r.SkipColumn() }
 func (f ignoredField[R]) clone(dst, source *R)                             {}
 
-type rowCodec[R any] struct{ fields []OutputField[R] }
+type rowCodec[R any] struct {
+	fields []OutputField[R]
+	reset  func(*R)
+}
 type rowPlan[R any] struct {
+	reset   func(*R)
 	ordered []OutputField[R]
 	// Scratch addresses are confined to Decode; accessors must not retain them.
 	// The returned R is copied before scratch is cleared and recycled.
@@ -338,6 +363,17 @@ type rowPlan[R any] struct {
 
 func Row[R any](fields ...OutputField[R]) RowDecoder[R] {
 	return rowCodec[R]{fields: append([]OutputField[R](nil), fields...)}
+}
+
+// RowInto uses an application reset callback before decoding into the actual
+// destination. The callback can preserve owned slices for repeated NextInto.
+func RowInto[R any](reset func(*R), fields ...OutputField[R]) RowDecoder[R] {
+	return rowCodec[R]{fields: append([]OutputField[R](nil), fields...), reset: reset}
+}
+func (p rowPlan[R]) preserveDestination() bool { return p.reset != nil }
+func PreservesRowDestination[R any](plan RowPlan[R]) bool {
+	p, ok := plan.(interface{ preserveDestination() bool })
+	return ok && p.preserveDestination()
 }
 func (c rowCodec[R]) Clone(source R) R {
 	dst := source
@@ -361,7 +397,7 @@ func (c rowCodec[R]) Compile(columns cqltype.Columns) (RowPlan[R], error) {
 	if err != nil {
 		return nil, err
 	}
-	plan := rowPlan[R]{ordered: make([]OutputField[R], len(mapping)), scratch: &sync.Pool{New: func() any { return new(R) }}}
+	plan := rowPlan[R]{reset: c.reset, ordered: make([]OutputField[R], len(mapping)), scratch: &sync.Pool{New: func() any { return new(R) }}}
 	for index, field := range mapping {
 		column, _ := columns.At(index)
 		compiled, err := c.fields[field].compile(column.Type)
@@ -388,8 +424,12 @@ func (p rowPlan[R]) DecodeInto(reader *RowReader, dst *R) error {
 	if dst == nil {
 		return cqltype.TypeValidation("destination", "nil row destination")
 	}
-	var zero R
-	*dst = zero
+	if p.reset != nil {
+		p.reset(dst)
+	} else {
+		var zero R
+		*dst = zero
+	}
 	for _, field := range p.ordered {
 		if err := field.decode(reader, dst); err != nil {
 			return err
@@ -741,6 +781,9 @@ func decodeValueInto[T any](decoder Decoder[T], reader ValueReader, dst *T) erro
 func readColumnInto[T any](r *RowReader, decoder Decoder[T], dst *T) error {
 	if decoder == nil {
 		return cqltype.TypeValidation("decoder", "nil column decoder")
+	}
+	if direct, ok := decoder.(rowValueIntoDecoder[T]); ok && dst != nil {
+		return direct.decodeColumnInto(r, dst)
 	}
 	value, err := r.nextValue()
 	if err == nil {

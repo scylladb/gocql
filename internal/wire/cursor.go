@@ -36,6 +36,26 @@ func NewCursor(c Chain) *Cursor { return &Cursor{chain: c, remaining: c.Len()} }
 
 func (c *Cursor) Remaining() int64 { return c.remaining }
 
+// Read implements io.Reader over the remaining immutable spans without a
+// gathered copy. It is used by page-buffered streaming decoders.
+func (c *Cursor) Read(p []byte) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
+	if c.remaining == 0 {
+		return 0, io.EOF
+	}
+	n := int(min(int64(len(p)), c.remaining))
+	read := 0
+	for read < n {
+		data := c.chain.span(c.index).data[c.offset:]
+		take := copy(p[read:n], data)
+		c.advance(int64(take))
+		read += take
+	}
+	return read, nil
+}
+
 func (c *Cursor) scalar(n int) (uint64, error) {
 	if int64(n) > c.remaining {
 		return 0, io.ErrUnexpectedEOF

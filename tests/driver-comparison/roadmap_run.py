@@ -83,11 +83,11 @@ def read_manifest(path, binary):
     return dict(data, verified_build=build, manifest_sha256=r.sha(path))
 
 
-def failures(result, case, rate):
+def failures(result, case, rate, driver='v2', streaming=None):
     scenario, stream, workers, _ = CASES[case]
     m = result['measurement']
     issues = []
-    expected = {'driver': 'v2', 'scenario': scenario, 'stream': stream,
+    expected = {'driver': driver, 'scenario': scenario, 'stream': stream if streaming is None else streaming,
                 'concurrency': workers, 'gomaxprocs': 1}
     for key, value in expected.items():
         if result.get(key) != value:
@@ -131,13 +131,13 @@ def metrics(result):
             'p99_us': m['latency']['p99_us']}
 
 
-def read_observation(directory, case, rate, pair, variant, returncode):
+def read_observation(directory, case, rate, pair, variant, returncode, driver='v2', streaming=None):
     """Retain measurements even when the client exits unsuccessfully."""
     path = directory / 'measurement.json'
     if not path.exists():
         raise RuntimeError(f'{directory.name}: client returned {returncode}; no measurement result')
     result = r.compact(path)
-    issues = failures(result, case, rate)
+    issues = failures(result, case, rate, driver=driver, streaming=streaming)
     if returncode:
         issues.append(f'client returned {returncode}')
     for suffix in ('cpu.pprof', 'heap.before.pprof', 'heap.after.pprof'):

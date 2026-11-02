@@ -355,7 +355,7 @@ func TestStep17ReadAheadUpperBoundKeepsRawPayloadForCaller(t *testing.T) {
 	defer cancel()
 	bound := runtimeQuery(t)
 	defer bound.Close()
-	cursor := codecTestMust(RunStream(ctx, s, bound, StreamOneColumn(StreamBlob), StreamOptions{Limits: StreamLimits{ReadAheadBytes: 1}}))
+	cursor := codecTestMust(RunStream(ctx, s, bound, StreamOneColumn(StreamBlob), StreamOptions{Incremental: true, Limits: StreamLimits{ReadAheadBytes: 1}}))
 	spy.mu.Lock()
 	for _, target := range spy.targets {
 		if len(target) > 16 {

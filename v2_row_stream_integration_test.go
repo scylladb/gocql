@@ -103,7 +103,7 @@ func TestStep07RunStreamLive(t *testing.T) {
 		Text   []byte
 	}
 	decoder := StreamRow(func(*output) {}, StreamColumn("id", StreamInt32, func(r *output) *int32 { return &r.ID }), StreamColumn("value", StreamBlob, func(r *output) *[]byte { return &r.Value }), StreamColumn("pieces", StreamList(StreamBlob), func(r *output) *[][]byte { return &r.Pieces }), StreamColumn("txt", StreamText, func(r *output) *[]byte { return &r.Text }))
-	options := StreamOptions{Options: Options{PageSize: Option[int32]{Set: true, Value: 2}}}
+	options := StreamOptions{Incremental: true, Options: Options{PageSize: Option[int32]{Set: true, Value: 2}}}
 	if config.Protocol < 5 && config.Compression != NoCompression {
 		_, err := RunStream(ctx, s, bound, decoder, options)
 		var capability *StreamCapabilityError
@@ -207,7 +207,7 @@ func TestStep07RunStreamLive(t *testing.T) {
 	changedPrepared := codecTestMust(Prepare(ctx, s, Statement[Unit, DynamicRow]{CQL: "SELECT * FROM " + keyspace + ".records", Kind: OrdinaryStatement, Params: NoParams, Rows: DynamicRows}, PrepareOptions{}))
 	changedBound := codecTestMust(BindOwned(changedPrepared, Unit{}))
 	defer changedBound.Close()
-	changed, err := RunStream(ctx, s, changedBound, decoder, StreamOptions{Options: Options{PageSize: Option[int32]{Set: true, Value: 1}}})
+	changed, err := RunStream(ctx, s, changedBound, decoder, StreamOptions{Incremental: true, Options: Options{PageSize: Option[int32]{Set: true, Value: 1}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -227,7 +227,7 @@ func TestStep07RunStreamLive(t *testing.T) {
 	}
 	defer sub.Close()
 	blockedCtx, blockedCancel := context.WithTimeout(ctx, 100*time.Millisecond)
-	second, blockedErr := RunStream(blockedCtx, s, bound, decoder, StreamOptions{Options: Options{HostID: Option[UUID]{Set: true, Value: changed.Info().Result.HostID}}})
+	second, blockedErr := RunStream(blockedCtx, s, bound, decoder, StreamOptions{Incremental: true, Options: Options{HostID: Option[UUID]{Set: true, Value: changed.Info().Result.HostID}}})
 	blockedCancel()
 	if second != nil {
 		second.Close()
@@ -287,7 +287,7 @@ func TestStep07RunStreamLive(t *testing.T) {
 	if target.IsEmpty() {
 		t.Fatal("owned interruption coordinator missing")
 	}
-	interrupted, err := RunStream(ctx, s, bound, decoder, StreamOptions{Options: Options{HostID: Option[UUID]{Set: true, Value: target}, PageSize: Option[int32]{Set: true, Value: 1}}})
+	interrupted, err := RunStream(ctx, s, bound, decoder, StreamOptions{Incremental: true, Options: Options{HostID: Option[UUID]{Set: true, Value: target}, PageSize: Option[int32]{Set: true, Value: 1}}})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -23,6 +23,7 @@ import (
 	"context"
 	implCluster "github.com/scylladb/gocql/v2/internal/cluster"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -30,16 +31,18 @@ import (
 // includes accepted writers and speculative/prefetch workers, independently of
 // output page leases and other operations using the same binding.
 type InternalExecutionLifetime struct {
-	mu          sync.Mutex
-	cancel      context.CancelFunc
-	stop        func()
-	stopping    bool
-	releaseOnce sync.Once
-	done        chan struct{}
+	mu            sync.Mutex
+	cancel        context.CancelFunc
+	stop          func()
+	stopping      bool
+	inputReleased atomic.Bool
+	done          chan struct{}
 }
 
 func (l *InternalLogicalExecution) InternalReleaseInput() {
-	l.lifetime.releaseOnce.Do(func() { l.request.InternalOwner.InternalRelease() })
+	if l.lifetime.inputReleased.CompareAndSwap(false, true) {
+		l.request.InternalOwner.InternalRelease()
+	}
 }
 func (l *InternalLogicalExecution) installStop(stop func()) {
 	l.lifetime.mu.Lock()
@@ -56,12 +59,19 @@ func (l *InternalLogicalExecution) shutdown() {
 	l.lifetime.mu.Lock()
 	l.lifetime.stopping = true
 	stop := l.lifetime.stop
+	cancel := l.lifetime.cancel
 	l.lifetime.stop = nil
 	l.lifetime.mu.Unlock()
-	l.lifetime.cancel()
+	cancel()
 	if stop != nil {
 		stop()
 	}
+}
+func (l *InternalLogicalExecution) cancelExecution() {
+	l.lifetime.mu.Lock()
+	cancel := l.lifetime.cancel
+	l.lifetime.mu.Unlock()
+	cancel()
 }
 func (s *InternalSessionRuntime) registerExecution(l *InternalLogicalExecution, parent *inputOwner) error {
 	implCluster.SessionData(s.Session).InternalSessionStateMu.RLock()
@@ -75,16 +85,32 @@ func (s *InternalSessionRuntime) registerExecution(l *InternalLogicalExecution, 
 	if rt.InternalExecutions == nil {
 		rt.InternalExecutions = make(map[*InternalLogicalExecution]struct{})
 	}
-	rt.InternalExecutions[l] = struct{}{}
+	if query := l.request.query; query != nil {
+		query.mu.Lock()
+		if query.closed {
+			query.mu.Unlock()
+			return ErrClosed
+		}
+		query.logical = l
+		query.mu.Unlock()
+	} else {
+		rt.InternalExecutions[l] = struct{}{}
+	}
 	owner := newInputOwner()
 	owner.InternalRefs = 1
 	owner.InternalClosed = true
+	queryOwned := l.request.query != nil
+	done := l.lifetime.done
 	owner.InternalOnDrain = func() {
+		if !queryOwned {
+			rt.InternalMu.Lock()
+			delete(rt.InternalExecutions, l)
+			rt.InternalMu.Unlock()
+		}
+		close(done)
+		// Parent release can admit the next query generation. Nothing after
+		// this point may dereference the preceding execution's reusable request.
 		parent.InternalRelease()
-		rt.InternalMu.Lock()
-		delete(rt.InternalExecutions, l)
-		rt.InternalMu.Unlock()
-		close(l.lifetime.done)
 	}
 	l.request.InternalOwner = owner
 	return nil
@@ -99,7 +125,7 @@ func (s *InternalSessionRuntime) stopExecutions() []*InternalLogicalExecution {
 	rt.InternalMu.Unlock()
 	// Cancel every operation before joining one of them.
 	for _, l := range active {
-		l.lifetime.cancel()
+		l.cancelExecution()
 	}
 	for _, l := range active {
 		l.shutdown()

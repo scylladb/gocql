@@ -58,19 +58,14 @@ func ExampleExecBatch() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	query, err := gocql.NewQuery(prepared, gocql.Options{})
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer query.Close()
 	var entries []gocql.BatchItem
 	for _, value := range []item{{1, 2, "1.2"}, {1, 3, "1.3"}, {1, 4, "1.4"}, {1, 5, "1.5"}} {
-		bound, err := gocql.BindOwned(prepared, value)
-		if err != nil {
-			log.Fatal(err)
-		}
-		defer func() {
-			bound.Close()
-			if err := bound.Wait(ctx); err != nil {
-				log.Print(err)
-			}
-		}()
-		entry, err := gocql.BatchEntry(bound)
+		entry, err := query.BatchEntry(value)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -88,9 +83,9 @@ func ExampleExecBatch() {
 		gocql.Column("ck", gocql.Int32, func(v *result) *int32 { return &v.CK }),
 		gocql.Column("description", gocql.TextCodec, func(v *result) *gocql.Text { return &v.Description }),
 	)
-	bound, err := gocql.BindUnpreparedOwned(gocql.Statement[gocql.Unit, result]{
+	bound, err := gocql.NewUnpreparedQuery(session, gocql.Statement[gocql.Unit, result]{
 		CQL: "SELECT pk, ck, description FROM example.batches", Params: gocql.NoParams, Rows: row,
-	}, gocql.NewColumns(), gocql.Unit{})
+	}, gocql.NewColumns(), gocql.Options{})
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -100,7 +95,7 @@ func ExampleExecBatch() {
 			log.Print(err)
 		}
 	}()
-	rows, err := gocql.Run(ctx, session, bound, gocql.Options{})
+	rows, err := bound.Run(ctx, gocql.Unit{})
 	if err != nil {
 		log.Fatal(err)
 	}

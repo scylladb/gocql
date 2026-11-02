@@ -289,7 +289,7 @@ func TestStep15NativePerformance(t *testing.T) {
 						return nil
 					}
 					if api == "stream" {
-						cursor, e := RunStream(ctx, s, bound, streamDecoder, StreamOptions{Options: options})
+						cursor, e := RunStream(ctx, s, bound, streamDecoder, StreamOptions{Incremental: true, Options: options})
 						if e != nil {
 							return 0, 0, e
 						}

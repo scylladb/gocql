@@ -43,7 +43,7 @@ func BenchmarkStep08IndependentStreamOracle(b *testing.B) {
 				b.SetBytes(int64(shape.rows * shape.cell))
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
-					cursor, err := RunStream(context.Background(), s, bound, StreamOneColumn(StreamBlob), StreamOptions{})
+					cursor, err := RunStream(context.Background(), s, bound, StreamOneColumn(StreamBlob), StreamOptions{Incremental: true})
 					if err != nil {
 						b.Fatal(err)
 					}

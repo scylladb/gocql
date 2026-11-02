@@ -244,7 +244,7 @@ func step09StreamReconcile(t *testing.T, failContinuation bool) {
 	decoder := StreamRow(func(*[]byte) { resets++ }, StreamColumn("value", StreamBlob, func(v *[]byte) *[]byte { return v }))
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	cursor, err := RunStream(ctx, s, bound, decoder, StreamOptions{Options: Options{Idempotent: true}})
+	cursor, err := RunStream(ctx, s, bound, decoder, StreamOptions{Incremental: true, Options: Options{Idempotent: true}})
 	if err != nil {
 		t.Fatal(err)
 	}

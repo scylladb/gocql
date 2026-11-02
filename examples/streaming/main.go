@@ -37,6 +37,7 @@ func main() {
 }
 func run() (resultErr error) {
 	hosts := flag.String("hosts", "127.0.0.1:9042", "comma-separated native endpoints")
+	incremental := flag.Bool("incremental", false, "use bounded incremental receive instead of page buffering")
 	protocol := flag.Int("protocol", 4, "native protocol version")
 	compression := flag.String("compression", "none", "none, lz4 or snappy")
 	username := flag.String("username", "", "authentication username")
@@ -135,12 +136,12 @@ func run() (resultErr error) {
 		return fmt.Errorf("invalid owned namespace %q", namespace)
 	}
 	execContext := func(operation context.Context, cql string) error {
-		b, err := gocql.BindUnpreparedOwned(gocql.Statement[gocql.Unit, gocql.Unit]{CQL: cql, Params: gocql.NoParams, Rows: gocql.NoRows}, gocql.NewColumns(), gocql.Unit{})
+		b, err := gocql.NewUnpreparedQuery(s, gocql.Statement[gocql.Unit, gocql.Unit]{CQL: cql, Params: gocql.NoParams, Rows: gocql.NoRows}, gocql.NewColumns(), gocql.Options{})
 		if err != nil {
 			return err
 		}
 		defer b.Close()
-		_, err = gocql.Exec(operation, s, b, gocql.Options{})
+		_, err = b.Exec(operation, gocql.Unit{})
 		return err
 	}
 	exec := func(cql string) error { return execContext(ctx, cql) }
@@ -186,31 +187,24 @@ func run() (resultErr error) {
 	if err != nil {
 		return err
 	}
+	writeQuery, err := gocql.NewQuery(insert, gocql.Options{})
+	if err != nil {
+		return err
+	}
+	defer writeQuery.Close()
 	payload := bytes.Repeat([]byte("typed-stream-"), 16384)
 	for i := int32(0); i < 3; i++ {
-		b, err := gocql.BindBorrowed(insert, record{ID: i, Payload: payload, Pieces: [][]byte{[]byte("nested"), []byte("storage")}})
-		if err != nil {
+		if _, err := writeQuery.Exec(ctx, record{ID: i, Payload: payload, Pieces: [][]byte{[]byte("nested"), []byte("storage")}}); err != nil {
 			return err
 		}
-		_, execErr := gocql.Exec(ctx, s, b, gocql.Options{})
-		b.Close()
-		if err := b.Wait(ctx); err != nil {
+		if err := writeQuery.Wait(ctx); err != nil {
 			return err
 		}
-		if execErr != nil {
-			return execErr
-		}
-		// Only now may this binding's borrowed input be changed or returned to a pool.
 	}
 	prepared, err := gocql.Prepare(ctx, s, gocql.Statement[gocql.Unit, gocql.DynamicRow]{CQL: "SELECT id,payload,pieces FROM " + table, Params: gocql.NoParams, Rows: gocql.DynamicRows}, gocql.PrepareOptions{})
 	if err != nil {
 		return err
 	}
-	bound, err := gocql.BindOwned(prepared, gocql.Unit{})
-	if err != nil {
-		return err
-	}
-	defer bound.Close()
 	decoder := gocql.StreamRow(func(r *record) { r.ApplicationState = "" },
 		gocql.StreamColumn("id", gocql.StreamInt32, func(r *record) *int32 { return &r.ID }),
 		gocql.StreamColumn("payload", gocql.StreamBlob, func(r *record) *[]byte { return &r.Payload }),
@@ -220,9 +214,14 @@ func run() (resultErr error) {
 	if len(hostsSnapshot) == 0 {
 		return fmt.Errorf("missing discovered hosts")
 	}
-	options := gocql.StreamOptions{Options: gocql.Options{PageSize: gocql.Option[int32]{Set: true, Value: 2}, HostID: gocql.Option[gocql.UUID]{Set: true, Value: hostsSnapshot[0].ID}}}
-	stream, err := gocql.RunStream(ctx, s, bound, decoder, options)
-	if cfg.Protocol < 5 && cfg.Compression != gocql.NoCompression {
+	options := gocql.StreamOptions{Incremental: *incremental, Options: gocql.Options{PageSize: gocql.Option[int32]{Set: true, Value: 2}, HostID: gocql.Option[gocql.UUID]{Set: true, Value: hostsSnapshot[0].ID}}}
+	query, err := gocql.NewStreamQuery(prepared, decoder, options)
+	if err != nil {
+		return err
+	}
+	defer query.Close()
+	stream, err := query.Run(ctx, gocql.Unit{})
+	if *incremental && cfg.Protocol < 5 && cfg.Compression != gocql.NoCompression {
 		var unsupported *gocql.StreamCapabilityError
 		if !errors.As(err, &unsupported) {
 			return fmt.Errorf("expected frame compression capability error, got %v", err)
@@ -234,19 +233,18 @@ func run() (resultErr error) {
 		return err
 	}
 	defer stream.Close()
-	// A stream occupies configured pool capacity through paging and idle time.
+	// One worker owns one query; overlapping use is rejected immediately.
 	blockedCtx, blockedCancel := context.WithTimeout(ctx, 20*time.Millisecond)
-	_, blockedErr := gocql.RunStream(blockedCtx, s, bound, decoder, options)
+	_, blockedErr := query.Run(blockedCtx, gocql.Unit{})
 	blockedCancel()
-	if !errors.Is(blockedErr, context.DeadlineExceeded) {
-		return fmt.Errorf("pool occupancy: %v", blockedErr)
+	if !errors.Is(blockedErr, gocql.ErrBusy) {
+		return fmt.Errorf("query admission: %v", blockedErr)
 	}
-	bound.Close() // Existing admission continues; new admissions are now rejected.
 	waitCtx, waitCancel := context.WithTimeout(ctx, 20*time.Millisecond)
-	waitErr := bound.Wait(waitCtx)
+	waitErr := query.Wait(waitCtx)
 	waitCancel()
 	if !errors.Is(waitErr, context.DeadlineExceeded) {
-		return fmt.Errorf("active binding drain: %v", waitErr)
+		return fmt.Errorf("active query drain: %v", waitErr)
 	}
 	// Seed both the outer slots and every nested payload before the first NextInto.
 	row := record{Payload: make([]byte, 0, len(payload)), Pieces: [][]byte{make([]byte, 0, 16), make([]byte, 0, 16)}}
@@ -269,12 +267,12 @@ func run() (resultErr error) {
 	if err := stream.Close(); err != nil {
 		return err
 	}
-	if err := bound.Wait(ctx); err != nil {
+	if err := query.Wait(ctx); err != nil {
 		return err
 	}
 	if len(seen) != 3 || !bytes.Equal(row.Payload, payload) {
 		return fmt.Errorf("incomplete stream or output lost on Close")
 	}
-	fmt.Println("3 rows; seeded nested storage reused; pool occupancy and binding drain verified")
+	fmt.Println("3 rows; seeded nested storage reused; query admission and drain verified")
 	return nil
 }

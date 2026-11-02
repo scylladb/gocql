@@ -53,7 +53,7 @@ func Example() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	bound, err := gocql.BindOwned(insert, tweet{gocql.NewTimeUUID(), "me", "hello world"})
+	bound, err := gocql.NewQuery(insert, gocql.Options{})
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -63,7 +63,7 @@ func Example() {
 			log.Print(err)
 		}
 	}()
-	if _, err := gocql.Exec(ctx, session, bound, gocql.Options{}); err != nil {
+	if _, err := bound.Exec(ctx, tweet{gocql.NewTimeUUID(), "me", "hello world"}); err != nil {
 		log.Fatal(err)
 	}
 	type result struct {
@@ -74,7 +74,7 @@ func Example() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	selectBound, err := gocql.BindOwned(query, "me")
+	selectBound, err := gocql.NewQuery(query, gocql.Options{})
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -84,7 +84,7 @@ func Example() {
 			log.Print(err)
 		}
 	}()
-	rows, err := gocql.Run(ctx, session, selectBound, gocql.Options{})
+	rows, err := selectBound.Run(ctx, "me")
 	if err != nil {
 		log.Fatal(err)
 	}

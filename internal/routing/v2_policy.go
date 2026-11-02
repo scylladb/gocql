@@ -300,11 +300,17 @@ type InternalLazyRoutingPlan struct {
 }
 
 func (p *InternalRoutingPolicy) Plan(info RoutingInfo, m *MetadataSnapshot) QueryPlan {
+	return p.InternalPlanInto(info, m, new(InternalLazyRoutingPlan))
+}
+
+// InternalPlanInto initializes a worker-owned cursor over immutable placement
+// data. The preceding traversal must be finished before its storage is reused.
+func (p *InternalRoutingPolicy) InternalPlanInto(info RoutingInfo, m *MetadataSnapshot, plan *InternalLazyRoutingPlan) QueryPlan {
 	info.Conditional = info.Conditional || info.Kind != OrdinaryStatement
 	if m == nil {
 		return &InternalTargetPlan{}
 	}
-	plan := &InternalLazyRoutingPlan{policy: p, metadata: m, index: m.routingIndex(), InternalNow: time.Now(), InternalSlow: p.InternalDecisions.Load()}
+	*plan = InternalLazyRoutingPlan{policy: p, metadata: m, index: m.routingIndex(), InternalNow: time.Now(), InternalSlow: p.InternalDecisions.Load()}
 	plan.emitted = plan.smallEmitted[:0]
 	if info.HostID.Set {
 		plan.pinned = true

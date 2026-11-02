@@ -20,20 +20,20 @@ type borrowedRow struct {
 type v2Adapter struct {
 	s      *g.Session
 	mu     sync.Mutex
-	reads  [2]*g.Prepared[int32, borrowedRow]
+	reads  [2]*g.Prepared[int32, row]
 	writes [2]*g.Prepared[row, g.Unit]
 }
 type v2Worker struct {
-	a        *v2Adapter
-	read     *g.Prepared[int32, borrowedRow]
-	write    *g.Prepared[row, g.Unit]
-	stream   bool
-	out      row
-	borrowed borrowedRow
+	a           *v2Adapter
+	read        *g.Query[int32, row]
+	write       *g.Query[row, g.Unit]
+	streamQuery *g.StreamQuery[int32, row]
+	stream      bool
+	out         row
 }
 
 var streamDecoder = g.StreamRow(func(*row) {}, g.StreamColumn("k", g.StreamInt32, func(r *row) *int32 { return &r.K }), g.StreamColumn("r", g.StreamInt32, func(r *row) *int32 { return &r.R }), g.StreamColumn("p", g.StreamBlob, func(r *row) *[]byte { return &r.P }))
-var bufferedDecoder = g.Row(g.Column("k", g.Int32, func(r *borrowedRow) *int32 { return &r.K }), g.Column("r", g.Int32, func(r *borrowedRow) *int32 { return &r.R }), g.Column("p", g.BlobCodec, func(r *borrowedRow) *g.Bytes { return &r.P }))
+var bufferedDecoder = g.RowInto(func(*row) {}, g.Column("k", g.Int32, func(r *row) *int32 { return &r.K }), g.Column("r", g.Int32, func(r *row) *int32 { return &r.R }), g.Column("p", g.OwnedBlobCodec, func(r *row) *[]byte { return &r.P }))
 
 func connect(hosts []string) (adapter, error) {
 	c := g.DefaultConfig(hosts...)
@@ -69,27 +69,30 @@ func connect(hosts []string) (adapter, error) {
 }
 func (a *v2Adapter) Close() error { return a.s.Close() }
 func (a *v2Adapter) Exec(ctx context.Context, q string) error {
-	b, e := g.BindUnpreparedOwned(g.Statement[g.Unit, g.Unit]{CQL: q, Params: g.NoParams, Rows: g.NoRows}, g.NewColumns(), g.Unit{})
+	b, e := g.NewUnpreparedQuery(a.s, g.Statement[g.Unit, g.Unit]{CQL: q, Params: g.NoParams, Rows: g.NoRows}, g.NewColumns(), g.Options{})
 	if e != nil {
 		return e
 	}
 	defer b.Close()
-	_, e = g.Exec(ctx, a.s, b, g.Options{})
+	_, e = b.Exec(ctx, g.Unit{})
 	return e
 }
 func (a *v2Adapter) Evidence() any {
 	routing := []g.RoutingInfo{}
 	for _, prepared := range a.reads {
 		if prepared != nil {
-			b, e := g.BindBorrowed(prepared, int32(0))
+			b, e := g.NewQuery(prepared, g.Options{})
 			if e == nil {
-				routing = append(routing, b.Routing())
-				drain(b)
+				info, err := b.Routing(int32(0))
+				if err == nil {
+					routing = append(routing, info)
+				}
+				b.Close()
 			}
 		}
 	}
 	keyspace, _ := a.s.Metadata().Keyspace("bench_compare")
-	return map[string]any{"keyspace_strategy": keyspace.StrategyOptions, "keyspace_strategy_class": keyspace.StrategyClass, "metrics": a.s.Metrics(), "routing_samples": routing, "hosts": a.s.Metadata().Hosts(), "protocol": 4, "consistency": "LOCAL_QUORUM", "page_size": 32, "prefetch": 0, "retries": 0, "compression": "none", "tls": false, "coalesce_wait_ns": 0, "metadata_refresh_ns": int64(*metadataRefresh)}
+	return map[string]any{"keyspace_strategy": keyspace.StrategyOptions, "keyspace_strategy_class": keyspace.StrategyClass, "metrics": a.s.Metrics(), "routing_samples": routing, "hosts": a.s.Metadata().Hosts(), "protocol": 4, "consistency": "LOCAL_QUORUM", "page_size": 32, "prefetch": 0, "retries": 0, "compression": "none", "tls": false, "coalesce_wait_ns": 0, "incremental_receive": *incremental, "metadata_refresh_ns": int64(*metadataRefresh)}
 }
 func (a *v2Adapter) Worker(paged, stream bool) (worker, error) {
 	a.mu.Lock()
@@ -104,7 +107,7 @@ func (a *v2Adapter) Worker(paged, stream bool) (worker, error) {
 	}
 	ctx := context.Background()
 	if a.reads[idx] == nil {
-		p, e := g.Prepare(ctx, a.s, g.Statement[int32, borrowedRow]{CQL: rd, Params: g.Params(g.Param("k", g.Int32, func(k int32) int32 { return k })), Rows: bufferedDecoder}, g.PrepareOptions{})
+		p, e := g.Prepare(ctx, a.s, g.Statement[int32, row]{CQL: rd, Params: g.Params(g.Param("k", g.Int32, func(k int32) int32 { return k })), Rows: bufferedDecoder}, g.PrepareOptions{})
 		if e != nil {
 			return nil, e
 		}
@@ -117,44 +120,44 @@ func (a *v2Adapter) Worker(paged, stream bool) (worker, error) {
 		}
 		a.writes[idx] = p
 	}
-	probe, e := g.BindBorrowed(a.reads[idx], int32(0))
+	readQuery, e := g.NewQuery(a.reads[idx], g.Options{})
 	if e != nil {
 		return nil, e
 	}
-	routing := probe.Routing()
-	if e = drain(probe); e != nil {
+	routing, e := readQuery.Routing(int32(0))
+	if e != nil {
+		readQuery.Close()
 		return nil, e
 	}
 	if !routing.Token.Set {
+		readQuery.Close()
 		return nil, fmt.Errorf("prepared read lacks token routing for %s", rd)
 	}
-	return &v2Worker{a: a, read: a.reads[idx], write: a.writes[idx], stream: stream, out: row{P: make([]byte, 0, size)}}, nil
-}
-func drain[R any](b *g.Bound[R]) error {
-	b.Close()
-	return b.Wait(context.Background())
+	writeQuery, e := g.NewQuery(a.writes[idx], g.Options{IncludeMetadata: true})
+	if e != nil {
+		readQuery.Close()
+		return nil, e
+	}
+	streamQuery, e := g.NewStreamQuery(a.reads[idx], streamDecoder, g.StreamOptions{Incremental: *incremental})
+	if e != nil {
+		readQuery.Close()
+		writeQuery.Close()
+		return nil, e
+	}
+	return &v2Worker{a: a, read: readQuery, write: writeQuery, streamQuery: streamQuery, stream: stream, out: row{P: make([]byte, 0, size)}}, nil
 }
 
 func (w *v2Worker) Write(ctx context.Context, k, r int32, p []byte) error {
-	b, e := g.BindBorrowed(w.write, row{K: k, R: r, P: p})
-	if e != nil {
-		return e
-	}
-	_, e = g.Exec(ctx, w.a.s, b, g.Options{IncludeMetadata: true})
-	return errors.Join(e, drain(b))
+	_, e := w.write.Exec(ctx, row{K: k, R: r, P: p})
+	return errors.Join(e, w.write.Wait(ctx))
 }
 func (w *v2Worker) Read(ctx context.Context, k int32, consume consumer) (resultErr error) {
-	b, e := g.BindBorrowed(w.read, k)
-	if e != nil {
-		return e
-	}
-	defer func() { resultErr = errors.Join(resultErr, drain(b)) }()
 	if w.stream {
-		rs, e := g.RunStream(ctx, w.a.s, b, streamDecoder, g.StreamOptions{})
+		rs, e := w.streamQuery.Run(ctx, k)
 		if e != nil {
 			return e
 		}
-		defer func() { resultErr = errors.Join(resultErr, rs.Close()) }()
+		defer func() { resultErr = errors.Join(resultErr, rs.Close(), w.streamQuery.Wait(ctx)) }()
 		for rs.NextInto(&w.out) {
 			if e := consume(&w.out); e != nil {
 				return e
@@ -162,22 +165,12 @@ func (w *v2Worker) Read(ctx context.Context, k int32, consume consumer) (resultE
 		}
 		return rs.Err()
 	}
-	rs, e := g.Run(ctx, w.a.s, b, g.Options{})
+	rs, e := w.read.Run(ctx, k)
 	if e != nil {
 		return e
 	}
-	defer func() { resultErr = errors.Join(resultErr, rs.Close()) }()
-	for rs.NextInto(&w.borrowed) {
-		n := int(w.borrowed.P.Len())
-		if n > cap(w.out.P) {
-			return fmt.Errorf("blob capacity %d < %d", cap(w.out.P), n)
-		}
-		w.out.K = w.borrowed.K
-		w.out.R = w.borrowed.R
-		w.out.P = w.out.P[:n]
-		if _, e := w.borrowed.P.CopyTo(w.out.P); e != nil {
-			return e
-		}
+	defer func() { resultErr = errors.Join(resultErr, rs.Close(), w.read.Wait(ctx)) }()
+	for rs.NextInto(&w.out) {
 		if e := consume(&w.out); e != nil {
 			return e
 		}

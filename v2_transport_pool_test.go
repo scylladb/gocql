@@ -654,7 +654,8 @@ func TestV2ExclusiveAcquisitionDrainsAcceptedWriterOwnership(t *testing.T) {
 	prefix := binary.BigEndian.AppendUint32(nil, uint32(len(payload)))
 	values := typedTestChain(t, prefix, payload)
 	var released atomic.Bool
-	owner := wire.NewLease(values, func() { released.Store(true) })
+	inputDrained := make(chan struct{})
+	owner := wire.NewLease(values, func() { released.Store(true); close(inputDrained) })
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
@@ -681,10 +682,12 @@ func TestV2ExclusiveAcquisitionDrainsAcceptedWriterOwnership(t *testing.T) {
 	if err := <-done; !errors.Is(err, context.Canceled) {
 		t.Fatal(err)
 	}
-	if !released.Load() {
-		t.Fatal("writer admission did not drain input")
-	}
 	<-serverDone
+	select {
+	case <-inputDrained:
+	case <-time.After(time.Second):
+		t.Fatal("accepted writer did not drain input after transmission")
+	}
 }
 
 func TestV2ExclusiveClosedResponseDropsValidatedArena(t *testing.T) {

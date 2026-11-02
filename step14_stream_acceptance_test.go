@@ -259,7 +259,7 @@ func FuzzStep14StreamingCancellationLifetime(f *testing.F) {
 		var release sync.Once
 		unblock := func() { release.Do(func() { close(decoder.leave) }) }
 		defer unblock()
-		cursor, err := RunStream(ctx, s, bound, decoder, StreamOptions{})
+		cursor, err := RunStream(ctx, s, bound, decoder, StreamOptions{Incremental: true})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -340,7 +340,7 @@ func TestStep14CustomDecoderErrorAfterWrite(t *testing.T) {
 			defer bound.Close()
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
-			cursor, err := RunStream(ctx, s, bound, step14DecoderError{cause}, StreamOptions{Options: Options{Idempotent: true}})
+			cursor, err := RunStream(ctx, s, bound, step14DecoderError{cause}, StreamOptions{Incremental: true, Options: Options{Idempotent: true}})
 			if err != nil {
 				t.Fatal(err)
 			}

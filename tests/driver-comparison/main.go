@@ -48,6 +48,8 @@ type adapter interface {
 	Evidence() any
 }
 
+var incremental = flag.Bool("incremental", false, "explicit bounded incremental receive for streaming queries")
+
 var payloads [2][256][]byte
 var checksums [2][256][32]byte
 

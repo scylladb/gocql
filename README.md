@@ -1,8 +1,7 @@
 # gocql v2
 
 gocql provides a typed Go driver for ScyllaDB and Apache Cassandra. Statements
-pair explicit parameter encoders with result decoders. Prepared bindings retain
-one encoded representation across execution, retries and paging.
+pair explicit parameter encoders with result decoders. Worker-owned queries reuse an owned parameter snapshot across retries and paging.
 
 ```sh
 go get github.com/scylladb/gocql/v2@v2.0.0
@@ -27,10 +26,10 @@ statement := gocql.Statement[int32, gocql.Text]{
 }
 prepared, err := gocql.Prepare(ctx, session, statement, gocql.PrepareOptions{})
 if err != nil { return err }
-bound, err := gocql.BindOwned(prepared, int32(42))
+query, err := gocql.NewQuery(prepared, gocql.Options{})
 if err != nil { return err }
-defer bound.Close()
-rows, err := gocql.Run(ctx, session, bound, gocql.Options{})
+defer query.Close()
+rows, err := query.Run(ctx, int32(42))
 if err != nil { return err }
 defer rows.Close()
 for rows.Next() {
@@ -47,18 +46,20 @@ from arbitrary Go values.
 
 ## Ownership and streaming
 
-`BindBorrowed` keeps caller payloads immutable until `bound.Close()` followed by
-a successful `bound.Wait(ctx)`. Close prevents new admissions and does not block;
-a timed-out Wait leaves the borrowing obligation in force. `BindOwned` explicitly
-copies caller-backed payload once. A binding can be reused by concurrent
-executions while open.
+`NewQuery` creates a reusable query for one worker. Each `Exec`, `Run`,
+`RunPage` or `RunUnpaged` call copies its parameters during admission. Prepared
+statements and compiled plans remain shareable. Overlapping executions return
+`ErrBusy`; `query.Wait(ctx)` joins accepted writes and callbacks before reuse.
+`Close` cancels the active execution and permanently stops the query.
 
 Buffered rows borrow receive pages. Views expire at the next advancement or
 Close unless a retained `PageLease` pins the page. `Clone` explicitly detaches
 values. `NextInto` writes typed fields into caller structs while payloads still
 borrow their pages.
 
-`RunStream` instead decodes incrementally into final caller storage. Read the
+`NewStreamQuery` decodes into seeded caller storage. It buffers each page on
+normal multiplexed connections by default. `StreamOptions{Incremental: true}`
+selects bounded incremental receive with an exclusive connection reservation. Read the
 [streaming guide](docs/source/statements/streaming.md) and run the complete
 [standalone example](examples/streaming/main.go):
 
@@ -68,8 +69,14 @@ go run ./examples/streaming -hosts 127.0.0.1:9042
 
 The example creates and drops its own keyspace, validates every result, seeds
 nested blob buffers, checks backing identity across pages, and exercises pool
-occupancy and binding drain. It accepts protocol, compression, authentication
+query admission and transport drain. It accepts protocol, compression, authentication
 and verified TLS options; see `go run ./examples/streaming -h`.
+
+The following table describes explicit **incremental** mode. Page-buffered
+queries support the normal protocol/compression combinations and retain memory
+proportional to concurrent response pages, within configured frame and
+decompression limits. Idle receive caching is bounded by 16 MiB total, 9 MiB
+per object and 64 objects per session.
 
 | Streaming mode | Behavior |
 | --- | --- |

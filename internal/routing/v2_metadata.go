@@ -109,6 +109,8 @@ func (m *MetadataSnapshot) Diagnostics() []error {
 }
 
 type MetricsSnapshot struct {
+	ReceiveCacheHits, ReceiveCacheMisses                                  uint64
+	ReceiveCacheBytes, ReceiveCacheObjects                                int
 	Requests, Attempts, Errors, Retries, Speculations, Cancelled, Orphans uint64
 	InFlight                                                              int64
 	LatencyP50, LatencyP95, LatencyP99                                    time.Duration

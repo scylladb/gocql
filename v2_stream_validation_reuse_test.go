@@ -70,7 +70,7 @@ func TestStreamContinuationValidationMetadataAndCallbacks(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	decoder := new(pageValidationDecoder)
-	cursor, err := RunStream(ctx, s, bound, decoder, StreamOptions{Limits: StreamLimits{MaxMetadataBytes: 1024}})
+	cursor, err := RunStream(ctx, s, bound, decoder, StreamOptions{Incremental: true, Limits: StreamLimits{MaxMetadataBytes: 1024}})
 	if err != nil {
 		t.Fatal(err)
 	}

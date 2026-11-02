@@ -12,6 +12,7 @@ import (
 )
 
 type RowsStorage[R any] struct {
+	cursor          queryCursor
 	prefetchJobs    chan InternalPrefetchJob
 	pendingRelease  func()
 	mu              sync.Mutex

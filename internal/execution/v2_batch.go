@@ -19,6 +19,23 @@ type InternalBatchState struct {
 	items []InternalExecutionRequest
 }
 
+// Public batches capture option payloads as well as their already owned items.
+// Cancellation can return before transport cleanup without retaining caller data.
+func RunOwnedBatch[R any](ctx context.Context, s *implCluster.Session, kind BatchKind, items []BatchItem, decoder RowDecoder[R], options Options) (*Page[R], error) {
+	options, err := cloneQueryOptions(options)
+	if err != nil {
+		return nil, err
+	}
+	return RunBatch(ctx, s, kind, items, decoder, options)
+}
+func ExecOwnedBatch(ctx context.Context, s *implCluster.Session, kind BatchKind, items []BatchItem, options Options) (Result, error) {
+	options, err := cloneQueryOptions(options)
+	if err != nil {
+		return Result{}, err
+	}
+	return ExecBatch(ctx, s, kind, items, options)
+}
+
 func BatchEntry[R any](bound *Bound[R]) (BatchItem, error) {
 	if bound == nil || bound.privateStorage.InternalRequest.InternalOwner == nil {
 		return *func() *BatchItem {

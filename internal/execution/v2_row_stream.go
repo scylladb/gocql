@@ -39,6 +39,9 @@ import (
 type StreamOptions struct {
 	Options Options
 	Limits  StreamLimits
+	// Incremental reserves an exclusive connection and bounds receive scratch.
+	// The default buffers a complete page on normal multiplexed connections.
+	Incremental bool
 }
 type StreamInfo struct {
 	Result               Result
@@ -46,7 +49,7 @@ type StreamInfo struct {
 	OutputStarted        bool
 }
 
-// RowStream owns one configured pool slot and writes only during NextInto.
+// RowStream writes only during NextInto. Incremental mode owns a pool slot.
 // Output belongs to the caller and remains valid after Close.
 type RowStream[R any] struct {
 	state          PageState
@@ -54,6 +57,9 @@ type RowStream[R any] struct {
 }
 
 func RunStream[B, R any](ctx context.Context, session *implCluster.Session, bound *Bound[B], decoder StreamRowDecoder[R], options StreamOptions) (*RowStream[R], error) {
+	return runStreamWithCache(ctx, session, bound, decoder, options, nil)
+}
+func runStreamWithCache[B, R any](ctx context.Context, session *implCluster.Session, bound *Bound[B], decoder StreamRowDecoder[R], options StreamOptions, plans *streamPlanCache[R]) (*RowStream[R], error) {
 	if decoder == nil {
 		return nil, typeValidation("stream decoder", "nil decoder")
 	}
@@ -72,6 +78,7 @@ func RunStream[B, R any](ctx context.Context, session *implCluster.Session, boun
 	request.InternalOptions.InternalProfile.Speculation = nil
 	cursor := func() *RowStream[R] {
 		opaqueStorageValue := new(RowStream[R])
+		opaqueStorageValue.privateStorage.cursor = executionCursor(request)
 		opaqueStorageValue.privateStorage.InternalCtx = runctx
 		opaqueStorageValue.privateStorage.InternalCancel = cancel
 		opaqueStorageValue.privateStorage.InternalSession = session
@@ -80,6 +87,8 @@ func RunStream[B, R any](ctx context.Context, session *implCluster.Session, boun
 		opaqueStorageValue.privateStorage.InternalDecoder = decoder
 		opaqueStorageValue.state = StartPage()
 		opaqueStorageValue.privateStorage.InternalHistory = pagingHistory{InternalMaxCount: InternalRuntimeFor(session).InternalConfig.Limits.MaxPagingStates, InternalMaxBytes: InternalRuntimeFor(session).InternalConfig.Limits.MaxPagingStateBytes}
+		opaqueStorageValue.privateStorage.pageBuffered = !options.Incremental
+		opaqueStorageValue.privateStorage.bufferedPlans = plans
 		return opaqueStorageValue
 		// Construction owns active until headers/metadata have selected a checked plan.
 	}()
@@ -161,6 +170,9 @@ func (s *RowStream[R]) Close() error {
 	if s == nil {
 		return nil
 	}
+	if !s.privateStorage.cursor.current() {
+		return s.Err()
+	}
 	return InternalRowStreamCloseWithError(s, nil)
 }
 func InternalRowStreamCloseWithError[R any](s *RowStream[R], err error) error {
@@ -198,6 +210,12 @@ func InternalRowStreamCleanup[R any](s *RowStream[R], reusable bool) {
 		return
 	}
 	s.privateStorage.cleaned = true
+	if s.privateStorage.bufferedPage != nil {
+		s.privateStorage.bufferedPage.Owner.Release()
+		s.privateStorage.bufferedPage = nil
+		s.privateStorage.bufferedBody = nil
+		s.privateStorage.bufferedReader = nil
+	}
 	if s.privateStorage.stop != nil {
 		s.privateStorage.stop()
 	}
@@ -226,6 +244,9 @@ func InternalRowStreamCleanup[R any](s *RowStream[R], reusable bool) {
 }
 func (s *RowStream[R]) NextInto(dst *R) bool {
 	if s == nil {
+		return false
+	}
+	if !s.privateStorage.cursor.current() {
 		return false
 	}
 	s.privateStorage.mu.Lock()
@@ -264,6 +285,9 @@ func (s *RowStream[R]) NextInto(dst *R) bool {
 		InternalRowStreamFail(s, typeValidation("stream destination", "nil destination"))
 		InternalRowStreamCleanup(s, false)
 		return false
+	}
+	if s.privateStorage.pageBuffered {
+		return s.nextBuffered(dst)
 	}
 	for {
 		if s.privateStorage.response.InternalIndex < s.privateStorage.response.InternalRowCount {
@@ -453,6 +477,9 @@ func (s *RowStream[R]) wireRequest(consistency Consistency) (*attemptRequest, er
 	return w, nil
 }
 func InternalRowStreamLoadPage[R any](s *RowStream[R]) error {
+	if s.privateStorage.pageBuffered {
+		return s.loadBufferedPage()
+	}
 	request := s.privateStorage.InternalRequest
 	metadata := s.privateStorage.InternalSession.Metadata()
 	request.tabletFeedback = implCluster.InternalSessionCaptureTabletFeedback(s.privateStorage.InternalSession, request.InternalRouting, metadata)

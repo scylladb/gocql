@@ -25,6 +25,7 @@
 package transport
 
 import "context"
+import "bufio"
 import "fmt"
 import "time"
 import "github.com/scylladb/gocql/v2/internal/streams"
@@ -95,6 +96,8 @@ func Dial(ctx context.Context, host *HostInfo, cfg *ConnConfig, errorHandler Con
 	c := &Conn{
 		InternalR: &connReader{
 			InternalConn: dialedHost.Conn,
+			InternalR:    bufio.NewReaderSize(dialedHost.Conn, 8<<10),
+			transferable: true,
 		},
 		InternalCfg:                 cfg,
 		InternalCalls:               make(map[int]*InternalCallReq),

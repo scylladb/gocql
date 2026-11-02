@@ -8,6 +8,7 @@ import cqltype "github.com/scylladb/gocql/v2/internal/cqltype"
 import (
 	. "github.com/scylladb/gocql/v2/internal/cqltype"
 
+	"bytes"
 	"fmt"
 	"net"
 	"strconv"
@@ -22,12 +23,24 @@ import (
 // Its sticky error makes every metadata read checked, without panic/recover.
 
 type TypedParser struct {
+	reuse      *MetadataReuse
 	MaxDepth   int
 	Cursor     typedMetadataCursor
 	Err        error
 	Proto      byte
 	MetadataID bool
 	owner      *wire.Lease
+}
+
+// MetadataReuse belongs to the serialized receive path of one connection.
+// It retains one fully validated column specification, with a 64 KiB encoded
+// ceiling. Exact byte identity permits sharing immutable names and types;
+// differing bytes always take the complete checked parser path.
+type MetadataReuse struct {
+	encoded []byte
+	columns Columns
+	global  bool
+	depth   int
 }
 
 func (p *TypedParser) Check(err error) {
@@ -326,6 +339,30 @@ func (p *TypedParser) MetadataFields(page *ParsedMetadata, prepared bool, flagLW
 		return Columns{}, count
 	}
 	global := flags&uint32(frm.FlagGlobalTableSpec) != 0
+	var checkpoint wire.Cursor
+	cursor, buffered := p.Cursor.(*wire.Cursor)
+	if buffered && !prepared && p.reuse != nil && p.Err == nil {
+		checkpoint = *cursor
+		cache := p.reuse
+		if cache.columns.Len() == count && cache.global == global && cache.depth == p.MaxDepth && len(cache.encoded) > 0 {
+			candidate, err := cursor.Take(int64(len(cache.encoded)))
+			if err == nil {
+				offset, same := 0, true
+				_ = candidate.Each(func(span wire.Span) error {
+					n := span.Len()
+					if !bytes.Equal(span.Bytes(), cache.encoded[offset:offset+n]) {
+						same = false
+					}
+					offset += n
+					return nil
+				})
+				if same {
+					return cache.columns, count
+				}
+			}
+			*cursor = checkpoint
+		}
+	}
 	keyspace, table := "", ""
 	if global {
 		keyspace, table = p.Str(), p.Str()
@@ -345,7 +382,24 @@ func (p *TypedParser) MetadataFields(page *ParsedMetadata, prepared bool, flagLW
 		}
 		columns[i] = ColumnSpec{Keyspace: keyspace, Table: table, Name: p.Str(), Type: p.dataType(0)}
 	}
-	return cqltype.ColumnsOwned(columns), count
+	result := cqltype.ColumnsOwned(columns)
+	if buffered && !prepared && p.reuse != nil && p.Err == nil {
+		n := checkpoint.Remaining() - cursor.Remaining()
+		if n > 0 && n <= 64<<10 {
+			encoded, err := checkpoint.Take(n)
+			if err == nil {
+				cache := p.reuse
+				if cap(cache.encoded) < int(n) {
+					cache.encoded = make([]byte, int(n))
+				} else {
+					cache.encoded = cache.encoded[:n]
+				}
+				_, _ = encoded.CopyTo(cache.encoded)
+				cache.columns, cache.global, cache.depth = result, global, p.MaxDepth
+			}
+		}
+	}
+	return result, count
 }
 
 func (c Settings) ParseTypedResponseInto(head frm.FrameHeader, body wire.Chain, owner *wire.Lease, page *model.ResponseData) (*model.ResponseData, error) {
@@ -353,7 +407,7 @@ func (c Settings) ParseTypedResponseInto(head frm.FrameHeader, body wire.Chain, 
 	if body.Len() > c.MaxDecompressedBytes {
 		return nil, ErrFrameTooBig
 	}
-	p := &TypedParser{Cursor: wire.NewCursor(body), Proto: c.Protocol, MetadataID: c.Protocol >= 5 || c.MetadataID, owner: owner, MaxDepth: c.MaxMetadataDepth}
+	p := &TypedParser{reuse: c.MetadataReuse, Cursor: wire.NewCursor(body), Proto: c.Protocol, MetadataID: c.Protocol >= 5 || c.MetadataID, owner: owner, MaxDepth: c.MaxMetadataDepth}
 	*page = model.ResponseData{Owner: owner}
 	if head.Flags&frm.FlagTracing != 0 {
 		page.TraceID = p.Copy(16)

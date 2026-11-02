@@ -112,10 +112,41 @@ func (c *Conn) InternalExecuteTyped(ctx context.Context, req *attemptRequest) (*
 	if call.streamObserverContext != nil {
 		call.streamObserverContext.StreamStarted(ObservedStream{Host: c.InternalHost})
 	}
-	n, err := writer.InternalWriteSpans(ctx, packet)
+	var n int64
+	if c.InternalCoalesceWait == 0 {
+		// Hold both input and shared-connection admission until the persistent
+		// writer finishes, even if cancellation returns to the calling goroutine.
+		if err := c.beginShared(ctx); err != nil {
+			return failBeforeWrite(err)
+		}
+		if req.Lease != nil && !req.Lease.Retain() {
+			c.endShared()
+			return failBeforeWrite(ErrReleased)
+		}
+		ownedPayloads := payloadOwners
+		payloadOwners = nil
+		inputLease := req.Lease
+		lease := wire.NewLease(packet, func() {
+			if inputLease != nil {
+				inputLease.Release()
+			}
+			for _, owner := range ownedPayloads {
+				owner.Release()
+			}
+			c.endShared()
+		})
+		n, err = c.submitTyped(ctx, packet, lease)
+	} else {
+		n, err = writer.InternalWriteSpans(ctx, packet)
+	}
 	if err != nil {
 		stopWaiting = true
-		if n == 0 && (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) {
+		var pending *pendingWriteError
+		if errors.As(err, &pending) {
+			if c.markOrphan(call) {
+				closeErr = InternalErrOrphanBudget
+			}
+		} else if n == 0 && (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) {
 			if c.InternalRemoveCallIfOpen(stream) {
 				releaseStream = true
 				recycleCall = true
@@ -195,7 +226,7 @@ func (c *Conn) writeTypedParams(e *typedEnvelope, req *attemptRequest, batch boo
 
 func (c *Conn) nativeProtocol() protocol.Settings {
 	limits := c.typedProtocolLimits()
-	p := protocol.Settings{Protocol: c.InternalVersion, Flags: c.InternalFramers.InternalDefaults.InternalFlags, MetadataID: c.InternalFramers.InternalDefaults.InternalScyllaUseMetadataID, TabletsRoutingV2: c.InternalFramers.InternalDefaults.InternalTabletsRoutingV2, MaxFrameBytes: limits.MaxFrameBytes, MaxDecompressedBytes: limits.MaxDecompressedBytes, MaxMetadataDepth: limits.MaxMetadataDepth, FlagLWT: c.InternalFramers.InternalDefaults.InternalFlagLWT, RateLimitingErrorCode: c.InternalFramers.InternalDefaults.rateLimitingErrorCode, SegmentCompression: c.InternalSegCompressor != nil}
+	p := protocol.Settings{MetadataReuse: &c.typedMetadataReuse, Protocol: c.InternalVersion, Flags: c.InternalFramers.InternalDefaults.InternalFlags, MetadataID: c.InternalFramers.InternalDefaults.InternalScyllaUseMetadataID, TabletsRoutingV2: c.InternalFramers.InternalDefaults.InternalTabletsRoutingV2, MaxFrameBytes: limits.MaxFrameBytes, MaxDecompressedBytes: limits.MaxDecompressedBytes, MaxMetadataDepth: limits.MaxMetadataDepth, FlagLWT: c.InternalFramers.InternalDefaults.InternalFlagLWT, RateLimitingErrorCode: c.InternalFramers.InternalDefaults.rateLimitingErrorCode, SegmentCompression: c.InternalSegCompressor != nil}
 	if c.InternalCompressor != nil {
 		p.Compression = c.InternalCompressor.Name()
 	}

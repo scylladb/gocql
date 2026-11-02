@@ -134,12 +134,15 @@ type InternalStreamResponse struct {
 // InternalWorkingStorageBytes accounts live driver byte storage, excluding
 // caller output, source fixtures and standard-library TLS record storage.
 // Metadata uses its conservative simultaneous allocation charge; unit aliases
-// are counted once and raw production ConnReader has no read-ahead allocation.
+// are counted once; native read-ahead is bounded by the reservation limit.
 func (r *InternalStreamResponse) InternalWorkingStorageBytes() int64 {
 	if r == nil {
 		return 0
 	}
-	n := r.InternalBody.WorkingStorageBytes()
+	n := r.InternalBody.WorkingStorageBytes() + int64(cap(r.reservation.readAhead.buf))
+	if r.reservation.transferred.buffered != nil {
+		n += int64(r.reservation.transferred.buffered.Size())
+	}
 	if r.reservation.InternalMetadataBudget != nil {
 		n += r.reservation.InternalMetadataBudget.Bytes()
 	}
@@ -184,7 +187,7 @@ func (r *InternalExclusiveConn) InternalInitStream(limits StreamLimits) error {
 		return err
 	}
 	if r.InternalConn.InternalVersion == 5 {
-		units, err := segment.NewUnitReader(r.InternalCtx, r.InternalConn.InternalR, r.InternalConn.InternalSegCompressor, segment.UnitLimits{MaxStorageBytes: l.MaxTransformBytes, MaxDecodedBytes: int(min(r.InternalConn.typedProtocolLimits().MaxDecompressedBytes, segment.MaxPayloadSize))})
+		units, err := segment.NewUnitReader(r.InternalCtx, r.socketSource(), r.InternalConn.InternalSegCompressor, segment.UnitLimits{MaxStorageBytes: l.MaxTransformBytes, MaxDecodedBytes: int(min(r.InternalConn.typedProtocolLimits().MaxDecompressedBytes, segment.MaxPayloadSize))})
 		if err != nil {
 			return err
 		}
@@ -197,7 +200,7 @@ func (r *InternalExclusiveConn) receiveSource() io.Reader {
 	if r.InternalUnits != nil {
 		return r.InternalUnits
 	}
-	return r.InternalConn.InternalR
+	return r.socketSource()
 }
 func (r *InternalExclusiveConn) InternalFinishResponse() error {
 	if r.InternalUnits != nil {
@@ -214,11 +217,17 @@ func (r *InternalExclusiveConn) InternalWithIO(ctx context.Context, fn func() er
 		return typeValidation("stream context", "nil context")
 	}
 	if r.InternalClosing.Load() {
+		if cause := r.cancellationCause(); cause != nil {
+			return cause
+		}
 		return ErrClosed
 	}
 	r.active.Lock()
 	defer r.active.Unlock()
 	if r.InternalClosing.Load() || r.closed || r.InternalConn.InternalCtx.Err() != nil {
+		if cause := r.cancellationCause(); cause != nil {
+			return cause
+		}
 		return ErrClosed
 	}
 	if err := ctx.Err(); err != nil {
@@ -303,7 +312,7 @@ func (r *InternalExclusiveConn) InternalExchange(ctx context.Context, request *a
 				r.InternalUnits.beginFrame()
 			}
 			limits := r.InternalConn.typedProtocolLimits()
-			header, body, err := frm.ReadStreamEnvelope(ctx, r.receiveSource(), r.InternalConn.InternalVersion, wire.StreamLimits{MaxBytes: min(limits.MaxFrameBytes, limits.MaxDecompressedBytes), MaxDepth: limits.MaxMetadataDepth + 2, DiscardBytes: r.InternalLimits.DiscardBytes}, r.InternalConn.typedResponseExtensionFlags())
+			header, body, err := r.readStreamEnvelope(ctx, wire.StreamLimits{MaxBytes: min(limits.MaxFrameBytes, limits.MaxDecompressedBytes), MaxDepth: limits.MaxMetadataDepth + 2, DiscardBytes: r.InternalLimits.DiscardBytes})
 			if err != nil {
 				return err
 			}

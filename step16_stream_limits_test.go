@@ -30,7 +30,7 @@ func TestStep16StreamingLargeEnvelopeAdmission(t *testing.T) {
 		}()
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		bound := runtimeQuery(t)
-		cursor, err := RunStream(ctx, s, bound, StreamOneColumn(StreamBlob), StreamOptions{})
+		cursor, err := RunStream(ctx, s, bound, StreamOneColumn(StreamBlob), StreamOptions{Incremental: true})
 		if err != nil {
 			t.Fatal("configured envelope rejected", declared, err)
 		}

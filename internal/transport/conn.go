@@ -24,6 +24,8 @@
 
 package transport
 
+import "github.com/scylladb/gocql/v2/internal/protocol"
+
 import (
 	"bufio"
 	"bytes"
@@ -186,6 +188,9 @@ type ConnInterface interface {
 // queries, but users are usually advised to use a more reliable, higher
 // level API.
 type Conn struct {
+	typedMetadataReuse                        protocol.MetadataReuse
+	typedWriterOnce                           sync.Once
+	typedWriter                               *submissionWriter
 	InternalOpeningSharderEpoch               uint64
 	InternalOpeningDeadline                   time.Time
 	eventMu                                   sync.Mutex
@@ -2035,11 +2040,12 @@ type InternalConnReadSource interface {
 
 // connReader implements connReadSource.
 type InternalConnReader struct {
+	transferable bool
 	deadlineMu   sync.Mutex
 	pause        atomic.Bool
 	InternalConn net.Conn
-	// r is an explicit compatibility source used by legacy fixtures. Production
-	// connections leave it nil so header reads cannot prefetch body bytes.
+	// Production uses an 8 KiB shared buffer. Exclusive acquisition transfers
+	// this reader at a checked frame boundary, preserving all unread bytes.
 	InternalR      *bufio.Reader
 	timeout        atomic.Int64
 	InternalDisarm atomic.Bool
@@ -2076,6 +2082,9 @@ var InternalErrArmReadDeadline = errors.New("gocql: unable to arm the read deadl
 // consumed off the connection and cannot be put back, so a frame reader that gets
 // an error here has to treat the connection as desynced (see processFrameSource).
 func (c *InternalConnReader) Read(p []byte) (n int, err error) {
+	if c.InternalR != nil && c.InternalR.Buffered() >= len(p) {
+		return io.ReadFull(c.InternalR, p)
+	}
 	for attempt := 0; attempt < InternalMaxReadAttempts; attempt++ {
 		if aerr := c.armDeadline(); aerr != nil {
 
@@ -2105,6 +2114,19 @@ func (c *InternalConnReader) Read(p []byte) (n int, err error) {
 	}
 
 	return n, err
+}
+
+// readAvailable returns after one source read so exclusive body read-ahead never
+// waits to fill speculative capacity. The ordinary shared Read keeps its full-
+// fill and progressive timeout behavior.
+func (c *InternalConnReader) readAvailable(p []byte) (int, error) {
+	if err := c.armDeadline(); err != nil {
+		return 0, fmt.Errorf("%w: %w", InternalErrArmReadDeadline, err)
+	}
+	if c.InternalR != nil {
+		return c.InternalR.Read(p)
+	}
+	return c.InternalConn.Read(p)
 }
 
 // armDeadline arms (or clears) the underlying read deadline for the read attempt
@@ -2250,6 +2272,7 @@ func (w *InternalWriteCoalescer) InternalSetWriteTimeout(timeout time.Duration) 
 }
 
 type InternalWriteRequest struct {
+	ctx context.Context
 	// resultChan is a channel (with buffer size 1) where to send results of the write.
 	resultChan chan<- InternalWriteResult
 	// data to write.
@@ -2279,6 +2302,7 @@ var InternalWriteResultChanPool = sync.Pool{
 func (w *InternalWriteCoalescer) InternalWriteContext(ctx context.Context, p []byte) (int, error) {
 	resultChan := InternalWriteResultChanPool.Get().(chan InternalWriteResult)
 	wr := InternalWriteRequest{
+		ctx:        ctx,
 		resultChan: resultChan,
 		data:       p,
 	}
@@ -2316,22 +2340,12 @@ func (w *InternalWriteCoalescer) writeFlusher(interval time.Duration) {
 
 func (w *InternalWriteCoalescer) InternalWriteFlusherImpl(timerC <-chan time.Time, resetTimer func()) {
 	running := false
-
-	var buffers net.Buffers
-	var resultChans []chan<- InternalWriteResult
-	var sizes []int64
+	var requests []InternalWriteRequest
 
 	for {
 		select {
 		case req := <-w.InternalWriteCh:
-			if req.data != nil {
-				buffers = append(buffers, req.data)
-				sizes = append(sizes, int64(len(req.data)))
-			} else {
-				_ = req.chain.Each(func(s wire.Span) error { buffers = append(buffers, s.Bytes()); return nil })
-				sizes = append(sizes, req.chain.Len())
-			}
-			resultChans = append(resultChans, req.resultChan)
+			requests = append(requests, req)
 			if !running {
 
 				resetTimer()
@@ -2343,17 +2357,34 @@ func (w *InternalWriteCoalescer) InternalWriteFlusherImpl(timerC <-chan time.Tim
 				InternalErr: io.EOF,
 			}
 
-			for _, resultChan := range resultChans {
-
-				resultChan <- result
+			for _, request := range requests {
+				request.resultChan <- result
 			}
 			return
 		case <-timerC:
 			running = false
-			w.InternalFlushSizes(resultChans, buffers, sizes)
-			buffers = nil
-			resultChans = nil
-			sizes = nil
+			var buffers net.Buffers
+			var resultChans []chan<- InternalWriteResult
+			var sizes []int64
+			for _, request := range requests {
+				if request.ctx != nil && request.ctx.Err() != nil {
+					request.resultChan <- InternalWriteResult{InternalErr: request.ctx.Err()}
+					continue
+				}
+				if request.data != nil {
+					buffers = append(buffers, request.data)
+					sizes = append(sizes, int64(len(request.data)))
+				} else {
+					_ = request.chain.Each(func(s wire.Span) error { buffers = append(buffers, s.Bytes()); return nil })
+					sizes = append(sizes, request.chain.Len())
+				}
+				resultChans = append(resultChans, request.resultChan)
+			}
+			if len(resultChans) > 0 {
+				w.InternalFlushSizes(resultChans, buffers, sizes)
+			}
+			clear(requests)
+			requests = nil
 			if w.InternalTestFlushedHook != nil {
 				w.InternalTestFlushedHook()
 			}

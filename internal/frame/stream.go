@@ -88,39 +88,53 @@ func CheckResponseHeader(h FrameHeader, version byte, extensionFlags ...byte) er
 // rather than raw segmented bytes. The transport must interrupt blocking I/O
 // on cancellation; this helper never launches a background reader.
 func ReadStreamEnvelope(ctx context.Context, source io.Reader, version byte, limits wire.StreamLimits, extensionFlags ...byte) (FrameHeader, *wire.Stream, error) {
-	if ctx == nil || source == nil {
-		return FrameHeader{}, nil, wire.ErrStreamScope
-	}
-	if err := ctx.Err(); err != nil {
-		return FrameHeader{}, nil, err
-	}
-	// Validate budgets before reading even the header.
-	if _, err := wire.CheckStreamLimits(limits); err != nil {
-		return FrameHeader{}, nil, err
-	}
-	if version < 3 || version > 5 {
-		return FrameHeader{}, nil, fmt.Errorf("gocql: invalid streaming protocol version %d", version)
-	}
-	var raw [HeaderSize]byte
-	if _, err := io.ReadFull(source, raw[:]); err != nil {
-		return FrameHeader{}, nil, err
-	}
-	if err := ctx.Err(); err != nil {
-		return FrameHeader{}, nil, err
-	}
-	h, err := DecodeHeader(raw[:])
+	h, err := ReadStreamHeader(ctx, source, version, limits, extensionFlags...)
 	if err != nil {
 		return FrameHeader{}, nil, err
-	}
-	if err := CheckResponseHeader(h, version, extensionFlags...); err != nil {
-		return FrameHeader{}, nil, err
-	}
-	if h.Flags&FlagCompress != 0 {
-		return FrameHeader{}, nil, ErrStreamFrameCompression
 	}
 	body, err := wire.NewStream(ctx, source, int64(h.Length), limits)
 	if err != nil {
 		return FrameHeader{}, nil, err
 	}
 	return h, body, nil
+}
+
+// ReadStreamHeader validates the complete native header and declared body limit
+// without reading body bytes. The source must already expose verified v5 units.
+func ReadStreamHeader(ctx context.Context, source io.Reader, version byte, limits wire.StreamLimits, extensionFlags ...byte) (FrameHeader, error) {
+	if ctx == nil || source == nil {
+		return FrameHeader{}, wire.ErrStreamScope
+	}
+	if err := ctx.Err(); err != nil {
+		return FrameHeader{}, err
+	}
+	// Validate budgets before reading even the header.
+	checked, err := wire.CheckStreamLimits(limits)
+	if err != nil {
+		return FrameHeader{}, err
+	}
+	if version < 3 || version > 5 {
+		return FrameHeader{}, fmt.Errorf("gocql: invalid streaming protocol version %d", version)
+	}
+	var raw [HeaderSize]byte
+	if _, err := io.ReadFull(source, raw[:]); err != nil {
+		return FrameHeader{}, err
+	}
+	if err := ctx.Err(); err != nil {
+		return FrameHeader{}, err
+	}
+	h, err := DecodeHeader(raw[:])
+	if err != nil {
+		return FrameHeader{}, err
+	}
+	if err := CheckResponseHeader(h, version, extensionFlags...); err != nil {
+		return FrameHeader{}, err
+	}
+	if h.Flags&FlagCompress != 0 {
+		return FrameHeader{}, ErrStreamFrameCompression
+	}
+	if int64(h.Length) > checked.MaxBytes {
+		return FrameHeader{}, wire.ErrLimit
+	}
+	return h, nil
 }

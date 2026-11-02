@@ -170,7 +170,7 @@ func TestStep15ConcurrentLiveMemory(t *testing.T) {
 						run := func() error {
 							options := Options{PageSize: Option[int32]{Set: true, Value: 128}, Prefetch: Option[int]{Set: true, Value: 0}}
 							if api == "stream" {
-								cursor, e := RunStream(caseCtx, s, bound, streamDecoder, StreamOptions{Options: options})
+								cursor, e := RunStream(caseCtx, s, bound, streamDecoder, StreamOptions{Incremental: true, Options: options})
 								if e != nil {
 									return e
 								}

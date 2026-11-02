@@ -23,11 +23,20 @@ import (
 	"context"
 
 	implCluster "github.com/scylladb/gocql/v2/internal/cluster"
+	"github.com/scylladb/gocql/v2/internal/codec"
+	"github.com/scylladb/gocql/v2/internal/wire"
 	"sync"
 	"sync/atomic"
 )
 
 type RowStreamStorage[R any] struct {
+	cursor              queryCursor
+	pageBuffered        bool
+	bufferedPage        *responsePage
+	bufferedBody        *wire.Stream
+	bufferedReader      *codec.StreamRowReader
+	bufferedIndex       int32
+	bufferedPlans       *streamPlanCache[R]
 	attemptMetadata     *streamResponse
 	closeDone           chan struct{}
 	retryTarget         *Target

@@ -1,5 +1,9 @@
 # gocql v2 API contract
 
+The reusable-query amendment dated 2026-11-02 supersedes the immutable binding
+API and makes streaming decoders page-buffered by default. Performance
+acceptance is incomplete; see [redesign status](../tests/driver-comparison/REDESIGN.md).
+
 Status: implementation contract, distinct from the six reviewed Rust reference
 specifications. Module: `github.com/scylladb/gocql/v2`; package: `gocql`. The
 implementation uses the internal packages and public facade required by
@@ -529,95 +533,50 @@ Dynamic malformed scalars are
 rejected with the same rules as typed codecs; no implicit universal Empty
 fallback.
 
-## Statements, preparation, binding and execution
+## Statements, preparation, queries and execution
+
+Prepared statements and compiled plans remain immutable and shareable. Each
+worker creates a reusable query; it permits one active execution and owns all
+captured parameters through retries, pages, accepted writes and callbacks.
 
 ```go
-type StatementKind uint8
-const (UnknownStatement StatementKind = iota; OrdinaryStatement; ConditionalStatement)
-type Statement[P, R any] struct {
-    CQL string
-    Kind StatementKind
-    Params ParamEncoder[P]
-    Rows RowDecoder[R]
-}
-type Prepared[P, R any] struct { /* immutable handle, synchronized metadata */ }
-type Bound[R any] struct { /* immutable encoded params, ownership gate */ }
 func Prepare[P, R any](context.Context, *Session, Statement[P, R], PrepareOptions) (*Prepared[P, R], error)
-func BindBorrowed[P, R any](*Prepared[P, R], P) (*Bound[R], error)
-func BindOwned[P, R any](*Prepared[P, R], P) (*Bound[R], error)
-func BindUnpreparedBorrowed[P, R any](Statement[P, R], Columns, P) (*Bound[R], error)
-func BindUnpreparedOwned[P, R any](Statement[P, R], Columns, P) (*Bound[R], error)
-func (p *Prepared[P, R]) Parameters() Columns
-func (p *Prepared[P, R]) Columns() Columns
-func (p *Prepared[P, R]) Info() PreparedInfo
-func (b *Bound[R]) Close()
-func (b *Bound[R]) Wait(context.Context) error
-func (b *Bound[R]) Routing() RoutingInfo
-func Run[R any](context.Context, *Session, *Bound[R], Options) (*Rows[R], error)
-func RunPage[R any](context.Context, *Session, *Bound[R], PageState, Options) (*Page[R], error)
-func RunUnpaged[R any](context.Context, *Session, *Bound[R], Options) (*Page[R], error)
-func Exec[R any](context.Context, *Session, *Bound[R], Options) (Result, error)
-
-type PrepareOptions struct { Keyspace string; HostID Option[UUID]; Trace bool }
-type PreparedInfo struct {
-    Keyspace, Table string
-    PartitionKeyIndexes []int
-    Kind StatementKind
-    Generation uint64
-}
-type Option[T any] struct { Value T; Set bool }
+func NewQuery[P, R any](*Prepared[P, R], Options) (*Query[P, R], error)
+func NewUnpreparedQuery[P, R any](*Session, Statement[P, R], Columns, Options) (*Query[P, R], error)
+func (q *Query[P, R]) Exec(context.Context, P) (Result, error)
+func (q *Query[P, R]) Run(context.Context, P) (*Rows[R], error)
+func (q *Query[P, R]) RunPage(context.Context, P, PageState) (*Page[R], error)
+func (q *Query[P, R]) RunUnpaged(context.Context, P) (*Page[R], error)
+func (q *Query[P, R]) Routing(P) (RoutingInfo, error)
+func (q *Query[P, R]) BatchEntry(P) (BatchItem, error)
+func (q *Query[P, R]) Close()
+func (q *Query[P, R]) Wait(context.Context) error
 ```
 
-Prepare runs under its context including DNS/pool acquisition and all local
-preparation. It prepares one eligible connection, installs metadata and caches
-by exact CQL, effective keyspace and schema generation. Generation validity is
-scoped to the statement's known table/type/partitioner dependencies; an
-unrelated topology publication or schema change does not invalidate every
-prepared entry. If dependencies are unavailable, conservatively refresh the
-relevant schema scope. A live prepared/bound handle accesses its immutable state
-directly; executing it does not touch a session-wide LRU on every attempt/page.
-Other hosts prepare
-lazily; background warming may be enabled, but is never an implicit all-host
-latency requirement. The server ID remains per-host/per-generation. A cache hit
-still checks the supplied codec plans; a handle remains valid after LRU
-eviction. Statement.Kind is an explicit caller classification, with zero meaning
-unknown. A reliable negotiated server conditional flag refines unknown
-classification; a confirmed conditional flag always overrides an ordinary
-declaration. Cassandra and direct QUERY without such metadata remain unknown
-unless the caller declares them. Declaring OrdinaryStatement asserts that CQL
-has no conditional operation; an incorrect declaration violates the caller
-contract. The driver does not infer this by parsing CQL. Unknown statements
-conservatively disable speculation and use deterministic conditional ordering.
-Regular SERIAL/LOCAL_SERIAL always makes the effective operation conditional;
-setting only optional serial consistency does not. Statements with no FROM do
-not invent table/routing metadata. Unprepared binding requires caller-declared
-parameter Columns because QUERY has no prepare metadata; zero parameters use
-NewColumns(). The QUERY values flag is populated and the provided types govern
-encoding. Server validation remains authoritative.
+The public immutable binding API and standalone binding-based execution
+functions have been removed. Input is copied during execution admission,
+including custom codec borrowed spans. Encoding records cell boundaries and
+computes routing from the same owned bytes; encoders are not called again for
+routing, retries, reprepare or paging. NewUnpreparedQuery requires explicit
+parameter Columns. Query options are captured at construction, including owned
+custom payload bytes; the selected profile is loaded per execution. Profile
+replacement never changes an active execution's retry or continuation options.
 
-Bind encodes exactly once into canonical immutable spans, checks all counts,
-metadata and partition-key indexes, and creates the routing token from those
-same bytes. It does not run custom encoders again for routing, retries,
-speculation, batch repair or paging. BindOwned sets owned-input mode before
-encoding: caller-backed text/blob spans are copied once when written, while
-generated scalar/transform spans remain in the same arena. Children inherit the
-mode; no whole-chain post-encoding clone runs. BindBorrowed borrows slices,
-strings and recursively nested variable data. The caller must not mutate or
-recycle them until the binding is closed and Wait succeeds. Retaining an
-ordinary Go reference is insufficient if the application mutates the bytes. For
-page-derived input views the caller must retain the source page lease through
-successful Bound.Wait; BindBorrowed does not acquire those leases implicitly.
+Overlapping executions return ErrBusy. Cancellation may return while accepted
+transport writes or callbacks still drain; the query remains busy and Wait joins
+that work. Wait does not require Close. Cursor handles capture their execution
+generation; stale handles cannot advance, close or modify another execution.
+Close permanently stops admission and cancels active execution; it is idempotent.
+Close a cursor on early termination before waiting for query reuse. Session
+shutdown stops all queries before joining their transport/callback drains.
 
-Close atomically rejects new Run/RunPage/Exec/batch admissions; it is idempotent
-and nonblocking. Admitted executions continue. Wait requires Close first and
-waits until every admitted request/pager and every active/queued writer,
-including speculative losers and repair resends, has released its input
-reference and all borrowed Options.CustomPayload references attached to that
-admission. A timed out Wait is **not** permission to reuse inputs. Close
-Rows/Page to release pager admissions before waiting. Output page leases never
-retain a binding or its input owner. For example: `bound.Close(); rows.Close();
-bound.Wait(ctx)` is valid. Owned bindings use the same Close/Wait mechanism to
-release resources promptly.
+Prepare retains its existing schema-scoped dependency validation, per-host IDs,
+LRU eviction independence, codec validation, conditional classification and
+routing contracts. Statement.Kind is a caller classification; server-confirmed
+conditional metadata takes precedence. Unknown statements disable speculation.
+SERIAL/LOCAL_SERIAL execution is conditional. Routing uses captured parameters
+and the currently selected metadata snapshot, preserving token distribution,
+strict shard targeting and tablet feedback.
 
 On reprepare, validate bind metadata against the encoded schema, not merely
 marker count. Incompatible type/order/identity yields `SchemaChangedError`
@@ -625,9 +584,9 @@ before resend; the application explicitly prepares and binds again. Routing
 schema compatibility includes partition-key index order, effective table
 identity, selected partitioner and conditional classification, in addition to
 parameter types/order/identity. A change to any of these requires a new explicit
-prepare/bind and fails the old binding with SchemaChangedError before resend.
+prepare/query and fails the old query execution with SchemaChangedError before resend.
 Compatible metadata may update per-host prepared IDs without re-encoding or
-mutating the binding's canonical routing inputs. Actual result metadata always
+mutating the query's canonical routing inputs. Actual result metadata always
 selects a compatible RowPlan before rows are exposed, including empty pages.
 Reuse the immutable plan when the exact validated result entry is unchanged;
 compile only on first use or a changed result shape. A new entry with the same
@@ -715,7 +674,7 @@ Session.Close.
 This section decodes from received page storage. The separate
 [streaming receive contract](gocql-v2-streaming-receive.md) specifies
 incremental receive decoding into final caller storage through the separate
-RunStream API below; this NextInto contract remains the buffered path.
+streaming-query API below; this NextInto contract remains the buffered path.
 
 Implementation: DecodeInto is supplied by step 02 and NextInto by step 03;
 final-tree release verification remains a later gate. Applications define the row representation
@@ -812,6 +771,18 @@ is absent only if no previous columns were returned.
 
 ## Streaming receive into final caller storage
 
+Queries are page-buffered by default and use shared multiplexed connections.
+Memory scales with concurrent response pages, bounded by frame/decompression
+limits. Streaming codecs still write seeded caller destinations. Set
+StreamOptions.Incremental for explicit bounded receive; the exclusive-connection,
+raw receive, transform, read-ahead and working-storage clauses below describe
+that explicit mode. StreamLimits receive budgets apply to incremental mode.
+All framing, malformed-value, cancellation and decoder checks remain mandatory
+in both modes. Incremental native read-ahead is bounded by its configured limit
+and 4 KiB. Shared connections retain an 8 KiB reader, transferred without losing
+unread bytes at a checked frame/unit boundary and restored before shared reads.
+
+
 Status: normative implementation contract, settled during execution preparation on
 2026-10-29. The implementation is present; final acceptance is tracked separately
 in execution step 17. This addition
@@ -820,8 +791,11 @@ ownership and acceptance rules are in
 [gocql-v2-streaming-receive.md](gocql-v2-streaming-receive.md).
 
 ```go
-// B is the binding's buffered result type; R is the streaming destination type.
-func RunStream[B, R any](context.Context, *Session, *Bound[B], StreamRowDecoder[R], StreamOptions) (*RowStream[R], error)
+// B is the prepared buffered result type; R is the streaming destination type.
+func NewStreamQuery[P, B, R any](*Prepared[P, B], StreamRowDecoder[R], StreamOptions) (*StreamQuery[P, R], error)
+func (q *StreamQuery[P, R]) Run(context.Context, P) (*RowStream[R], error)
+func (q *StreamQuery[P, R]) Close()
+func (q *StreamQuery[P, R]) Wait(context.Context) error
 type RowStream[R any] struct { /* exclusive pull receiver, automatic paging */ }
 func (s *RowStream[R]) NextInto(*R) bool
 func (s *RowStream[R]) Err() error
@@ -830,6 +804,7 @@ func (s *RowStream[R]) Columns() Columns
 func (s *RowStream[R]) Info() StreamInfo
 
 type StreamOptions struct {
+    Incremental bool
     Options Options
     Limits StreamLimits
 }
@@ -953,7 +928,7 @@ NoRows still cannot be used to describe nonzero physical result columns.
 Applications can use an ordinary typed or DynamicRows decoder at preparation
 and a separate StreamRow decoder for streaming storage.
 
-RunStream installs the stream receiver before sending and returns after checked
+Streaming query execution installs the stream receiver before sending and returns after checked
 response headers/metadata and bounded integrity staging, without waiting for the
 complete page. It does not consume row payload waiting for an application
 destination. NextInto reads one row into that destination and performs automatic
@@ -966,8 +941,8 @@ payloads forever. OutputStarted becomes true before the first decoder operation
 that can modify a destination, including Reset; it never becomes false again.
 DeliveredRows increments only after complete checked rows. Pages counts checked
 response pages, including empty pages. Errors retain this information through
-Info even when RunStream has already returned a cursor. An error before cursor
-construction returns normally through RunStream's error result.
+Info even when a streaming query has already returned a cursor. An error before cursor
+construction returns normally through the query Run method's error result.
 
 Reset is called on a non-nil destination before each active NextInto attempt;
 terminal/exhausted calls return false without touching it. Built-in value Reset
@@ -1033,8 +1008,8 @@ defaults. Explicit nonzero Options.Prefetch fails validation before submission;
 zero or inherited Prefetch is accepted. Retry and reprepare are permitted only
 before OutputStarted and any delivered row, under the ordinary safe-request
 rules. A row decoder/reset error or later I/O failure is terminal, with no
-transparent replay. Bound.Close/Wait covers the cursor through its final writer
-and connection cleanup; streamed output does not retain the binding.
+transparent replay. Query Close/Wait covers the cursor through final transport and callback drain;
+streamed output remains caller-owned.
 
 StreamLimits zero fields select defaults: 1 MiB simultaneously retained
 metadata/control bytes,
@@ -1124,8 +1099,7 @@ func (p *ProfileHandle) Replace(Profile) error
 
 type BatchKind uint8
 const (LoggedBatch BatchKind = iota; UnloggedBatch; CounterBatch)
-type BatchItem struct { /* sealed bound-plan and owner reference */ }
-func BatchEntry[R any](*Bound[R]) (BatchItem, error)
+type BatchItem struct { /* immutable owned entry captured by query.BatchEntry */ }
 func RunBatch[R any](context.Context, *Session, BatchKind, []BatchItem, RowDecoder[R], Options) (*Page[R], error)
 func ExecBatch(context.Context, *Session, BatchKind, []BatchItem, Options) (Result, error)
 
@@ -1155,16 +1129,10 @@ prefetch, no speculation, and the safe retry policy. Caller context always
 bounds request work, including preparation, metadata refresh, agreement,
 queueing and cleanup waits. Cleanup continues independently where required to
 release an orphan stream; returning a context error never authorizes reuse of
-still-borrowed input before Wait. At admission the driver copies CustomPayload
-entry descriptors, never their payload bytes. Borrowed CustomPayload bytes are
-attached to the same binding admission as the request and remain immutable until
-Bound.Close plus successful Bound.Wait, even after an early context error or
-speculative winner. If the payload uses received views, the caller retains the
-source PageLease through that wait. Before-admission errors retain no options
-payload references. For batches, close and successfully wait for every member
-binding before recycling shared options payloads or their source leases. Callers
-wanting independent payload storage explicitly Clone each Bytes value before
-submission; there is no hidden payload copy at admission. Returned Result
+still-borrowed input before Wait. Query construction copies custom payload bytes and checks source views while
+capturing options. Public batch execution also owns its options payload; batch
+parameters are owned when query.BatchEntry is appended. There is no public
+binding drain obligation. Returned Result
 payloads use owned storage, because Result outlives pages; this explicit escape
 is an ownership conversion, not a per-cell receive copy.
 
@@ -1515,6 +1483,6 @@ Each resolved contact/opening owns its deadline, even when aliases or ports
 share an IP. A failed physical opening can be retried under a new attempt budget
 and reconnect policy; it never extends the spent attempt or caller deadline.
 
-This clarification records implemented transport seams; public RunStream and
+This clarification records implemented transport seams; public streaming queries and
 its execution/paging composition remain later step 07 work. It does not extend
 the historical design review results or establish full release verification.

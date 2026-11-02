@@ -142,7 +142,9 @@ func TestV2StreamingTransportReadTargetsAndWorkingMemory(t *testing.T) {
 				t.Fatal(ok, err)
 			}
 			if mode.version == 4 {
-				if source.directBytes != int64(size) || source.otherBulk != 0 {
+				// A native body may read ahead one bounded prefix; bulk
+				// payload still targets the final caller ranges.
+				if source.directBytes < int64(size)-(4<<10) || source.directBytes > int64(size) || source.otherBulk > 4<<10 {
 					t.Fatal("raw payload did not target final ranges", source.directBytes, source.otherBulk)
 				}
 			} else {

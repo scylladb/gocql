@@ -29,6 +29,7 @@ type scalarCodec[T any] struct {
 	alternative cqltype.Type
 	encode      func(*ValueWriter, T) error
 	decode      func(ValueReader) (T, error)
+	decodeRow   func(*RowReader, cqltype.Type, cqltype.Type, bool) (T, error)
 	clone       func(T) T
 }
 
@@ -89,6 +90,31 @@ type signedScalar interface {
 
 func integerCodec[T signedScalar](kind cqltype.Type, width int64) Codec[T] {
 	return scalarCodec[T]{kind: kind,
+		decodeRow: func(r *RowReader, kind, alternative cqltype.Type, compiled bool) (T, error) {
+			if _, err := r.scalarColumn(kind, alternative, compiled, width); err != nil {
+				return 0, err
+			}
+			// Retain the scalar cursor lease check in addition to the frame and
+			// present-value checks, without constructing a ValueCursor.
+			if r.lease != nil && !r.lease.Alive() {
+				_ = r.cursor.Skip(width) // match the consumed generic value body
+				return 0, cqltype.ErrReleased
+			}
+			switch width {
+			case 1:
+				v, err := r.cursor.Uint8()
+				return T(int8(v)), err
+			case 2:
+				v, err := r.cursor.Uint16()
+				return T(int16(v)), err
+			case 4:
+				v, err := r.cursor.Uint32()
+				return T(int32(v)), err
+			default:
+				v, err := r.cursor.Uint64()
+				return T(int64(v)), err
+			}
+		},
 		encode: func(w *ValueWriter, v T) error {
 			switch width {
 			case 1:
@@ -162,6 +188,17 @@ var (
 	TextCodec     Codec[cqltype.Text]  = textCodec{}
 	ASCIICodec    Codec[cqltype.Text]  = textCodec{ascii: true}
 	BlobCodec     Codec[cqltype.Bytes] = scalarCodec[cqltype.Bytes]{kind: cqltype.TypeBlob,
+		decodeRow: func(r *RowReader, kind, alternative cqltype.Type, compiled bool) (cqltype.Bytes, error) {
+			length, err := r.scalarColumn(kind, alternative, compiled, 0)
+			if err != nil {
+				return cqltype.Bytes{}, err
+			}
+			body, err := r.cursor.Take(length)
+			if err != nil {
+				return cqltype.Bytes{}, err
+			}
+			return cqltype.BytesView(body, r.lease), nil
+		},
 		encode: func(w *ValueWriter, v cqltype.Bytes) error { return w.borrowView(v) },
 		decode: func(r ValueReader) (cqltype.Bytes, error) { return r.Bytes(), nil },
 		clone:  func(v cqltype.Bytes) cqltype.Bytes { return v.Clone() },

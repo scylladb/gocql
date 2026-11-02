@@ -20,10 +20,12 @@
 package transport
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
 	frm "github.com/scylladb/gocql/v2/internal/frame"
+	"io"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -122,6 +124,7 @@ func (c *Conn) pauseSharedReader(ctx context.Context) bool {
 }
 
 type InternalExclusiveConn struct {
+	transferred            exclusiveReadSource
 	cancelMu               sync.Mutex
 	InternalIoGeneration   uint64
 	ioActive, ioWatching   bool
@@ -141,6 +144,7 @@ type InternalExclusiveConn struct {
 	InternalLimits         StreamLimits
 	InternalMetadataBudget *streamMetadataBudget
 	InternalUnits          *InternalVerifiedStreamUnits
+	readAhead              nativeStreamReadAhead
 }
 
 func (c *Conn) InternalReserveExclusive(ctx context.Context) (*InternalExclusiveConn, error) {
@@ -156,8 +160,8 @@ func (c *Conn) InternalReserveExclusiveWithLimits(ctx context.Context, limits St
 		return nil, typeValidation("stream context", "nil context")
 	}
 	reader, ok := c.InternalR.(*connReader)
-	if !ok || reader.InternalConn == nil || reader.InternalR != nil {
-		return nil, &StreamCapabilityError{Protocol: int(c.InternalVersion), Reason: "connection has no transferable unbuffered reader"}
+	if !ok || reader.InternalConn == nil || reader.InternalR != nil && !reader.transferable {
+		return nil, &StreamCapabilityError{Protocol: int(c.InternalVersion), Reason: "connection has no transferable reader"}
 	}
 	if c.InternalVersion < 3 || c.InternalVersion > 5 || c.InternalVersion < 5 && c.InternalCompressor != nil {
 		return nil, &StreamCapabilityError{Protocol: int(c.InternalVersion), Reason: "frame compression has no incremental receive transform"}
@@ -233,6 +237,15 @@ func (c *Conn) InternalReserveExclusiveWithLimits(ctx context.Context, limits St
 		return nil, ErrNoStreams
 	}
 	r := &InternalExclusiveConn{InternalConn: c, InternalCtx: ctx, InternalStream: stream, InternalDone: make(chan struct{}), InternalComplete: true}
+	// The shared reader acknowledged a native-frame/v5-unit boundary. Move its
+	// unread buffer into the reservation before any exclusive I/O can start.
+	r.transferred = exclusiveReadSource{raw: reader, buffered: reader.InternalR}
+	reader.InternalR = nil
+	defer func() {
+		if !acquired {
+			reader.InternalR = r.transferred.buffered
+		}
+	}()
 
 	if err = r.InternalInitStream(limits); err != nil {
 		c.InternalStreams.Clear(stream)
@@ -325,8 +338,33 @@ func (r *InternalExclusiveConn) closeOwned(reusable bool) error {
 		r.InternalUnits.InternalUnits.Close()
 		r.InternalUnits = nil
 	}
+	r.readAhead = nativeStreamReadAhead{}
+	if r.transferred.raw != nil {
+		reader.InternalR = r.transferred.buffered
+	}
+	r.transferred = exclusiveReadSource{}
 	r.InternalConn.restoreSharedReader(reader)
 	return r.closeErr
+}
+
+// exclusiveReadSource consumes transferred bytes first. Once empty it reads
+// directly from the socket; incremental read-ahead remains separately bounded.
+type exclusiveReadSource struct {
+	raw      *connReader
+	buffered *bufio.Reader
+}
+
+func (s *exclusiveReadSource) Read(p []byte) (int, error) {
+	if s.buffered != nil && s.buffered.Buffered() > 0 {
+		return s.buffered.Read(p[:min(len(p), s.buffered.Buffered())])
+	}
+	return s.raw.Read(p)
+}
+func (s *exclusiveReadSource) readAvailable(p []byte) (int, error) {
+	if s.buffered != nil && s.buffered.Buffered() > 0 {
+		return s.buffered.Read(p[:min(len(p), s.buffered.Buffered())])
+	}
+	return s.raw.readAvailable(p)
 }
 
 func (c *Conn) typedHeartbeat(ctx context.Context) {
@@ -517,4 +555,11 @@ func (r *InternalConnReader) InternalRequestPause(pause bool) error {
 		return r.InternalConn.SetReadDeadline(time.Time{})
 	}
 	return nil
+}
+
+func (r *InternalExclusiveConn) socketSource() io.Reader {
+	if r.transferred.raw != nil {
+		return &r.transferred
+	}
+	return r.InternalConn.InternalR
 }

@@ -37,7 +37,9 @@ def cv(values):return statistics.stdev(values)/statistics.mean(values) if statis
 
 def client(out,hosts,driver,mode,scenario='read',stream=False,**kw):
     args=['taskset','-c','8','env','GOMAXPROCS=1',str(CACHE/driver),'-hosts',hosts,'-mode',mode,'-scenario',scenario,f'-stream={str(stream).lower()}']
-    for k,v in kw.items(): args += ['-'+k,str(v)]
+    for k,v in kw.items():
+        if isinstance(v,bool): args.append('-'+k+'='+str(v).lower())
+        else: args += ['-'+k,str(v)]
     log=out.with_suffix(out.suffix+'.log')
     with log.open('w') as f:
         p=subprocess.Popen(args,stdout=f,stderr=subprocess.STDOUT)

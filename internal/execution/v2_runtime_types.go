@@ -15,6 +15,7 @@ type InternalInputOwner struct {
 	InternalRefs    int
 	done            chan struct{}
 	InternalOnDrain func()
+	onIdle          func()
 }
 
 func InternalNewInputOwner() *InternalInputOwner {
@@ -37,6 +38,9 @@ func (o *InternalInputOwner) InternalRelease() {
 		panic("gocql: unbalanced input owner release")
 	}
 	o.InternalRefs--
+	if o.InternalRefs == 0 && o.onIdle != nil {
+		o.onIdle()
+	}
 	if o.InternalClosed && o.InternalRefs == 0 {
 		if o.InternalOnDrain != nil {
 			o.InternalOnDrain()
@@ -86,6 +90,7 @@ func (o *InternalInputOwner) InternalWriterLease(chain wire.Chain) *wire.Lease {
 }
 
 type InternalExecutionRequest struct {
+	query              *queryState
 	tabletFeedback     tabletFeedbackStamp
 	tabletVersionBlock byte
 	connection         *Conn

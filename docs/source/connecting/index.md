@@ -12,10 +12,11 @@ and provider objects must support concurrent use; subsequent caller mutation
 must not change the captured physical connection settings.
 
 Use `Pool.ConnectionsPerHost` for a host override or `ConnectionsPerShard` for
-shard sizing. A RunStream occupies one configured connection through its idle
-time and pages. Budget capacity accordingly. Cancellation interrupts work;
+shard sizing. An explicit incremental stream occupies one configured connection through
+idle time and pages. Default page-buffered streams use normal multiplexing. Cancellation interrupts work;
 Session.Close rejects new work, cancels requests and joins writers/workers.
-Bindings still require their own Close/Wait before borrowed input reuse.
+Queries copy parameters during admission; Wait joins transport cleanup before
+executing the same query again.
 
 `Dialer` receives a typed `DialTarget`; `DialHost` and `TLSForHost` customize
 host setup. Hooks honor context cancellation and the selected endpoint/source.

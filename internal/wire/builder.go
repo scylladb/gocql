@@ -44,6 +44,10 @@ type Mark struct {
 // A Builder must not be copied and is not safe for concurrent use. Its zero
 // value is ready to use.
 type Builder struct {
+	// owned selects contiguous, exclusively owned storage. Its owner may reuse
+	// the backing only after every published view has drained.
+	ownedMode    bool
+	ownedBuffer  []byte
 	slabSize     int
 	parts        []builderPart
 	slab         []byte
@@ -82,8 +86,26 @@ func (b *Builder) ReserveParts(n int) {
 
 func (b *Builder) Len() int64 { return b.len }
 
+// BeginOwned starts an encoding in caller-owned reusable storage. The caller
+// must have retired all views from the previous encoding before calling this.
+// Borrow copies bytes in this mode, including bytes passed by custom codecs.
+func (b *Builder) BeginOwned(storage []byte) {
+	*b = Builder{ownedMode: true, ownedBuffer: storage[:0], generation: b.generation + 1, currentPart: -1}
+}
+
+// OwnedBytes returns the contiguous snapshot before Freeze. Its lifetime is the
+// same as the published chain; it must not be changed until that chain drains.
+func (b *Builder) OwnedBytes() []byte { return b.ownedBuffer }
+
 // Borrow appends a read-only span, retaining its backing storage without copy.
 func (b *Builder) Borrow(s Span) error {
+	if b.ownedMode {
+		p, err := b.writable(s.Len())
+		if err == nil {
+			copy(p, s.Bytes())
+		}
+		return err
+	}
 	if s.Len() == 0 {
 		return nil
 	}
@@ -103,6 +125,12 @@ func (b *Builder) writable(n int) ([]byte, error) {
 	total, err := addLength(b.len, n)
 	if err != nil {
 		return nil, err
+	}
+	if b.ownedMode {
+		start := len(b.ownedBuffer)
+		b.ownedBuffer = append(b.ownedBuffer, make([]byte, n)...)
+		b.len = total
+		return b.ownedBuffer[start:], nil
 	}
 	if len(b.slab)-b.used < n {
 		size := b.slabSize
@@ -188,6 +216,11 @@ func (b *Builder) Rollback(m Mark) {
 	if m.sequence < b.sequence {
 		b.invalid = append(b.invalid, invalidMarks{after: m.sequence, through: b.sequence})
 	}
+	if b.ownedMode {
+		b.ownedBuffer = b.ownedBuffer[:m.offset]
+		b.len = m.offset
+		return
+	}
 	remaining := m.offset
 	keep := 0
 	for keep < len(b.parts) && remaining > 0 {
@@ -219,6 +252,10 @@ func (b *Builder) PatchUint32(m Mark, v uint32) error {
 	if b.len-m.offset < 4 {
 		return ErrBounds
 	}
+	if b.ownedMode {
+		binary.BigEndian.PutUint32(b.ownedBuffer[m.offset:m.offset+4], v)
+		return nil
+	}
 	off := m.offset
 	first := 0
 	for off >= int64(b.parts[first].span.Len()) {
@@ -246,6 +283,11 @@ func (b *Builder) PatchUint32(m Mark, v uint32) error {
 // It invalidates all existing marks, even when the result is empty. Borrowed
 // payloads remain borrowed; the caller must still honor their lifetime.
 func (b *Builder) Freeze() (Chain, error) {
+	if b.ownedMode {
+		c, err := NewChain(Borrow(b.ownedBuffer))
+		*b = Builder{generation: b.generation + 1, currentPart: -1}
+		return c, err
+	}
 	var c Chain
 	if len(b.parts) > 0 {
 		c.head = b.parts[0].span

@@ -368,6 +368,7 @@ func (c Settings) WriteTypedParams(e *TypedEnvelope, r *model.AttemptRequest, ba
 
 // Settings snapshots only negotiated, immutable wire settings.
 type Settings struct {
+	MetadataReuse                       *MetadataReuse
 	Protocol                            byte
 	Flags                               byte
 	MetadataID, TabletsRoutingV2        bool

@@ -63,7 +63,7 @@ func BenchmarkStep07ExecutionStorage(b *testing.B) {
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
 					if mode == "stream" {
-						cursor, err := RunStream(context.Background(), s, bound, StreamOneColumn(StreamBlob), StreamOptions{})
+						cursor, err := RunStream(context.Background(), s, bound, StreamOneColumn(StreamBlob), StreamOptions{Incremental: true})
 						if err != nil {
 							b.Fatal(err)
 						}

@@ -22,26 +22,10 @@ func retiredAcceptAllFilter() retiredHostFilter { return implCluster.AcceptAllFi
 func retiredAvoidSlowReplicas(a0 int) func(policy *tokenAwareHostPolicy) {
 	return implCluster.AvoidSlowReplicas(a0)
 }
-func BatchEntry[R any](a0 *Bound[R]) (BatchItem, error) { return implExecution.BatchEntry[R](a0) }
 
 type BatchItem = implExecution.BatchItem
 
 const BatchSizeMaximum = implCluster.BatchSizeMaximum
-
-func BindBorrowed[P any, R any](a0 *Prepared[P, R], a1 P) (*Bound[R], error) {
-	return implExecution.BindBorrowed[P, R](a0, a1)
-}
-func BindOwned[P any, R any](a0 *Prepared[P, R], a1 P) (*Bound[R], error) {
-	return implExecution.BindOwned[P, R](a0, a1)
-}
-func BindUnpreparedBorrowed[P any, R any](a0 Statement[P, R], a1 Columns, a2 P) (*Bound[R], error) {
-	return implExecution.BindUnpreparedBorrowed[P, R](a0, a1, a2)
-}
-func BindUnpreparedOwned[P any, R any](a0 Statement[P, R], a1 Columns, a2 P) (*Bound[R], error) {
-	return implExecution.BindUnpreparedOwned[P, R](a0, a1, a2)
-}
-
-type Bound[R any] = implExecution.Bound[R]
 
 const ClientRouteEvent = implCluster.ClientRouteEvent
 
@@ -81,11 +65,8 @@ type Event = implCluster.Event
 type EventFilter = implCluster.EventFilter
 type EventKind = implCluster.EventKind
 
-func Exec[R any](a0 context.Context, a1 *Session, a2 *Bound[R], a3 Options) (Result, error) {
-	return implExecution.Exec[R](a0, a1, a2, a3)
-}
 func ExecBatch(a0 context.Context, a1 *Session, a2 BatchKind, a3 []BatchItem, a4 Options) (Result, error) {
-	return implExecution.ExecBatch(a0, a1, a2, a3, a4)
+	return implExecution.ExecOwnedBatch(a0, a1, a2, a3, a4)
 }
 
 type ExecutionError = implExecution.ExecutionError
@@ -154,20 +135,8 @@ func retiredRoundRobinHostPolicy() retiredHostSelectionPolicy {
 type RowStream[R any] = implExecution.RowStream[R]
 type Rows[R any] = implExecution.Rows[R]
 
-func Run[R any](a0 context.Context, a1 *Session, a2 *Bound[R], a3 Options) (*Rows[R], error) {
-	return implExecution.Run[R](a0, a1, a2, a3)
-}
 func RunBatch[R any](a0 context.Context, a1 *Session, a2 BatchKind, a3 []BatchItem, a4 RowDecoder[R], a5 Options) (*Page[R], error) {
-	return implExecution.RunBatch[R](a0, a1, a2, a3, a4, a5)
-}
-func RunPage[R any](a0 context.Context, a1 *Session, a2 *Bound[R], a3 PageState, a4 Options) (*Page[R], error) {
-	return implExecution.RunPage[R](a0, a1, a2, a3, a4)
-}
-func RunStream[B any, R any](a0 context.Context, a1 *Session, a2 *Bound[B], a3 StreamRowDecoder[R], a4 StreamOptions) (*RowStream[R], error) {
-	return implExecution.RunStream[B, R](a0, a1, a2, a3, a4)
-}
-func RunUnpaged[R any](a0 context.Context, a1 *Session, a2 *Bound[R], a3 Options) (*Page[R], error) {
-	return implExecution.RunUnpaged[R](a0, a1, a2, a3)
+	return implExecution.RunOwnedBatch[R](a0, a1, a2, a3, a4, a5)
 }
 
 const SchemaEvent = implCluster.SchemaEvent
@@ -220,7 +189,7 @@ func retiredWithTable(a0 string) func(*retiredClientRoutesConfig) { return implC
 type activeExecutionDrain = implExecution.InternalActiveExecutionDrain
 type adaptiveOrderingReport = implCluster.InternalAdaptiveOrderingReport
 
-func admitExecution[R any](a0 context.Context, a1 *Session, a2 *Bound[R], a3 Options) (context.Context, context.CancelFunc, *executionRequest, error) {
+func admitExecution[R any](a0 context.Context, a1 *Session, a2 *implExecution.Bound[R], a3 Options) (context.Context, context.CancelFunc, *executionRequest, error) {
 	return implExecution.InternalAdmitExecution[R](a0, a1, a2, a3)
 }
 
@@ -232,10 +201,10 @@ func attemptBytesWritten(a0 error) bool { return implExecution.InternalAttemptBy
 
 type batchState = implExecution.InternalBatchState
 
-func bindPrepared[P any, R any](a0 *Prepared[P, R], a1 P, a2 bool) (*Bound[R], error) {
+func bindPrepared[P any, R any](a0 *Prepared[P, R], a1 P, a2 bool) (*implExecution.Bound[R], error) {
 	return implExecution.InternalBindPrepared[P, R](a0, a1, a2)
 }
-func bindUnprepared[P any, R any](a0 Statement[P, R], a1 Columns, a2 P, a3 bool) (*Bound[R], error) {
+func bindUnprepared[P any, R any](a0 Statement[P, R], a1 Columns, a2 P, a3 bool) (*implExecution.Bound[R], error) {
 	return implExecution.InternalBindUnprepared[P, R](a0, a1, a2, a3)
 }
 func buildConnectionNodePreferenceReport(a0 *clusterSettings) any {
@@ -632,7 +601,7 @@ func roundRobbin(a0 int, a1 ...[]*retiredHostInfo) retiredNextHost {
 
 type roundRobinHostPolicy = implCluster.InternalRoundRobinHostPolicy
 
-func runSinglePage[R any](a0 context.Context, a1 *Session, a2 *Bound[R], a3 PageState, a4 Options, a5 bool) (*Page[R], error) {
+func runSinglePage[R any](a0 context.Context, a1 *Session, a2 *implExecution.Bound[R], a3 PageState, a4 Options, a5 bool) (*Page[R], error) {
 	return implExecution.InternalRunSinglePage[R](a0, a1, a2, a3, a4, a5)
 }
 func runtimeFor(a0 *Session) *sessionRuntime { return implExecution.InternalRuntimeFor(a0) }

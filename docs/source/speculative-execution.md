@@ -9,5 +9,5 @@ encoded input owner.
 
 Losing attempts drain before borrowed input can be reused. Request results and
 observers account for every started attempt. Disabled speculation allocates no
-scheduler/timer and fetches no speculation metrics snapshot. RunStream disables
+scheduler/timer and fetches no speculation metrics snapshot. Streaming queries disable
 speculation and prefetch, reserving one configured connection through paging.

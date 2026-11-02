@@ -112,7 +112,7 @@ func TestStep07StreamPagingModes(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 			defer cancel()
 			b := runtimeQuery(t)
-			cursor, err := RunStream(ctx, s, b, StreamOneColumn(StreamBlob), StreamOptions{})
+			cursor, err := RunStream(ctx, s, b, StreamOneColumn(StreamBlob), StreamOptions{Incremental: true})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -177,7 +177,7 @@ func TestStep07StreamFirstRowBeforePageAndNoReplay(t *testing.T) {
 	defer cancel()
 	b := runtimeQuery(t)
 	defer b.Close()
-	cursor, err := RunStream(ctx, s, b, StreamOneColumn(StreamBlob), StreamOptions{Options: Options{Idempotent: true}})
+	cursor, err := RunStream(ctx, s, b, StreamOneColumn(StreamBlob), StreamOptions{Incremental: true, Options: Options{Idempotent: true}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -214,7 +214,7 @@ func TestStep07StreamCapacityAndNilNoResetReplay(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 			defer cancel()
 			b := runtimeQuery(t)
-			cursor, err := RunStream(ctx, s, b, StreamOneColumn(StreamBlob), StreamOptions{})
+			cursor, err := RunStream(ctx, s, b, StreamOneColumn(StreamBlob), StreamOptions{Incremental: true})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -282,7 +282,7 @@ func TestStep07StreamCloseJoinsDestinationAndConcurrentRejection(t *testing.T) {
 			b := runtimeQuery(t)
 			bDone := make(chan struct{})
 			decoder := &step07GatedDecoder{entered: make(chan struct{}), leave: make(chan struct{})}
-			cursor, err := RunStream(ctx, s, b, decoder, StreamOptions{})
+			cursor, err := RunStream(ctx, s, b, decoder, StreamOptions{Incremental: true})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -346,13 +346,13 @@ func TestStep07StreamIdleSessionDrainAndPoolExhaustion(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	b := runtimeQuery(t)
-	cursor, err := RunStream(ctx, s, b, StreamOneColumn(StreamBlob), StreamOptions{})
+	cursor, err := RunStream(ctx, s, b, StreamOneColumn(StreamBlob), StreamOptions{Incremental: true})
 	if err != nil {
 		t.Fatal(err)
 	}
 	short, stop := context.WithTimeout(ctx, 10*time.Millisecond)
 	defer stop()
-	if second, err := RunStream(short, s, b, StreamOneColumn(StreamBlob), StreamOptions{}); second != nil || !errors.Is(err, context.DeadlineExceeded) {
+	if second, err := RunStream(short, s, b, StreamOneColumn(StreamBlob), StreamOptions{Incremental: true}); second != nil || !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatal(second, err)
 	}
 	b.Close()
@@ -394,7 +394,7 @@ func TestStep07StreamPagingCycleAndLimits(t *testing.T) {
 			defer cancel()
 			b := runtimeQuery(t)
 			defer b.Close()
-			cursor, err := RunStream(ctx, s, b, StreamOneColumn(StreamBlob), StreamOptions{})
+			cursor, err := RunStream(ctx, s, b, StreamOneColumn(StreamBlob), StreamOptions{Incremental: true})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -419,7 +419,7 @@ func TestStep07StreamCapabilityBeforeQuery(t *testing.T) {
 	defer b.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	_, err := RunStream(ctx, s, b, StreamOneColumn(StreamBlob), StreamOptions{})
+	_, err := RunStream(ctx, s, b, StreamOneColumn(StreamBlob), StreamOptions{Incremental: true})
 	var capability *StreamCapabilityError
 	if !errors.As(err, &capability) {
 		t.Fatal(err)
@@ -427,14 +427,14 @@ func TestStep07StreamCapabilityBeforeQuery(t *testing.T) {
 	if c.InternalStreams.InUse() != 0 {
 		t.Fatal("capability leaked stream")
 	}
-	_, err = RunStream(ctx, s, b, StreamOneColumn(StreamBlob), StreamOptions{Options: Options{Prefetch: Option[int]{Set: true, Value: 1}}})
+	_, err = RunStream(ctx, s, b, StreamOneColumn(StreamBlob), StreamOptions{Incremental: true, Options: Options{Prefetch: Option[int]{Set: true, Value: 1}}})
 	var validation *ValidationError
 	if !errors.As(err, &validation) {
 		t.Fatal(err)
 	}
 }
 
-// Raw read targets must include the exact final caller body range.
+// Raw bulk reads must target caller storage after at most a bounded prefix.
 type step07ReadTargets struct {
 	net.Conn
 	mu      sync.Mutex
@@ -460,7 +460,7 @@ func TestStep07StreamRawReadCallerBacking(t *testing.T) {
 	defer cancel()
 	b := runtimeQuery(t)
 	defer b.Close()
-	cursor, err := RunStream(ctx, s, b, StreamOneColumn(StreamBlob), StreamOptions{})
+	cursor, err := RunStream(ctx, s, b, StreamOneColumn(StreamBlob), StreamOptions{Incremental: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -471,7 +471,8 @@ func TestStep07StreamRawReadCallerBacking(t *testing.T) {
 	spy.mu.Lock()
 	found := false
 	for _, p := range spy.targets {
-		if len(p) == len(dst) && &p[0] == &dst[0] {
+		prefix := len(dst) - len(p)
+		if prefix >= 0 && prefix <= 4<<10 && &p[0] == &dst[prefix] {
 			found = true
 		}
 	}
@@ -516,7 +517,7 @@ func TestStep07StreamPreparedMetadataFencesAndPlanIsolation(t *testing.T) {
 			}()
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 			defer cancel()
-			cursor, err := RunStream(ctx, s, bound, decoder, StreamOptions{})
+			cursor, err := RunStream(ctx, s, bound, decoder, StreamOptions{Incremental: true})
 			if mismatch {
 				var protocol *ProtocolError
 				if !errors.As(err, &protocol) || cursor != nil {
@@ -556,7 +557,7 @@ func TestStep07StreamBadV5IntegrityCannotDeliver(t *testing.T) {
 	defer b.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	cursor, err := RunStream(ctx, s, b, StreamOneColumn(StreamBlob), StreamOptions{})
+	cursor, err := RunStream(ctx, s, b, StreamOneColumn(StreamBlob), StreamOptions{Incremental: true})
 	if err == nil || cursor != nil {
 		t.Fatal("invalid checksum exposed cursor", cursor, err)
 	}
@@ -569,7 +570,7 @@ func TestStep07StreamPageDeadlineEndsAtExactBoundary(t *testing.T) {
 	}()
 	b := runtimeQuery(t)
 	defer b.Close()
-	cursor, err := RunStream(context.Background(), s, b, StreamOneColumn(StreamBlob), StreamOptions{Options: Options{PageTimeout: Option[time.Duration]{Set: true, Value: 20 * time.Millisecond}}})
+	cursor, err := RunStream(context.Background(), s, b, StreamOneColumn(StreamBlob), StreamOptions{Incremental: true, Options: Options{PageTimeout: Option[time.Duration]{Set: true, Value: 20 * time.Millisecond}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -597,7 +598,7 @@ func TestStep07StreamPartialFirstRowNeverReplays(t *testing.T) {
 	defer b.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	cursor, err := RunStream(ctx, s, b, StreamOneColumn(StreamBlob), StreamOptions{Options: Options{Idempotent: true}})
+	cursor, err := RunStream(ctx, s, b, StreamOneColumn(StreamBlob), StreamOptions{Incremental: true, Options: Options{Idempotent: true}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -676,7 +677,7 @@ func TestStep07StreamReprepareCanonicalInputAndNoRepairAfterOutput(t *testing.T)
 	}()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	cursor, err := RunStream(ctx, s, bound, StreamOneColumn(StreamBlob), StreamOptions{})
+	cursor, err := RunStream(ctx, s, bound, StreamOneColumn(StreamBlob), StreamOptions{Incremental: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -734,7 +735,7 @@ func TestStep07V3NegotiatedTabletPayloadEnvelope(t *testing.T) {
 				var err error
 				if streaming {
 					var cursor *RowStream[[]byte]
-					cursor, err = RunStream(ctx, s, b, StreamOneColumn(StreamBlob), StreamOptions{})
+					cursor, err = RunStream(ctx, s, b, StreamOneColumn(StreamBlob), StreamOptions{Incremental: true})
 					if err == nil {
 						dst := make([]byte, 0, 10)
 						if !cursor.NextInto(&dst) || string(dst) != "value" {
@@ -773,7 +774,7 @@ func TestStep07CloseGenerationRejectsLateCancellation(t *testing.T) {
 	b := runtimeQuery(t)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	cursor, err := RunStream(ctx, s, b, decoder, StreamOptions{})
+	cursor, err := RunStream(ctx, s, b, decoder, StreamOptions{Incremental: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -870,7 +871,7 @@ func TestStep07LatestAttemptMetadataRemainsBudgetedDuringRetry(t *testing.T) {
 	defer cancel()
 	b := runtimeQuery(t)
 	defer b.Close()
-	cursor, err := RunStream(ctx, s, b, StreamOneColumn(StreamBlob), StreamOptions{Options: Options{Profile: handle}, Limits: StreamLimits{MaxMetadataBytes: 20000}})
+	cursor, err := RunStream(ctx, s, b, StreamOneColumn(StreamBlob), StreamOptions{Incremental: true, Options: Options{Profile: handle}, Limits: StreamLimits{MaxMetadataBytes: 20000}})
 	if err != nil {
 		t.Fatal(err)
 	}

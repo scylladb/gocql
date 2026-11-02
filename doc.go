@@ -24,12 +24,16 @@
 
 // Package gocql implements the typed Cassandra and ScyllaDB native protocol API.
 // Connect opens a validated Config. Statements declare parameter encoders and row
-// decoders; Prepare and BindOwned or BindBorrowed produce reusable bindings.
-// Run provides typed borrowed rows, RunPage provides explicit paging, and Exec
-// executes statements without result columns. RunStream decodes incrementally
-// into seeded caller storage through a separate streaming codec plan.
+// decoders. Prepare creates shareable immutable plans; NewQuery creates a reusable
+// worker-owned query whose Exec, Run, RunPage and RunUnpaged methods accept input
+// directly. Parameters are copied during execution admission. Overlapping use
+// returns ErrBusy; Wait joins transport writes and callbacks before reuse.
 //
-// Borrowed bindings remain immutable until Close and a successful Wait. Result
-// views expire on advancement or Close unless a PageLease retains their page.
-// Clone explicitly detaches borrowed result data.
+// NewStreamQuery decodes into seeded caller storage and buffers one response page
+// on normal multiplexed connections by default. StreamOptions.Incremental opts
+// into bounded incremental receive through an exclusive connection reservation.
+// Page-buffered memory scales with concurrent response pages and is bounded by
+// configured frame and decompression limits. Close permanently stops a query.
+// Borrowed result views expire on advancement or cursor Close unless a PageLease
+// retains their page. OwnedBlobCodec fills reusable owned slices with RowInto.
 package gocql
