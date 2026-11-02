@@ -1,0 +1,23 @@
+{
+  "candidate": 4,
+  "status": "prototype ready; parent controls timing/decision",
+  "implementation": "one-pass cell boundary/state capture into final EncodedValues.Cells; final immutable Chain.Slice views",
+  "storage": "replaces redundant per-cell type pointer with int64 body offset; counter detection uses existing Columns. Adds24B ParamWriter slice; allocator class32B/bind increase. No payload/slab retention increase.",
+  "checks": {
+    "targeted": "PASS",
+    "default_go_test_all": "PASS",
+    "focused_race_codec_binding_execution_routing": "PASS",
+    "vet_all": "PASS",
+    "diff_check": "PASS"
+  },
+  "correctness_notes": [
+    "WriteParam captures only after FinishValueWriter succeeds; failed cells can retry same physical marker",
+    "Params/PairParams/DynamicParams/NamedDynamicParams rollback both byte builder and captured boundary list",
+    "Nested pairs capture append order independent of local index resets",
+    "Empty normalized to wire Present, preserving previous reparsing semantics",
+    "Framed prefix encoding still validates descriptors, signed lengths, states and nested codecs; final bounds checked by Chain.Slice",
+    "Owned copies remain in ValueWriter; borrowed cells reference final immutable chain with same backing lifetime",
+    "Counter request classification reads retained Columns instead of duplicate per-cell descriptor"
+  ],
+  "unaccepted": "No workload performance or real-Scylla acceptance claimed; no commit or production checkout changes"
+}

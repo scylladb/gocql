@@ -1,0 +1,27 @@
+{
+  "kind": "native-v4 local emulator; no database, replication, persistence or consistency work",
+  "client_cpu": 8,
+  "client_gomaxprocs": 1,
+  "server_cpu": [
+    0,
+    1,
+    4,
+    5
+  ],
+  "server_gomaxprocs": 4,
+  "hosts": "127.0.0.2,127.0.0.3,127.0.0.4",
+  "server_pid": 1976963,
+  "seconds": 30,
+  "repeats": 2,
+  "master_head": "1ceaac8172bda26e8b8d701ac356982d33729b27",
+  "v2_head": "7e1ad6f718929342200c5b9bc126e5a5e7fc7d1c",
+  "binary_hashes": {
+    "master": "ad4e41f4234b8f09c095ec71093d95eeb57f1fc0342928e0c8c83b9e56653a82",
+    "v2": "673ee6927211c18fca015e8f774d9f253340ac3a906cbd912f0e6a06dab3c194"
+  },
+  "emulator_sha256": "0a015ac72263d4925fa7c242ca584a0ed2e1c2d2bcb93afa37b715c54b700bde",
+  "source_sha256": "d86a44b64f43d80e3341f2cdfaedce60bf6f5542855954d5990c8184662fba14",
+  "write_note": "64 concurrent acknowledged writes against synthetic storage; not the earlier one-worker real-database comparison",
+  "server_profile_scope": "30-second interval surrounding client launch; approximate alignment; client profile covers measured phase exactly",
+  "started": "2026-11-02T01:47:05.780740+00:00"
+}

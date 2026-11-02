@@ -1,0 +1,27 @@
+{
+  "candidate": 5,
+  "baseline": "7e1ad6f718929342200c5b9bc126e5a5e7fc7d1c",
+  "worktree": "/extra/scylladb/gocql/.codex-cache/driver-comparison/roadmap-05-source",
+  "primary_workload": "point buffered read (64 workers); acknowledged point writes supplementary",
+  "metric": "CPU/op or throughput >=3% (paired95%CI excludes zero), alternatively >=10% B/op reduction with <=2% CPU regression",
+  "mechanism": "transport-owned pooled scalar/header prefix+suffix for <=256-byte native v3/v4 prepared frames; canonical values retain original borrowed spans; avoids generic scalar slab/builder descriptors while immutable chain indices remain per-write",
+  "memory_budget": {
+    "idle_bytes_max": 16384,
+    "objects_max": 64,
+    "in_flight_bytes_per_eligible_attempt": 256,
+    "large_values": "unchanged segmented borrowed-span fallback",
+    "copy_bytes": 0
+  },
+  "exclusions": [
+    "v5",
+    "compression",
+    "custom payload",
+    "prepare",
+    "batch",
+    "unprepared requests"
+  ],
+  "lifetime": "No public retained frame API uses scratch. Cancellation before write releases immediately; accepted writes retain scratch until InternalWriteSpans synchronously completes, including coalesced writes and partial I/O.",
+  "prototype_history": [
+    "contiguous copied-small-values prototype rejected by canonical input backing identity test; archive contiguous-prototype-rejected.tar.gz"
+  ]
+}

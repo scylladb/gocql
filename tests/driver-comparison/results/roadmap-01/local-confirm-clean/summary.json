@@ -1,0 +1,104 @@
+{
+  "accepted": false,
+  "acceptance_note": "Coordinator must verify healthy real Scylla confirmation, all canonical controls, correctness and memory bounds.",
+  "cases": {
+    "paged-buffered:0": {
+      "completed_pairs": 6,
+      "expected_pairs": 6,
+      "valid": true,
+      "rate": 0,
+      "variant_medians": {
+        "A": {
+          "throughput": 2822.383333333333,
+          "cpu_per_op": 0.00035272431215794143,
+          "bytes_per_op": 26637.6525958549,
+          "allocs_per_op": 205.07928813386764,
+          "p99_us": 2132.0
+        },
+        "B": {
+          "throughput": 2820.7166666666662,
+          "cpu_per_op": 0.00035331441920283767,
+          "bytes_per_op": 23437.128754866153,
+          "allocs_per_op": 200.0728818664819,
+          "p99_us": 2135.0
+        }
+      },
+      "throughput": {
+        "mean_percent": -0.16730311930335992,
+        "ci95_percent": [
+          -0.6078446467172741,
+          0.20488995957825087
+        ],
+        "paired_percent": [
+          -0.43651167168675675,
+          0.19238032291566398,
+          -1.1477104527406357,
+          0.04019482668935481,
+          -0.10872776694439423,
+          0.4565560259466084
+        ],
+        "pairs": 6,
+        "resamples": 20000,
+        "seed": 74183
+      },
+      "cpu_per_op": {
+        "mean_percent": -0.18084635068801314,
+        "ci95_percent": [
+          -0.6255771260099278,
+          0.20268374970822492
+        ],
+        "paired_percent": [
+          -0.40472987704003316,
+          0.06345433116001775,
+          -1.1565711136852785,
+          0.17085854404292888,
+          -0.22730397952333004,
+          0.4692139909176163
+        ],
+        "pairs": 6,
+        "resamples": 20000,
+        "seed": 74183
+      },
+      "bytes_per_op": {
+        "mean_percent": 12.014079031424426,
+        "ci95_percent": [
+          12.001936569269567,
+          12.024625551500716
+        ],
+        "paired_percent": [
+          12.014873666270343,
+          12.034828702267419,
+          11.988085348652056,
+          12.012624999533806,
+          12.019864703857086,
+          12.014196767965846
+        ],
+        "pairs": 6,
+        "resamples": 20000,
+        "seed": 74183
+      },
+      "allocs_per_op": {
+        "mean_percent": 2.4394583668364853,
+        "ci95_percent": [
+          2.413786361236799,
+          2.4610052944835203
+        ],
+        "paired_percent": [
+          2.440708984720452,
+          2.482199358032411,
+          2.384330906050458,
+          2.438230220416815,
+          2.45326500843579,
+          2.438015723362985
+        ],
+        "pairs": 6,
+        "resamples": 20000,
+        "seed": 74183
+      },
+      "median_p99_regression_percent": 0.1407129455909928,
+      "promising": true,
+      "confirmed_primary_threshold": true,
+      "p99_pass": true
+    }
+  }
+}

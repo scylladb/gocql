@@ -1,0 +1,111 @@
+{
+  "time": "2026-11-02T03:57:58.192905+00:00",
+  "nodes": [
+    {
+      "name": "codex-gocql-compare-1",
+      "address": "10.89.18.26",
+      "state": {
+        "OciVersion": "1.2.1",
+        "Status": "exited",
+        "Running": false,
+        "Paused": false,
+        "Restarting": false,
+        "OOMKilled": false,
+        "Dead": false,
+        "Pid": 0,
+        "ExitCode": 0,
+        "Error": "",
+        "StartedAt": "2026-11-01T23:07:52.705646058-04:00",
+        "FinishedAt": "2026-11-01T23:21:01.377591882-04:00",
+        "CheckpointedAt": "0001-01-01T00:00:00Z",
+        "RestoredAt": "0001-01-01T00:00:00Z",
+        "StoppedByUser": true
+      },
+      "endpoints": {
+        "9042": {
+          "closed": true
+        },
+        "9180": {
+          "closed": true
+        }
+      }
+    },
+    {
+      "name": "codex-gocql-compare-2",
+      "address": "10.89.18.27",
+      "state": {
+        "OciVersion": "1.2.1",
+        "Status": "exited",
+        "Running": false,
+        "Paused": false,
+        "Restarting": false,
+        "OOMKilled": false,
+        "Dead": false,
+        "Pid": 0,
+        "ExitCode": 0,
+        "Error": "",
+        "StartedAt": "2026-11-01T23:07:52.767745099-04:00",
+        "FinishedAt": "2026-11-01T23:21:01.326590892-04:00",
+        "CheckpointedAt": "0001-01-01T00:00:00Z",
+        "RestoredAt": "0001-01-01T00:00:00Z",
+        "StoppedByUser": true
+      },
+      "endpoints": {
+        "9042": {
+          "closed": true
+        },
+        "9180": {
+          "closed": true
+        }
+      }
+    },
+    {
+      "name": "codex-gocql-compare-3",
+      "address": "10.89.18.28",
+      "state": {
+        "OciVersion": "1.2.1",
+        "Status": "exited",
+        "Running": false,
+        "Paused": false,
+        "Restarting": false,
+        "OOMKilled": false,
+        "Dead": false,
+        "Pid": 0,
+        "ExitCode": 0,
+        "Error": "",
+        "StartedAt": "2026-11-01T23:07:52.820096969-04:00",
+        "FinishedAt": "2026-11-01T23:21:01.343591222-04:00",
+        "CheckpointedAt": "0001-01-01T00:00:00Z",
+        "RestoredAt": "0001-01-01T00:00:00Z",
+        "StoppedByUser": true
+      },
+      "endpoints": {
+        "9042": {
+          "closed": true
+        },
+        "9180": {
+          "closed": true
+        }
+      }
+    }
+  ],
+  "emulator_endpoints": {
+    "127.0.0.2:9042": {
+      "closed": true
+    },
+    "127.0.0.3:9042": {
+      "closed": true
+    },
+    "127.0.0.4:9042": {
+      "closed": true
+    },
+    "127.0.0.1:19080": {
+      "closed": true
+    }
+  },
+  "clients": [],
+  "run_lock_free": true,
+  "head": "7e1ad6f718929342200c5b9bc126e5a5e7fc7d1c",
+  "tracked_diff_empty": true,
+  "original_untracked_void_test_unchanged": true
+}

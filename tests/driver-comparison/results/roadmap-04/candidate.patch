@@ -1,0 +1,508 @@
+diff --git a/internal/binding/v2_statement.go b/internal/binding/v2_statement.go
+index cd4e623..818ba36 100644
+--- a/internal/binding/v2_statement.go
++++ b/internal/binding/v2_statement.go
+@@ -3,8 +3,6 @@
+ 
+ package binding
+ 
+-import cqltype "github.com/scylladb/gocql/v2/internal/cqltype"
+-import "fmt"
+ import "github.com/scylladb/gocql/v2/internal/codec"
+ import "github.com/scylladb/gocql/v2/internal/wire"
+ import "strings"
+@@ -19,6 +17,7 @@ func InternalEncodeParameters[P any](plan ParamPlan[P], columns Columns, value P
+ 	b := wire.NewBuilder(256)
+ 	writer := newParamWriter(b, columns, allowUnset)
+ 	codec.SetParamOwnership(writer, owned)
++	codec.CaptureParamCells(writer, make([]encodedCell, 0, columns.Len()))
+ 	if err := plan.Encode(writer, value); err != nil {
+ 		return encodedValues{}, err
+ 	}
+@@ -29,18 +28,9 @@ func InternalEncodeParameters[P any](plan ParamPlan[P], columns Columns, value P
+ 	if err != nil {
+ 		return encodedValues{}, err
+ 	}
+-	cursor := wire.NewCursor(framed)
+-	cells := make([]encodedCell, columns.Len())
+-	for i := range cells {
+-		column, _ := columns.At(i)
+-		v, err := readValue(cursor, column.Type, nil, allowUnset)
+-		if err != nil {
+-			return encodedValues{}, err
+-		}
+-		cells[i] = encodedCell{Typ: column.Type, State: v.State(), Body: cqltype.BytesChain(v.Bytes())}
+-	}
+-	if err := cursor.RequireEnd(); err != nil {
+-		return encodedValues{}, fmt.Errorf("gocql: parameter framing: %w", err)
++	cells, err := codec.CapturedParamCells(writer, framed)
++	if err != nil {
++		return encodedValues{}, err
+ 	}
+ 	return encodedValues{Columns: columns, Cells: cells, Framed: framed}, nil
+ }
+diff --git a/internal/codec/dynamic.go b/internal/codec/dynamic.go
+index be455a5..99aa2ac 100644
+--- a/internal/codec/dynamic.go
++++ b/internal/codec/dynamic.go
+@@ -995,11 +995,12 @@ func (p dynamicParamsPlan) Encode(w *ParamWriter, values []Value) error {
+ 	if err := dynamicMetadataMatches(p.columns, w.columns, w.index); err != nil {
+ 		return err
+ 	}
+-	mark, start := w.builder.Mark(), w.index
++	mark, start, captured := w.builder.Mark(), w.index, len(w.cells)
+ 	for _, v := range values {
+ 		if err := WriteParam(w, checkedDynamicEncoder{typ: cqltype.ColumnSlice(p.columns)[w.index-start].Type, shape: p.shapes[w.index-start]}, v); err != nil {
+ 			w.builder.Rollback(mark)
+ 			w.index = start
++			w.rollbackCells(captured)
+ 			return err
+ 		}
+ 	}
+@@ -1031,11 +1032,12 @@ func (p namedDynamicParamsPlan) Encode(w *ParamWriter, fields []ValueField) erro
+ 			return cqltype.TypeValidation("parameters", "missing input name %q", p.names[i])
+ 		}
+ 	}
+-	mark, start := w.builder.Mark(), w.index
++	mark, start, captured := w.builder.Mark(), w.index, len(w.cells)
+ 	for _, index := range p.ordered {
+ 		if err := WriteParam(w, checkedDynamicEncoder{typ: cqltype.ColumnSlice(p.columns)[w.index-start].Type, shape: p.shapes[w.index-start]}, fields[positions[index]].Value); err != nil {
+ 			w.builder.Rollback(mark)
+ 			w.index = start
++			w.rollbackCells(captured)
+ 			return err
+ 		}
+ 	}
+diff --git a/internal/codec/rows_codec.go b/internal/codec/rows_codec.go
+index e2bc287..fbd0c55 100644
+--- a/internal/codec/rows_codec.go
++++ b/internal/codec/rows_codec.go
+@@ -8,6 +8,7 @@ import (
+ 	"sync"
+ 
+ 	cqltype "github.com/scylladb/gocql/v2/internal/cqltype"
++	"github.com/scylladb/gocql/v2/internal/model"
+ 	"github.com/scylladb/gocql/v2/internal/wire"
+ )
+ 
+@@ -49,6 +50,7 @@ type ParamWriter struct {
+ 	index       int
+ 	allowUnset  bool
+ 	ownBorrowed bool
++	cells       []model.EncodedCell
+ }
+ 
+ func NewParamWriter(builder *wire.Builder, columns cqltype.Columns, allowUnset bool) *ParamWriter {
+@@ -81,6 +83,14 @@ func WriteParam[T any](w *ParamWriter, encoder Encoder[T], value T) error {
+ 		abortValueWriter(cell)
+ 		return fmt.Errorf("gocql: parameter %d (%s): %w", w.index, column.Name, err)
+ 	}
++	if w.cells != nil {
++		state := cell.state
++		// On the wire Empty is a zero-length Present cell.
++		if state == cqltype.Empty {
++			state = cqltype.Present
++		}
++		w.cells = append(w.cells, model.EncodedCell{BodyOffset: cell.start + 4, State: state})
++	}
+ 	w.index++
+ 	return nil
+ }
+@@ -264,11 +274,12 @@ func (c paramsCodec[P]) Compile(columns cqltype.Columns) (ParamPlan[P], error) {
+ 
+ func (p paramsPlan[P]) Encode(w *ParamWriter, value P) error {
+ 	mark := w.builder.Mark()
+-	start := w.index
++	start, captured := w.index, len(w.cells)
+ 	for _, field := range p.ordered {
+ 		if err := field.encode(w, value); err != nil {
+ 			w.builder.Rollback(mark)
+ 			w.index = start
++			w.rollbackCells(captured)
+ 			return err
+ 		}
+ 	}
+@@ -570,7 +581,7 @@ func (c pairedParams[A, B]) Compile(columns cqltype.Columns) (ParamPlan[Pair[A,
+ }
+ func (p pairedParamPlan[A, B]) Encode(w *ParamWriter, value Pair[A, B]) error {
+ 	mark := w.builder.Mark()
+-	columns, index := w.columns, w.index
++	columns, index, captured := w.columns, w.index, len(w.cells)
+ 	completed := false
+ 	defer func() {
+ 		w.columns, w.index = columns, index
+@@ -592,6 +603,7 @@ func (p pairedParamPlan[A, B]) Encode(w *ParamWriter, value Pair[A, B]) error {
+ 	}
+ 	if err != nil {
+ 		w.builder.Rollback(mark)
++		w.rollbackCells(captured)
+ 		return err
+ 	}
+ 	completed = true
+diff --git a/internal/codec/runtime.go b/internal/codec/runtime.go
+index baab25b..fb901a7 100644
+--- a/internal/codec/runtime.go
++++ b/internal/codec/runtime.go
+@@ -5,6 +5,7 @@ package codec
+ 
+ import (
+ 	"github.com/scylladb/gocql/v2/internal/cqltype"
++	"github.com/scylladb/gocql/v2/internal/model"
+ 	"github.com/scylladb/gocql/v2/internal/wire"
+ )
+ 
+@@ -14,3 +15,29 @@ func RowReaderFromCursor(columns cqltype.Columns, cursor *wire.Cursor, lease *wi
+ }
+ func SetParamOwnership(w *ParamWriter, owned bool) { w.ownBorrowed = owned }
+ func BeginStreamRow(r *StreamRowReader)            { r.index = 0 }
++
++// CaptureParamCells supplies the final cell storage before encoding starts.
++// Successful WriteParam calls append boundaries; plan rollback removes them.
++func CaptureParamCells(w *ParamWriter, cells []model.EncodedCell) { w.cells = cells[:0] }
++
++func (w *ParamWriter) rollbackCells(n int) {
++	clear(w.cells[n:])
++	w.cells = w.cells[:n]
++}
++
++// CapturedParamCells completes body views from already checked cell boundaries.
++// It neither reparses cell prefixes nor repeats codec/type validation.
++func CapturedParamCells(w *ParamWriter, framed wire.Chain) ([]model.EncodedCell, error) {
++	for i := range w.cells {
++		end := framed.Len()
++		if i+1 < len(w.cells) {
++			end = w.cells[i+1].BodyOffset - 4
++		}
++		body, err := framed.Slice(w.cells[i].BodyOffset, end-w.cells[i].BodyOffset)
++		if err != nil {
++			return nil, err
++		}
++		w.cells[i].Body = body
++	}
++	return w.cells, nil
++}
+diff --git a/internal/execution/v2_execute.go b/internal/execution/v2_execute.go
+index c779ce8..a73f561 100644
+--- a/internal/execution/v2_execute.go
++++ b/internal/execution/v2_execute.go
+@@ -1096,8 +1096,9 @@ func InternalRequestHasCounter(request InternalExecutionRequest) bool {
+ 	if request.batch != nil && request.batch.kind == CounterBatch {
+ 		return true
+ 	}
+-	for _, cell := range request.InternalValues.Cells {
+-		if cell.Typ.Kind() == TypeCounter {
++	for i := 0; i < request.InternalValues.Columns.Len(); i++ {
++		column, _ := request.InternalValues.Columns.At(i)
++		if column.Type.Kind() == TypeCounter {
+ 			return true
+ 		}
+ 	}
+diff --git a/internal/model/request.go b/internal/model/request.go
+index 4da4ace..366523b 100644
+--- a/internal/model/request.go
++++ b/internal/model/request.go
+@@ -16,9 +16,10 @@ type PayloadEntry struct {
+ }
+ 
+ type EncodedCell struct {
+-	Typ   cqltype.DataType
+-	State cqltype.CellState
+-	Body  wire.Chain
++	// BodyOffset is captured while encoding, before the immutable chain exists.
++	BodyOffset int64
++	State      cqltype.CellState
++	Body       wire.Chain
+ }
+ type EncodedValues struct {
+ 	Columns cqltype.Columns
+diff --git a/internal/binding/param_capture_test.go b/internal/binding/param_capture_test.go
+new file mode 100644
+index 0000000..ebdfa8b
+--- /dev/null
++++ b/internal/binding/param_capture_test.go
+@@ -0,0 +1,160 @@
++// Copyright 2026 The Gocql Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license.
++
++package binding
++
++import (
++	"bytes"
++	"testing"
++
++	"github.com/scylladb/gocql/v2/internal/codec"
++	"github.com/scylladb/gocql/v2/internal/cqltype"
++	"github.com/scylladb/gocql/v2/internal/wire"
++)
++
++func paramCaptureType(t testing.TB, kind cqltype.Type) cqltype.DataType {
++	t.Helper()
++	typ, err := cqltype.ScalarType(kind)
++	if err != nil {
++		t.Fatal(err)
++	}
++	return typ
++}
++
++// reparsedParameters retains the previous two-pass implementation as an oracle.
++func reparsedParameters[P any](plan ParamPlan[P], columns Columns, value P, owned, allowUnset bool) (encodedValues, error) {
++	b := wire.NewBuilder(256)
++	w := codec.NewParamWriter(b, columns, allowUnset)
++	codec.SetParamOwnership(w, owned)
++	if err := plan.Encode(w, value); err != nil {
++		return encodedValues{}, err
++	}
++	if err := codec.FinishParamWriter(w); err != nil {
++		return encodedValues{}, err
++	}
++	framed, err := b.Freeze()
++	if err != nil {
++		return encodedValues{}, err
++	}
++	cursor := wire.NewCursor(framed)
++	cells := make([]encodedCell, columns.Len())
++	for i := range cells {
++		col, _ := columns.At(i)
++		v, err := codec.ReadValue(cursor, col.Type, nil, allowUnset)
++		if err != nil {
++			return encodedValues{}, err
++		}
++		cells[i].State, cells[i].Body = v.State(), cqltype.BytesChain(v.Bytes())
++	}
++	if err := cursor.RequireEnd(); err != nil {
++		return encodedValues{}, err
++	}
++	return encodedValues{Columns: columns, Cells: cells, Framed: framed}, nil
++}
++
++func captureBytes(chain wire.Chain) []byte {
++	var b []byte
++	_ = chain.Each(func(s wire.Span) error { b = append(b, s.Bytes()...); return nil })
++	return b
++}
++
++func TestCapturedParametersMatchReparse(t *testing.T) {
++	integer, blob := paramCaptureType(t, cqltype.TypeInt), paramCaptureType(t, cqltype.TypeBlob)
++	columns := cqltype.NewColumns(cqltype.ColumnSpec{Name: "key", Type: integer}, cqltype.ColumnSpec{Name: "blob", Type: blob}, cqltype.ColumnSpec{Name: "null", Type: integer}, cqltype.ColumnSpec{Name: "unset", Type: integer}, cqltype.ColumnSpec{Name: "empty", Type: integer})
++	empty, err := codec.EmptyValue(integer)
++	if err != nil {
++		t.Fatal(err)
++	}
++	input := []codec.Value{codec.IntValue(17), codec.BlobValue([]byte("payload")), codec.NullValue(integer), codec.UnsetDynamic(integer), empty}
++	plan, err := codec.DynamicParams.Compile(columns)
++	if err != nil {
++		t.Fatal(err)
++	}
++	for _, owned := range []bool{false, true} {
++		got, err := InternalEncodeParameters(plan, columns, input, owned, true)
++		if err != nil {
++			t.Fatal(err)
++		}
++		want, err := reparsedParameters(plan, columns, input, owned, true)
++		if err != nil {
++			t.Fatal(err)
++		}
++		if !bytes.Equal(captureBytes(got.Framed), captureBytes(want.Framed)) {
++			t.Fatal("framing differs")
++		}
++		for i := range got.Cells {
++			if got.Cells[i].State != want.Cells[i].State || !bytes.Equal(captureBytes(got.Cells[i].Body), captureBytes(want.Cells[i].Body)) {
++				t.Fatalf("cell %d differs", i)
++			}
++		}
++	}
++	if _, err := InternalEncodeParameters(plan, columns, input, false, false); err == nil {
++		t.Fatal("v3 unset accepted")
++	}
++}
++
++func TestCapturedParametersBorrowedAndOwned(t *testing.T) {
++	columns := cqltype.NewColumns(cqltype.ColumnSpec{Name: "blob", Type: paramCaptureType(t, cqltype.TypeBlob)})
++	plan, err := codec.OneParam(codec.BytesEncoder).Compile(columns)
++	if err != nil {
++		t.Fatal(err)
++	}
++	input := []byte("payload")
++	borrowed, err := InternalEncodeParameters(plan, columns, input, false, true)
++	if err != nil {
++		t.Fatal(err)
++	}
++	owned, err := InternalEncodeParameters(plan, columns, input, true, true)
++	if err != nil {
++		t.Fatal(err)
++	}
++	input[0] = 'X'
++	if string(captureBytes(borrowed.Cells[0].Body)) != "Xayload" || string(captureBytes(owned.Cells[0].Body)) != "payload" {
++		t.Fatal("ownership changed")
++	}
++}
++
++func BenchmarkCapturedParameters(b *testing.B) {
++	integer, blob := paramCaptureType(b, cqltype.TypeInt), paramCaptureType(b, cqltype.TypeBlob)
++	type input struct {
++		K, R int32
++		P    []byte
++	}
++	for _, write := range []bool{false, true} {
++		columns := cqltype.NewColumns(cqltype.ColumnSpec{Name: "k", Type: integer})
++		var encoder codec.ParamEncoder[input] = codec.Params(codec.Param("k", codec.Int32, func(v input) int32 { return v.K }))
++		name := "point-read"
++		if write {
++			columns = cqltype.NewColumns(cqltype.ColumnSpec{Name: "k", Type: integer}, cqltype.ColumnSpec{Name: "r", Type: integer}, cqltype.ColumnSpec{Name: "p", Type: blob})
++			encoder = codec.Params(codec.Param("k", codec.Int32, func(v input) int32 { return v.K }), codec.Param("r", codec.Int32, func(v input) int32 { return v.R }), codec.Param("p", codec.BytesEncoder, func(v input) []byte { return v.P }))
++			name = "point-write"
++		}
++		plan, err := encoder.Compile(columns)
++		if err != nil {
++			b.Fatal(err)
++		}
++		value := input{K: 17, R: 1, P: make([]byte, 1024)}
++		b.Run(name, func(b *testing.B) {
++			for _, capture := range []bool{false, true} {
++				sub := "reparse"
++				if capture {
++					sub = "capture"
++				}
++				b.Run(sub, func(b *testing.B) {
++					b.ReportAllocs()
++					for i := 0; i < b.N; i++ {
++						var err error
++						if capture {
++							_, err = InternalEncodeParameters(plan, columns, value, false, true)
++						} else {
++							_, err = reparsedParameters(plan, columns, value, false, true)
++						}
++						if err != nil {
++							b.Fatal(err)
++						}
++					}
++				})
++			}
++		})
++	}
++}
+diff --git a/internal/codec/param_capture_test.go b/internal/codec/param_capture_test.go
+new file mode 100644
+index 0000000..104a786
+--- /dev/null
++++ b/internal/codec/param_capture_test.go
+@@ -0,0 +1,119 @@
++// Copyright 2026 The Gocql Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license.
++
++package codec
++
++import (
++	"testing"
++
++	"github.com/scylladb/gocql/v2/internal/cqltype"
++	"github.com/scylladb/gocql/v2/internal/model"
++	"github.com/scylladb/gocql/v2/internal/wire"
++)
++
++func TestParamCaptureRollbackAndNestedPair(t *testing.T) {
++	typ := rowTestType(t, cqltype.TypeInt)
++	cols := cqltype.NewColumns(cqltype.ColumnSpec{Name: "a", Type: typ}, cqltype.ColumnSpec{Name: "b", Type: typ}, cqltype.ColumnSpec{Name: "c", Type: typ})
++	good := PairParams(1, OneParam(Int32), PairParams(1, OneParam(Int32), OneParam(Int32)))
++	bad := PairParams(1, OneParam(Int32), PairParams(1, OneParam(Int32), OneParam[int32](failingRowEncoder{})))
++	value := Pair[int32, Pair[int32, int32]]{First: 11, Second: Pair[int32, int32]{First: 22, Second: 33}}
++	badplan, err := bad.Compile(cols)
++	if err != nil {
++		t.Fatal(err)
++	}
++	goodplan, err := good.Compile(cols)
++	if err != nil {
++		t.Fatal(err)
++	}
++	builder := wire.NewBuilder(4)
++	w := NewParamWriter(builder, cols, true)
++	CaptureParamCells(w, make([]model.EncodedCell, 0, 3))
++	if err := badplan.Encode(w, value); err == nil {
++		t.Fatal("expected failing custom encoder")
++	}
++	if builder.Len() != 0 || w.index != 0 || len(w.cells) != 0 {
++		t.Fatalf("rollback left bytes/index/cells %d/%d/%d", builder.Len(), w.index, len(w.cells))
++	}
++	if err := goodplan.Encode(w, value); err != nil {
++		t.Fatal(err)
++	}
++	if err := FinishParamWriter(w); err != nil {
++		t.Fatal(err)
++	}
++	framed, err := builder.Freeze()
++	if err != nil {
++		t.Fatal(err)
++	}
++	cells, err := CapturedParamCells(w, framed)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if len(cells) != 3 {
++		t.Fatalf("captured %d cells", len(cells))
++	}
++	for i, v := range []uint32{11, 22, 33} {
++		if cells[i].BodyOffset != int64(i*8+4) || cells[i].State != cqltype.Present {
++			t.Fatalf("cell %d: %+v", i, cells[i])
++		}
++		cursor := wire.NewCursor(cells[i].Body)
++		n, err := cursor.Uint32()
++		if err != nil || n != v {
++			t.Fatalf("cell %d: value=%d err=%v", i, n, err)
++		}
++	}
++}
++
++func TestParamCaptureCustomCellFailureCanRetry(t *testing.T) {
++	typ := rowTestType(t, cqltype.TypeInt)
++	cols := cqltype.NewColumns(cqltype.ColumnSpec{Name: "a", Type: typ})
++	builder := wire.NewBuilder(4)
++	w := NewParamWriter(builder, cols, true)
++	CaptureParamCells(w, make([]model.EncodedCell, 0, 1))
++	if err := WriteParam(w, failingRowEncoder{}, int32(7)); err == nil {
++		t.Fatal("expected failing encoder")
++	}
++	if len(w.cells) != 0 || w.index != 0 || builder.Len() != 0 {
++		t.Fatal("failed cell was captured")
++	}
++	if err := WriteParam(w, Int32, int32(9)); err != nil {
++		t.Fatal(err)
++	}
++	framed, err := builder.Freeze()
++	if err != nil {
++		t.Fatal(err)
++	}
++	cells, err := CapturedParamCells(w, framed)
++	if err != nil || len(cells) != 1 || cells[0].BodyOffset != 4 {
++		t.Fatalf("capture=%+v err=%v", cells, err)
++	}
++}
++
++func TestParamCaptureDynamicPlanRollback(t *testing.T) {
++	typ := rowTestType(t, cqltype.TypeInt)
++	cols := cqltype.NewColumns(cqltype.ColumnSpec{Name: "a", Type: typ}, cqltype.ColumnSpec{Name: "b", Type: typ})
++	for _, named := range []bool{false, true} {
++		builder := wire.NewBuilder(4)
++		w := NewParamWriter(builder, cols, false)
++		CaptureParamCells(w, make([]model.EncodedCell, 0, 2))
++		if named {
++			plan, err := NamedDynamicParams.Compile(cols)
++			if err != nil {
++				t.Fatal(err)
++			}
++			if err := plan.Encode(w, []ValueField{{Name: "a", Value: IntValue(3)}, {Name: "b", Value: UnsetDynamic(typ)}}); err == nil {
++				t.Fatal("expected unset rejection")
++			}
++		} else {
++			plan, err := DynamicParams.Compile(cols)
++			if err != nil {
++				t.Fatal(err)
++			}
++			if err := plan.Encode(w, []Value{IntValue(3), UnsetDynamic(typ)}); err == nil {
++				t.Fatal("expected unset rejection")
++			}
++		}
++		if builder.Len() != 0 || w.index != 0 || len(w.cells) != 0 {
++			t.Fatalf("dynamic rollback left %d/%d/%d", builder.Len(), w.index, len(w.cells))
++		}
++	}
++}

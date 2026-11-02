@@ -1,0 +1,44 @@
+[
+  {
+    "log": "default-tests.log",
+    "args": [
+      "taskset",
+      "-c",
+      "10-15",
+      "go",
+      "test",
+      "./..."
+    ],
+    "exit_code": 0,
+    "elapsed_seconds": 12.517117023468018
+  },
+  {
+    "log": "unit-race.log",
+    "args": [
+      "taskset",
+      "-c",
+      "10-15",
+      "go",
+      "test",
+      "-race",
+      "-tags",
+      "unit",
+      "./..."
+    ],
+    "exit_code": 0,
+    "elapsed_seconds": 43.055306911468506
+  },
+  {
+    "log": "full-vet.log",
+    "args": [
+      "taskset",
+      "-c",
+      "10-15",
+      "go",
+      "vet",
+      "./..."
+    ],
+    "exit_code": 0,
+    "elapsed_seconds": 2.140829086303711
+  }
+]

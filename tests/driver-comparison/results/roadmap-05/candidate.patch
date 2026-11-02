@@ -1,0 +1,746 @@
+diff --git a/internal/protocol/request.go b/internal/protocol/request.go
+index e5f359c..c437b6b 100644
+--- a/internal/protocol/request.go
++++ b/internal/protocol/request.go
+@@ -308,33 +308,7 @@ func (c Settings) BuildTypedRequest(req *model.AttemptRequest, stream int) (wire
+ }
+ func (c Settings) WriteTypedParams(e *TypedEnvelope, r *model.AttemptRequest, batch bool) {
+ 	e.U16(uint16(r.Consistency))
+-	var Flags uint32
+-	if !batch {
+-		if r.ValueCount > 0 {
+-			Flags |= frm.FlagValues
+-		}
+-		if r.SkipMetadata {
+-			Flags |= frm.FlagSkipMetaData
+-		}
+-		if r.PageSize > 0 {
+-			Flags |= frm.FlagPageSize
+-		}
+-		if r.PagingState != nil {
+-			Flags |= frm.FlagWithPagingState
+-		}
+-	}
+-	if r.SerialConsistency != 0 {
+-		Flags |= frm.FlagWithSerialConsistency
+-	}
+-	if r.DefaultTimestamp {
+-		Flags |= frm.FlagDefaultTimestamp
+-	}
+-	if r.Keyspace != "" {
+-		Flags |= frm.FlagWithKeyspace
+-	}
+-	if r.NowInSeconds != nil {
+-		Flags |= frm.FlagWithNowInSeconds
+-	}
++	Flags := typedParameterFlags(r, batch)
+ 	if c.Protocol >= 5 {
+ 		e.U32(Flags)
+ 	} else {
+@@ -377,3 +351,34 @@ type Settings struct {
+ 	Compression                         string
+ 	SegmentCompression                  bool
+ }
++
++func typedParameterFlags(r *model.AttemptRequest, batch bool) uint32 {
++	var Flags uint32
++	if !batch {
++		if r.ValueCount > 0 {
++			Flags |= frm.FlagValues
++		}
++		if r.SkipMetadata {
++			Flags |= frm.FlagSkipMetaData
++		}
++		if r.PageSize > 0 {
++			Flags |= frm.FlagPageSize
++		}
++		if r.PagingState != nil {
++			Flags |= frm.FlagWithPagingState
++		}
++	}
++	if r.SerialConsistency != 0 {
++		Flags |= frm.FlagWithSerialConsistency
++	}
++	if r.DefaultTimestamp {
++		Flags |= frm.FlagDefaultTimestamp
++	}
++	if r.Keyspace != "" {
++		Flags |= frm.FlagWithKeyspace
++	}
++	if r.NowInSeconds != nil {
++		Flags |= frm.FlagWithNowInSeconds
++	}
++	return Flags
++}
+diff --git a/internal/protocol/request_scratch.go b/internal/protocol/request_scratch.go
+new file mode 100644
+index 0000000..cdc391d
+--- /dev/null
++++ b/internal/protocol/request_scratch.go
+@@ -0,0 +1,122 @@
++// Copyright 2026 The Gocql Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license.
++
++package protocol
++
++import (
++	"encoding/binary"
++	"math"
++
++	frm "github.com/scylladb/gocql/v2/internal/frame"
++	"github.com/scylladb/gocql/v2/internal/model"
++	"github.com/scylladb/gocql/v2/internal/wire"
++)
++
++// SmallTypedRequestSize selects native prepared frames that can be encoded in
++// transport-owned scalar scratch. Canonical value spans stay borrowed. Complex
++// and large requests keep their
++// immutable segmented representation. Invalid scalar options are left to the
++// canonical encoder so their established validation order remains unchanged.
++func (c Settings) SmallTypedRequestSize(r *model.AttemptRequest, limit int) (int, bool) {
++	if c.Protocol < 3 || c.Protocol > 4 || c.Compression != "" || r.Prepare || r.Batch != nil || len(r.PreparedID) == 0 || len(r.Payload) > 0 || r.Keyspace != "" || r.NowInSeconds != nil || r.ValueCount < 0 || r.ValueCount > math.MaxUint16 || len(r.PreparedID) > math.MaxUint16 || len(r.ResultMetadataID) > math.MaxUint16 || r.PageSize < 0 || int64(r.PageSize) > math.MaxInt32 {
++		return 0, false
++	}
++	size := int64(HeadSize + 2 + len(r.PreparedID) + 3)
++	if c.MetadataID {
++		size += int64(2 + len(r.ResultMetadataID))
++	}
++	if r.ValueCount > 0 {
++		size += 2 + r.Values.Len()
++	}
++	if r.PageSize > 0 {
++		size += 4
++	}
++	if r.PagingState != nil {
++		size += 4 + int64(len(r.PagingState))
++	}
++	if r.SerialConsistency != 0 {
++		size += 2
++	}
++	if r.DefaultTimestamp {
++		size += 8
++	}
++	if c.TabletsRoutingV2 {
++		size++
++	}
++	if size > int64(limit) || size < HeadSize {
++		return 0, false
++	}
++	parts := 0
++	if err := r.Values.Each(func(wire.Span) error {
++		parts++
++		if parts > 8 {
++			return wire.ErrBounds
++		}
++		return nil
++	}); err != nil {
++		return 0, false
++	}
++	return int(size), true
++}
++
++// BuildSmallTypedRequest borrows dst until the caller's accepted writer has
++// completed. It must never back a publicly retained frame. Transport uses the
++// size predicate first; all bound values retain canonical validation here.
++func (c Settings) BuildSmallTypedRequest(r *model.AttemptRequest, stream int, dst []byte) (wire.Chain, error) {
++	size, ok := c.SmallTypedRequestSize(r, cap(dst))
++	if !ok {
++		return c.BuildTypedRequest(r, stream)
++	}
++	if err := validateTypedValues(r.Values, r.ValueCount, c.Protocol); err != nil {
++		return wire.Chain{}, err
++	}
++	if int64(size-HeadSize) > c.MaxFrameBytes {
++		return wire.Chain{}, ErrFrameTooBig
++	}
++	out := dst[:0]
++	flags := c.Flags & frm.FlagBetaProtocol
++	if r.Trace {
++		flags |= frm.FlagTracing
++	}
++	out = append(out, c.Protocol, flags)
++	out = binary.BigEndian.AppendUint16(out, uint16(stream))
++	out = append(out, byte(frm.OpExecute))
++	out = binary.BigEndian.AppendUint32(out, uint32(size-HeadSize))
++	out = binary.BigEndian.AppendUint16(out, uint16(len(r.PreparedID)))
++	out = append(out, r.PreparedID...)
++	if c.MetadataID {
++		out = binary.BigEndian.AppendUint16(out, uint16(len(r.ResultMetadataID)))
++		out = append(out, r.ResultMetadataID...)
++	}
++	out = binary.BigEndian.AppendUint16(out, uint16(r.Consistency))
++	out = append(out, byte(typedParameterFlags(r, false)))
++	if r.ValueCount > 0 {
++		out = binary.BigEndian.AppendUint16(out, uint16(r.ValueCount))
++	}
++	prefixEnd := len(out)
++	if r.PageSize > 0 {
++		out = binary.BigEndian.AppendUint32(out, uint32(r.PageSize))
++	}
++	if r.PagingState != nil {
++		out = binary.BigEndian.AppendUint32(out, uint32(len(r.PagingState)))
++		out = append(out, r.PagingState...)
++	}
++	if r.SerialConsistency != 0 {
++		out = binary.BigEndian.AppendUint16(out, uint16(r.SerialConsistency))
++	}
++	if r.DefaultTimestamp {
++		out = binary.BigEndian.AppendUint64(out, uint64(r.Timestamp))
++	}
++	if c.TabletsRoutingV2 {
++		out = append(out, r.TabletVersionBlock)
++	}
++	// Prefix and suffix share only owned framing storage. Preserve all canonical
++	// input spans, including small blobs, through the original writer boundary.
++	var parts [10]wire.Span
++	spans := append(parts[:0], wire.Borrow(out[:prefixEnd]))
++	if r.ValueCount > 0 {
++		_ = r.Values.Each(func(s wire.Span) error { spans = append(spans, s); return nil })
++	}
++	spans = append(spans, wire.Borrow(out[prefixEnd:]))
++	return wire.NewChain(spans...)
++}
+diff --git a/internal/protocol/request_scratch_test.go b/internal/protocol/request_scratch_test.go
+new file mode 100644
+index 0000000..899a3e2
+--- /dev/null
++++ b/internal/protocol/request_scratch_test.go
+@@ -0,0 +1,150 @@
++// Copyright 2026 The Gocql Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license.
++
++package protocol
++
++import (
++	"bytes"
++	"encoding/binary"
++	"errors"
++	"testing"
++
++	"github.com/scylladb/gocql/v2/internal/cqltype"
++	"github.com/scylladb/gocql/v2/internal/model"
++	"github.com/scylladb/gocql/v2/internal/wire"
++)
++
++func TestSmallTypedRequestMatchesSegmented(t *testing.T) {
++	for _, version := range []byte{3, 4} {
++		for mask := 0; mask < 128; mask++ {
++			settings := protocolSettings(version)
++			settings.MetadataID = mask&1 != 0
++			settings.TabletsRoutingV2 = mask&2 != 0
++			settings.Flags = 0xff
++			values := binary.BigEndian.AppendUint32(nil, 4)
++			values = binary.BigEndian.AppendUint32(values, 1234)
++			values = binary.BigEndian.AppendUint32(values, 0xffffffff)
++			req := &model.AttemptRequest{PreparedID: []byte("prepared"), ResultMetadataID: []byte("metadata"), Values: typedTestChain(t, values[:3], values[3:9], values[9:]), ValueCount: 2, Consistency: cqltype.LocalQuorum, TabletVersionBlock: 19, Trace: mask&4 != 0, SkipMetadata: mask&8 != 0}
++			if mask&16 != 0 {
++				req.PageSize = 32
++				req.PagingState = []byte{}
++			}
++			if mask&32 != 0 {
++				req.SerialConsistency = cqltype.LocalSerial
++				req.PagingState = []byte("page")
++			}
++			if mask&64 != 0 {
++				req.DefaultTimestamp = true
++				req.Timestamp = -9
++			}
++			expected, err := settings.BuildTypedRequest(req, 317)
++			if err != nil {
++				t.Fatal(err)
++			}
++			size, ok := settings.SmallTypedRequestSize(req, 256)
++			if !ok {
++				t.Fatalf("version=%d mask=%d unexpectedly excluded", version, mask)
++			}
++			scratch := make([]byte, 256)
++			got, err := settings.BuildSmallTypedRequest(req, 317, scratch[:0])
++			if err != nil {
++				t.Fatal(err)
++			}
++			want := typedTestBytes(t, expected)
++			if got.Len() != int64(size) || !bytes.Equal(typedTestBytes(t, got), want) {
++				t.Fatalf("version=%d mask=%d mismatch", version, mask)
++			}
++			if size, ok := settings.SmallTypedRequestSize(req, len(want)-1); ok {
++				t.Fatalf("size %d admitted past cap", size)
++			}
++			settings.MaxFrameBytes = int64(size - HeadSize - 1)
++			if _, err := settings.BuildSmallTypedRequest(req, 317, scratch[:0]); !errors.Is(err, ErrFrameTooBig) {
++				t.Fatalf("body limit: %v", err)
++			}
++		}
++	}
++}
++
++func TestSmallTypedRequestRetainsValidationAndFallback(t *testing.T) {
++	settings := protocolSettings(4)
++	valid := &model.AttemptRequest{PreparedID: []byte{1}, Consistency: cqltype.One}
++	for _, mutate := range []func(*model.AttemptRequest){
++		func(r *model.AttemptRequest) { r.Values = typedTestChain(t, []byte{0}); r.ValueCount = 1 },
++		func(r *model.AttemptRequest) {
++			r.Values = typedTestChain(t, []byte{0xff, 0xff, 0xff, 0xfd})
++			r.ValueCount = 1
++		},
++		func(r *model.AttemptRequest) { r.ValueCount = 1 },
++		func(r *model.AttemptRequest) { r.Values = typedTestChain(t, []byte{0}); r.ValueCount = 0 },
++	} {
++		req := *valid
++		mutate(&req)
++		_, want := settings.BuildTypedRequest(&req, 1)
++		_, got := settings.BuildSmallTypedRequest(&req, 1, make([]byte, 0, 256))
++		if want == nil || got == nil || want.Error() != got.Error() {
++			t.Fatalf("validation = %v, canonical = %v", got, want)
++		}
++	}
++	unset := *valid
++	unset.ValueCount = 1
++	unset.Values = typedTestChain(t, []byte{0xff, 0xff, 0xff, 0xfe})
++	settings.Protocol = 3
++	if _, err := settings.BuildSmallTypedRequest(&unset, 1, make([]byte, 0, 256)); err == nil {
++		t.Fatal("v3 admitted unset")
++	}
++	settings.Protocol = 4
++	if _, err := settings.BuildSmallTypedRequest(&unset, 1, make([]byte, 0, 256)); err != nil {
++		t.Fatal(err)
++	}
++	for _, mutate := range []func(*model.AttemptRequest){
++		func(r *model.AttemptRequest) { r.PreparedID = nil; r.Statement = "SELECT now() FROM system.local" },
++		func(r *model.AttemptRequest) { r.PreparedID = make([]byte, 257) },
++		func(r *model.AttemptRequest) { r.PageSize = -1 },
++		func(r *model.AttemptRequest) { r.Prepare = true },
++		func(r *model.AttemptRequest) { r.Keyspace = "ks" },
++	} {
++		req := *valid
++		mutate(&req)
++		if _, ok := settings.SmallTypedRequestSize(&req, 256); ok {
++			t.Fatal("complex/invalid request admitted")
++		}
++		got, gotErr := settings.BuildSmallTypedRequest(&req, 1, make([]byte, 0, 256))
++		want, wantErr := settings.BuildTypedRequest(&req, 1)
++		if (gotErr == nil) != (wantErr == nil) {
++			t.Fatalf("fallback error %v vs %v", gotErr, wantErr)
++		}
++		if gotErr == nil && !bytes.Equal(typedTestBytes(t, got), typedTestBytes(t, want)) {
++			t.Fatal("fallback changed bytes")
++		}
++	}
++}
++
++var scratchBenchChain wire.Chain
++
++func BenchmarkSmallTypedRequestEncoding(b *testing.B) {
++	settings := protocolSettings(4)
++	values, _ := wire.NewChain(wire.Borrow([]byte{0, 0, 0, 4, 0, 0, 0, 1}))
++	req := &model.AttemptRequest{PreparedID: []byte("0123456789abcdef"), Values: values, ValueCount: 1, Consistency: cqltype.LocalQuorum, SkipMetadata: true, PageSize: 32}
++	b.Run("segmented", func(b *testing.B) {
++		b.ReportAllocs()
++		for range b.N {
++			var err error
++			scratchBenchChain, err = settings.BuildTypedRequest(req, 1)
++			if err != nil {
++				b.Fatal(err)
++			}
++		}
++	})
++	b.Run("scratch", func(b *testing.B) {
++		buf := make([]byte, 256)
++		b.ReportAllocs()
++		b.ResetTimer()
++		for range b.N {
++			var err error
++			scratchBenchChain, err = settings.BuildSmallTypedRequest(req, 1, buf[:0])
++			if err != nil {
++				b.Fatal(err)
++			}
++		}
++	})
++}
+diff --git a/internal/transport/v2_request_scratch.go b/internal/transport/v2_request_scratch.go
+new file mode 100644
+index 0000000..fc7073f
+--- /dev/null
++++ b/internal/transport/v2_request_scratch.go
+@@ -0,0 +1,54 @@
++// Copyright 2026 The Gocql Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license.
++
++package transport
++
++import (
++	"context"
++	"github.com/scylladb/gocql/v2/internal/wire"
++)
++
++// At most 16 KiB of idle small-frame bytes are retained across the driver.
++// In-flight storage belongs to one accepted writer and is never shared.
++type smallTypedFrame struct{ data [256]byte }
++
++var smallTypedFrames = make(chan *smallTypedFrame, 64)
++
++func acquireSmallTypedFrame() *smallTypedFrame {
++	select {
++	case p := <-smallTypedFrames:
++		return p
++	default:
++		return new(smallTypedFrame)
++	}
++}
++func releaseSmallTypedFrame(p *smallTypedFrame) {
++	if p == nil {
++		return
++	}
++	clear(p.data[:])
++	select {
++	case smallTypedFrames <- p:
++	default:
++	}
++}
++func (c *Conn) buildTypedRequestForWrite(req *attemptRequest, stream int) (wire.Chain, *smallTypedFrame, error) {
++	settings := c.nativeProtocol()
++	if _, ok := settings.SmallTypedRequestSize(req, 256); !ok {
++		packet, err := settings.BuildTypedRequest(req, stream)
++		return packet, nil, err
++	}
++	scratch := acquireSmallTypedFrame()
++	packet, err := settings.BuildSmallTypedRequest(req, stream, scratch.data[:0])
++	if err != nil {
++		releaseSmallTypedFrame(scratch)
++		return wire.Chain{}, nil, err
++	}
++	return packet, scratch, nil
++}
++func writeTypedRequestPacket(ctx context.Context, writer spanContextWriter, packet wire.Chain, scratch *smallTypedFrame) (int64, error) {
++	// InternalWriteSpans joins accepted/coalesced writes on all exits, including
++	// cancellation and partial I/O. Only this completion permits reuse.
++	defer releaseSmallTypedFrame(scratch)
++	return writer.InternalWriteSpans(ctx, packet)
++}
+diff --git a/internal/transport/v2_request_scratch_test.go b/internal/transport/v2_request_scratch_test.go
+new file mode 100644
+index 0000000..02122fa
+--- /dev/null
++++ b/internal/transport/v2_request_scratch_test.go
+@@ -0,0 +1,296 @@
++// Copyright 2026 The Gocql Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license.
++
++package transport
++
++import (
++	"bytes"
++	"context"
++	"crypto/ecdsa"
++	"crypto/elliptic"
++	"crypto/rand"
++	"crypto/tls"
++	"crypto/x509"
++	"errors"
++	"fmt"
++	"io"
++	"math/big"
++	"net"
++	"testing"
++	"time"
++
++	"github.com/scylladb/gocql/v2/internal/cqltype"
++	"github.com/scylladb/gocql/v2/internal/model"
++	"github.com/scylladb/gocql/v2/internal/wire"
++)
++
++func emptySmallFramePool() {
++	for {
++		select {
++		case <-smallTypedFrames:
++		default:
++			return
++		}
++	}
++}
++func newSmallFramePacket(t *testing.T) (wire.Chain, *smallTypedFrame, []byte) {
++	t.Helper()
++	c := &Conn{InternalVersion: 4}
++	req := &model.AttemptRequest{PreparedID: []byte("prepared"), Consistency: cqltype.One, SkipMetadata: true}
++	packet, scratch, err := c.buildTypedRequestForWrite(req, 3)
++	if err != nil || scratch == nil {
++		t.Fatalf("small frame: scratch=%p error=%v", scratch, err)
++	}
++	expected := make([]byte, packet.Len())
++	_, _ = packet.CopyTo(expected)
++	return packet, scratch, expected
++}
++
++type blockedSmallFrameWriter struct {
++	entered, release chan struct{}
++	got              []byte
++}
++
++func (w *blockedSmallFrameWriter) InternalWriteSpans(_ context.Context, c wire.Chain) (int64, error) {
++	close(w.entered)
++	<-w.release
++	w.got = make([]byte, c.Len())
++	_, err := c.CopyTo(w.got)
++	return c.Len(), err
++}
++
++func TestSmallFrameScratchWaitsForAcceptedWriter(t *testing.T) {
++	emptySmallFramePool()
++	defer emptySmallFramePool()
++	packet, scratch, expected := newSmallFramePacket(t)
++	sink := &blockedSmallFrameWriter{entered: make(chan struct{}), release: make(chan struct{})}
++	ctx, cancel := context.WithCancel(context.Background())
++	defer cancel()
++	done := make(chan error, 1)
++	go func() { _, err := writeTypedRequestPacket(ctx, sink, packet, scratch); done <- err }()
++	<-sink.entered
++	cancel()
++	select {
++	case <-done:
++		t.Fatal("accepted write returned before completion")
++	default:
++	}
++	if len(smallTypedFrames) != 0 {
++		t.Fatal("in-flight frame returned to pool")
++	}
++	other := acquireSmallTypedFrame()
++	if other == scratch {
++		t.Fatal("in-flight scratch reused")
++	}
++	if !bytes.Equal(scratch.data[:len(expected)], expected) {
++		t.Fatal("cancellation changed accepted bytes")
++	}
++	close(sink.release)
++	if err := <-done; err != nil {
++		t.Fatal(err)
++	}
++	if !bytes.Equal(sink.got, expected) {
++		t.Fatal("accepted writer saw changed bytes")
++	}
++	if len(smallTypedFrames) != 1 {
++		t.Fatal("completed frame not returned")
++	}
++	for _, v := range scratch.data {
++		if v != 0 {
++			t.Fatal("idle pool retains request bytes")
++		}
++	}
++	releaseSmallTypedFrame(other)
++}
++
++func TestSmallFrameScratchAllWriterExitsAndBound(t *testing.T) {
++	for _, outcome := range []string{"success", "short", "error", "panic", "cancelled"} {
++		t.Run(outcome, func(t *testing.T) {
++			emptySmallFramePool()
++			defer emptySmallFramePool()
++			packet, scratch, expected := newSmallFramePacket(t)
++			sink := &scratchTestWriter{outcome: outcome}
++			writer := &InternalDeadlineContextWriter{InternalW: sink, InternalSemaphore: make(chan struct{}, 1), InternalQuit: make(chan struct{})}
++			ctx, cancel := context.WithCancel(context.Background())
++			defer cancel()
++			if outcome == "cancelled" {
++				cancel()
++			}
++			var err error
++			var caught any
++			func() {
++				defer func() { caught = recover() }()
++				_, err = writeTypedRequestPacket(ctx, writer, packet, scratch)
++			}()
++			switch outcome {
++			case "success":
++				if err != nil || !bytes.Equal(sink.Bytes(), expected) {
++					t.Fatalf("write: %v", err)
++				}
++			case "short":
++				if !errors.Is(err, io.ErrShortWrite) {
++					t.Fatal(err)
++				}
++			case "error":
++				if !errors.Is(err, io.ErrClosedPipe) {
++					t.Fatal(err)
++				}
++			case "panic":
++				if caught == nil {
++					t.Fatal("panic lost")
++				}
++			case "cancelled":
++				if !errors.Is(err, context.Canceled) || sink.Len() != 0 {
++					t.Fatal("cancelled write reached sink")
++				}
++			}
++			if len(smallTypedFrames) != 1 {
++				t.Fatal("scratch not released")
++			}
++		})
++	}
++	emptySmallFramePool()
++	defer emptySmallFramePool()
++	for range 80 {
++		releaseSmallTypedFrame(new(smallTypedFrame))
++	}
++	if len(smallTypedFrames) != 64 {
++		t.Fatal("idle pool exceeds declared bound")
++	}
++}
++
++func TestSmallFrameTLSWrite(t *testing.T) {
++	emptySmallFramePool()
++	defer emptySmallFramePool()
++	packet, scratch, expected := newSmallFramePacket(t)
++	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
++	if err != nil {
++		t.Fatal(err)
++	}
++	template := &x509.Certificate{SerialNumber: big.NewInt(1), DNSNames: []string{"scratch.test"}, NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour), KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}
++	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
++	if err != nil {
++		t.Fatal(err)
++	}
++	cert, err := x509.ParseCertificate(der)
++	if err != nil {
++		t.Fatal(err)
++	}
++	roots := x509.NewCertPool()
++	roots.AddCert(cert)
++	rawClient, rawServer := net.Pipe()
++	defer rawClient.Close()
++	defer rawServer.Close()
++	server := tls.Server(rawServer, &tls.Config{Certificates: []tls.Certificate{{Certificate: [][]byte{der}, PrivateKey: key}}, MinVersion: tls.VersionTLS13})
++	client := tls.Client(rawClient, &tls.Config{RootCAs: roots, ServerName: "scratch.test", MinVersion: tls.VersionTLS13})
++	done := make(chan error, 1)
++	go func() {
++		data := make([]byte, len(expected))
++		_, err := io.ReadFull(server, data)
++		if err == nil && !bytes.Equal(data, expected) {
++			err = fmt.Errorf("TLS changed frame")
++		}
++		done <- err
++	}()
++	writer := &InternalDeadlineContextWriter{InternalW: client, InternalSemaphore: make(chan struct{}, 1), InternalQuit: make(chan struct{})}
++	writer.InternalSetWriteTimeout(time.Second * 5)
++	if _, err := writeTypedRequestPacket(context.Background(), writer, packet, scratch); err != nil {
++		t.Fatal(err)
++	}
++	if err := <-done; err != nil {
++		t.Fatal(err)
++	}
++	if len(smallTypedFrames) != 1 {
++		t.Fatal("TLS completion did not release scratch")
++	}
++}
++
++var scratchTransportBenchChain wire.Chain
++
++func BenchmarkSmallFrameTransportEncoding(b *testing.B) {
++	c := &Conn{InternalVersion: 4}
++	values, _ := wire.NewChain(wire.Borrow([]byte{0, 0, 0, 4, 0, 0, 0, 1}))
++	req := &model.AttemptRequest{PreparedID: []byte("0123456789abcdef"), Values: values, ValueCount: 1, Consistency: cqltype.LocalQuorum, SkipMetadata: true, PageSize: 32}
++	b.Run("segmented", func(b *testing.B) {
++		b.ReportAllocs()
++		for range b.N {
++			var err error
++			scratchTransportBenchChain, err = c.InternalBuildTypedRequest(req, 1)
++			if err != nil {
++				b.Fatal(err)
++			}
++		}
++	})
++	b.Run("scratch", func(b *testing.B) {
++		b.ReportAllocs()
++		for range b.N {
++			packet, scratch, err := c.buildTypedRequestForWrite(req, 1)
++			if err != nil {
++				b.Fatal(err)
++			}
++			scratchTransportBenchChain = packet
++			releaseSmallTypedFrame(scratch)
++		}
++	})
++}
++
++func TestSmallFrameCoalescerCancellationKeepsAcceptedScratch(t *testing.T) {
++	emptySmallFramePool()
++	defer emptySmallFramePool()
++	packet, scratch, expected := newSmallFramePacket(t)
++	quit := make(chan struct{})
++	timer := make(chan time.Time, 1)
++	admitted := make(chan struct{})
++	sink := &scratchTestWriter{}
++	writer := &InternalWriteCoalescer{InternalC: sink, InternalQuit: quit, InternalWriteCh: make(chan InternalWriteRequest), InternalTestEnqueuedHook: func() { close(admitted) }}
++	flusherDone := make(chan struct{})
++	go func() { defer close(flusherDone); writer.InternalWriteFlusherImpl(timer, func() {}) }()
++	ctx, cancel := context.WithCancel(context.Background())
++	defer cancel()
++	done := make(chan error, 1)
++	go func() { _, err := writeTypedRequestPacket(ctx, writer, packet, scratch); done <- err }()
++	<-admitted
++	cancel()
++	select {
++	case <-done:
++		t.Fatal("cancelled coalescer released accepted scratch")
++	default:
++	}
++	current := make([]byte, packet.Len())
++	_, _ = packet.CopyTo(current)
++	if len(smallTypedFrames) != 0 || !bytes.Equal(current, expected) {
++		t.Fatal("pending coalesced scratch changed")
++	}
++	timer <- time.Now()
++	if err := <-done; err != nil {
++		t.Fatal(err)
++	}
++	if !bytes.Equal(sink.Bytes(), expected) {
++		t.Fatal("coalescer changed accepted frame")
++	}
++	close(quit)
++	<-flusherDone
++	if len(smallTypedFrames) != 1 {
++		t.Fatal("coalesced completion did not recycle scratch")
++	}
++}
++
++func TestSmallFrameLargeRequestKeepsBorrowedPayload(t *testing.T) {
++	c := &Conn{InternalVersion: 4}
++	payload := bytes.Repeat([]byte{7}, 1024)
++	values := scratchTestChain(t, []byte{0, 0, 4, 0}, payload)
++	packet, scratch, err := c.buildTypedRequestForWrite(&model.AttemptRequest{PreparedID: []byte("prepared"), Consistency: cqltype.One, Values: values, ValueCount: 1}, 2)
++	if err != nil || scratch != nil {
++		t.Fatalf("large request scratch=%p err=%v", scratch, err)
++	}
++	found := false
++	_ = packet.Each(func(s wire.Span) error {
++		if len(s.Bytes()) == len(payload) && &s.Bytes()[0] == &payload[0] {
++			found = true
++		}
++		return nil
++	})
++	if !found {
++		t.Fatal("large request gathered borrowed payload")
++	}
++}
+diff --git a/internal/transport/v2_transport.go b/internal/transport/v2_transport.go
+index 6bf1674..1e96c8d 100644
+--- a/internal/transport/v2_transport.go
++++ b/internal/transport/v2_transport.go
+@@ -101,18 +101,19 @@ func (c *Conn) InternalExecuteTyped(ctx context.Context, req *attemptRequest) (*
+ 		}
+ 		return nil, runtimeerrors.NewQueryError(runtimeerrors.QueryErrorState{InternalErr: err})
+ 	}
+-	packet, err := c.InternalBuildTypedRequest(req, stream)
++	packet, frameScratch, err := c.buildTypedRequestForWrite(req, stream)
+ 	if err != nil {
+ 		return failBeforeWrite(err)
+ 	}
+ 	writer, ok := c.InternalW.(spanContextWriter)
+ 	if !ok {
++		releaseSmallTypedFrame(frameScratch)
+ 		return failBeforeWrite(fmt.Errorf("gocql: connection writer does not support immutable spans"))
+ 	}
+ 	if call.streamObserverContext != nil {
+ 		call.streamObserverContext.StreamStarted(ObservedStream{Host: c.InternalHost})
+ 	}
+-	n, err := writer.InternalWriteSpans(ctx, packet)
++	n, err := writeTypedRequestPacket(ctx, writer, packet, frameScratch)
+ 	if err != nil {
+ 		stopWaiting = true
+ 		if n == 0 && (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) {

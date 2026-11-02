@@ -1,0 +1,2 @@
+# Unified patch context indentation is data and must retain exact bytes.
+*.patch -whitespace

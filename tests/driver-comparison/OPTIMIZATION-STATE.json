@@ -1,0 +1,403 @@
+{
+  "objective": "Profile and optimize each driver-comparison workload using 30-second v2-only observations and a fresh agent per iteration",
+  "status": "parked at user request; all optimization and comparison loads stopped",
+  "retained_iterations": [
+    {
+      "iteration": 1,
+      "agent": "/root/read_iteration_01",
+      "summary": "results/optimization-read-01-summary.json",
+      "commit": "02d39e021658f1a873ff9067d128976916f2b21b"
+    },
+    {
+      "iteration": 2,
+      "agent": "/root/read_iteration_02",
+      "summary": "results/optimization-read-02-summary.json",
+      "commit": "3a79655ae10725ff9d96a6b08781a492952f96dc"
+    },
+    {
+      "iteration": 3,
+      "agent": "/root/read_iteration_03",
+      "summary": "results/optimization-read-03-summary.json",
+      "commit": "c3fb2a65f2bd01cb290344c2593503c83ed1ea66"
+    },
+    {
+      "iteration": 4,
+      "agent": "/root/read_iteration_04",
+      "summary": "results/optimization-read-04-summary.json",
+      "commit": "2b969938ff315465739537a0ad31cf68f0ce07e7"
+    },
+    {
+      "iteration": 5,
+      "agent": "/root/read_iteration_05",
+      "summary": "results/optimization-read-05-summary.json",
+      "commit": "6c1e1bcb6679a92748139c8825d9b37cc9c40317"
+    },
+    {
+      "iteration": 6,
+      "agent": "/root/read_iteration_06",
+      "summary": "results/optimization-read-06-summary.json",
+      "commit": "b953ba23ad2b6ce07821b0039b14fca2122de17a"
+    },
+    {
+      "iteration": 7,
+      "agent": "/root/read_iteration_07",
+      "summary": "results/optimization-read-07-summary.json",
+      "commit": "23bf3c4a528719772a90c57f98ea6a2e56fe8a19"
+    },
+    {
+      "iteration": 8,
+      "agent": "/root/read_iteration_08",
+      "summary": "results/optimization-read-08-summary.json",
+      "commit": "3bce4610214450d8d4941f9de7938e7884b72114"
+    },
+    {
+      "iteration": 10,
+      "agent": "/root/paged_iteration_10",
+      "summary": "results/optimization-paged-10-summary.json",
+      "commit": "9e36b1307d00431cd498a86c85b4781c7a656b37"
+    },
+    {
+      "iteration": 13,
+      "agent": "/root/remaining_iteration_13",
+      "summary": "results/optimization-remaining-13-summary.json",
+      "commit": "bf066dd38d1cbe6e55a0ab3c1453031014216ab5"
+    },
+    {
+      "iteration": 16,
+      "agent": "/root/validation_iteration_16",
+      "summary": "results/optimization-validation-16-summary.json",
+      "commit": "82d23737a685271adfc49330c9ac0b895ec32763"
+    },
+    {
+      "iteration": 18,
+      "agent": "/root/routing_iteration_18",
+      "summary": "results/optimization-routing-18-summary.json",
+      "commit": "7e1ad6f718929342200c5b9bc126e5a5e7fc7d1c"
+    }
+  ],
+  "active_iteration": {
+    "iteration": 28,
+    "agent": "/root/fixed_cursor_audit_28",
+    "status": "Stopped at user request after16maximum profiles; no controls or commit. Exact640accepted18source restored; all owned clients joined."
+  },
+  "workloads": [
+    {
+      "scenario": "read",
+      "adapter": "buffered",
+      "phase": "maximum",
+      "status": "profiled_iterating",
+      "convergence_verified": false,
+      "latest_observation": "results/optimization-fixed-cursor-28-point-buffered-max-old2",
+      "target_rate": 0,
+      "rejected": 0,
+      "source_tip": "7e1ad6f718929342200c5b9bc126e5a5e7fc7d1c"
+    },
+    {
+      "scenario": "read",
+      "adapter": "buffered",
+      "phase": "sustainable",
+      "status": "profiled_delivery_failure",
+      "convergence_verified": false,
+      "latest_observation": "results/optimization-remaining-13-read-buffered-scheduled-after",
+      "target_rate": 56794.75666666667,
+      "rejected": 200
+    },
+    {
+      "scenario": "read",
+      "adapter": "stream",
+      "phase": "maximum",
+      "status": "profiled_iterating",
+      "convergence_verified": false,
+      "latest_observation": "results/optimization-remaining-13-read-stream-after",
+      "target_rate": 0,
+      "rejected": 0
+    },
+    {
+      "scenario": "read",
+      "adapter": "stream",
+      "phase": "sustainable",
+      "status": "profiled_delivery_failure",
+      "convergence_verified": false,
+      "latest_observation": "results/optimization-remaining-13-read-stream-scheduled-after",
+      "target_rate": 32233.27333333333,
+      "rejected": 1
+    },
+    {
+      "scenario": "write",
+      "adapter": "buffered",
+      "phase": "maximum",
+      "status": "capacity_unresolved",
+      "convergence_verified": false,
+      "latest_observation": "results/optimization-write-09-before",
+      "concurrency": 64
+    },
+    {
+      "scenario": "write",
+      "adapter": "buffered",
+      "phase": "sustainable",
+      "status": "profiled_delivery_failure",
+      "convergence_verified": false,
+      "latest_observation": "results/optimization-write-09-sustainable-before",
+      "target_rate": 52503.01,
+      "rejected": 2801
+    },
+    {
+      "scenario": "paged",
+      "adapter": "buffered",
+      "phase": "maximum",
+      "status": "profiled_iterating",
+      "convergence_verified": false,
+      "latest_observation": "results/optimization-remaining-13-paged-buffered-after",
+      "concurrency": 4,
+      "target_rate": 0,
+      "rejected": 0
+    },
+    {
+      "scenario": "paged",
+      "adapter": "buffered",
+      "phase": "sustainable",
+      "status": "profiled_iterating",
+      "convergence_verified": false,
+      "latest_observation": "results/optimization-remaining-13-paged-buffered-scheduled-after",
+      "concurrency": 4,
+      "target_rate": 1878.0066666666667,
+      "rejected": 0
+    },
+    {
+      "scenario": "paged",
+      "adapter": "stream",
+      "phase": "maximum",
+      "status": "profiled_iterating",
+      "convergence_verified": false,
+      "latest_observation": "results/optimization-remaining-13-paged-stream-after",
+      "concurrency": 4,
+      "target_rate": 0,
+      "rejected": 0
+    },
+    {
+      "scenario": "paged",
+      "adapter": "stream",
+      "phase": "sustainable",
+      "status": "profiled_iterating",
+      "convergence_verified": false,
+      "latest_observation": "results/optimization-remaining-13-paged-stream-scheduled-after",
+      "concurrency": 4,
+      "target_rate": 1265.11,
+      "rejected": 0
+    }
+  ],
+  "completion_requirements": [
+    "All workload modes and phases profiled for30seconds using onlyv2",
+    "CPU and heap/allocation evidence retained with source/binary identities",
+    "Fresh-agent hotspot audits find no remaining actionable safe optimization in measured paths",
+    "No unaddressed correctness or performance regressions in final repeated cross-workload verification",
+    "Appropriate repository and lifecycle/race tests pass; benchmark shutdown verified"
+  ],
+  "artifact_audit": "results/optimization-profile-audit.json",
+  "queued_iterations": [],
+  "next_actions": [
+    "Complete fresh28 fixedCursor length-view compiler/escape/semantic/allocation proof. Run full checks and balanced 30-second read-only profiles only if a concrete benefit is established; create a separate signed commit only if retained.",
+    "Obtain current accepted-source v2 write CPU/heap evidence after idle health checks. Label one-worker/low-rate diagnostics separately; they cannot supersede the failed original 64-worker maximum or 52503.01/s scheduled capacity.",
+    "Use a fresh write-hotspot audit of the latest healthy evidence to select at most one candidate per brand-new iteration. Preserve callbacks, ownership, cancellation, budgets, wire correctness and cross-workload controls.",
+    "Resolve remaining actionable safe measured opportunities and document unsupported hypotheses. Artifact integrity alone does not prove optimization convergence or global optimality.",
+    "Repeat final frozen-source before/current coverage across every mode and phase. Preserve original rates, workers and queue bounds, including all errors, rejections and unhealthy/excluded observations.",
+    "Run final exact accepted-source default tests, full unit race tests, vet, module drift, all-tag and integration/debug compilation, plus v2 harness race/vet/Python checks. Never build or run the parked legacy adapter.",
+    "Audit CPU/heap, source/binary identities, histograms, arrival/drain accounting, affinity and health against the full goal. Join clients and verify benchmark shutdown, closed endpoints and preserved data/unrelated services before completion."
+  ],
+  "cluster_health": {
+    "status": "All three nodes report critical mode false and compaction enabled; three idle probes are clear after lossless archival of our terminal logs. Writes remain held and capacity unresolved.",
+    "evidence": "results/optimization-cluster-recovery-03",
+    "failed_observation": "results/optimization-write-09-before-repeat1/INVALID.json",
+    "recovery_actions": "302 terminal optimization-client logs: 6.85 GB to 46.9 MB gzip, with round-trip SHA-256 verification. No restart or dataset/configuration change.",
+    "available_gib": 42.86,
+    "new_addresses": [
+      "10.89.18.23",
+      "10.89.18.24",
+      "10.89.18.25"
+    ],
+    "latest_write_diagnostic": "results/optimization-remaining-13-write-16-before",
+    "critical_evidence": "results/optimization-packed-27-point-stream-control-old4/UNHEALTHY.json",
+    "log_archive": "results/optimization-log-archive.json"
+  },
+  "interrupted_observations": [
+    {
+      "directory": "results/optimization-write-09-health-after",
+      "marker": "INTERRUPTED.json",
+      "reason": "Sequencing mistake launched next health command after failed strict gate; client terminated and joined at23.25seconds; excluded from completed30-second observations."
+    }
+  ],
+  "independent_audits": [
+    {
+      "agent": "/root/void_audit_11",
+      "scope": "Native VOID fast path and shared Rows fallback versus HEAD",
+      "result": "No verified correctness or ownership findings",
+      "test_gap": "Existing acknowledgement-cancellation fixture blocks before successful executePage outcome acceptance; actual post-outcome boundary not deterministically covered."
+    },
+    {
+      "agent": "/root/write_iteration_12",
+      "scope": "Read-only point-write allocation/lifetime preparation; no production changes or new measurements",
+      "evidence": "results/optimization-write-12-readonly/AUDIT.json",
+      "result": "No additional optimization selected; fresh write profiles after shared framing change required; convergence unproven"
+    },
+    {
+      "agent": "/root/rejection_forensics_29",
+      "scope": "Read-only exact raw schedule-histogram reconstruction of cutoff vs queuefull in rejectedcandidates",
+      "status": "Complete: 266 observations and 98 scheduled runs support all ten conservative rejections; no retest candidate. Write09 remains rejected with real queue-full concern and backend confounding.",
+      "evidence": "results/optimization-rejection-forensics-29.json",
+      "write09_evidence": "results/optimization-rejection-forensics-29-write09.json"
+    }
+  ],
+  "rejected_iterations": [
+    {
+      "iteration": 9,
+      "agent": "/root/write_iteration_09",
+      "summary": "results/optimization-write-09-summary.json",
+      "archive": "results/optimization-write-09-candidate-rejected",
+      "decision": "VOID fast path rejected/reverted:832B and7objects saved, but repeated throughput/CPU concerns could not be ruled out amid server instability; no verified correctness bug"
+    },
+    {
+      "iteration": 14,
+      "agent": "/root/stream_iteration_14",
+      "scope": "v1 validation-plan reuse constructor refactor",
+      "decision": "V1 unaccepted after failed point scheduled controls; v2 scoped revision transferred to fresh iteration16",
+      "archive": "results/optimization-stream-14-v1-summary.json",
+      "handoff": "results/optimization-stream-14-handoff.json"
+    },
+    {
+      "iteration": 15,
+      "agent": "/root/header_iteration_15",
+      "summary": "results/optimization-header-15-summary.json",
+      "decision": "Serve-only timeout formatting candidate rejected/reverted after452B/15object streaming savings but repeated buffered/paged timing concern; all28 observations preserved"
+    },
+    {
+      "iteration": 17,
+      "agent": "/root/hotspot_iteration_17",
+      "summary": "results/optimization-owner-17-summary.json",
+      "decision": "Rejected/reverted; exact639 accepted16 source hashes restored and full/focused race pass;28profiles preserved"
+    },
+    {
+      "iteration": 19,
+      "agent": "/root/lifetime_iteration_19",
+      "scope": "Redundant logical shutdown signal removal",
+      "decision": "Rejected/reverted to exact accepted18;29completed profiles preserved; restored default/race/vet/source checks pass",
+      "summary": "results/optimization-drain-19-summary.json"
+    },
+    {
+      "iteration": 20,
+      "agent": "/root/timeout_audit_20",
+      "summary": "results/optimization-adapter-20-summary.json",
+      "decision": "Rejected/reverted to exact accepted18; streaming452B/15object saving but repeated fixed-rate buffered CPU/p99/rejection concern;24complete profiles preserved"
+    },
+    {
+      "iteration": 21,
+      "agent": "/root/convergence_audit_21",
+      "scope": "Certified prepared native envelope64-byte scalar slab",
+      "decision": "Rejected/reverted exact accepted18 across640 files;40profile audits/full/race/vet pass; scalar baseline stays256B",
+      "summary": "results/optimization-slab-21-summary.json"
+    },
+    {
+      "iteration": 22,
+      "agent": "/root/descriptor_iteration_22",
+      "summary": "results/optimization-descriptors-22-summary.json",
+      "decision": "Rejected/reverted exact640 accepted18 source hashes;1920B/4object saving but original-rate point delivery concerns;32profiles/full/race/vet pass"
+    },
+    {
+      "iteration": 23,
+      "agent": "/root/emission_audit_23",
+      "summary": "results/optimization-emission-23-summary.json",
+      "decision": "Rejected/reverted exact640 accepted18 source hashes;96B/plan saving but repeated original-rate buffered rejection/tail concern;22profiles/full/race/vet pass"
+    },
+    {
+      "iteration": 24,
+      "agent": "/root/binding_audit_24",
+      "summary": "results/optimization-binding-24-summary.json",
+      "decision": "Rejected/restored exact640 accepted18 paths;248B saving but buffered original-rate tail/delivery concern;23profiles/full/race/vet pass"
+    },
+    {
+      "iteration": 25,
+      "agent": "/root/convergence_review_25",
+      "scope": "Private direct lease liveness check removing Bytes copy",
+      "decision": "Rejected/restored exact640 accepted18 paths; two copies removed but repeated original-rate buffered delivery/p99 concern;20profiles/full/race/vet pass",
+      "summary": "results/optimization-liveness-25-summary.json"
+    },
+    {
+      "iteration": 26,
+      "agent": "/root/value_constructor_26",
+      "scope": "Private already-validated framed-value construction",
+      "decision": "Rejected/restored exact640 accepted18 paths; compiled/micro and ~1% buffered CPU benefit but recurring original-rate dispatch p99+7.27%;20profile audits and restored full/race/vet pass",
+      "summary": "results/optimization-constructor-26-summary.json"
+    },
+    {
+      "iteration": 27,
+      "agent": "/root/packed_stream_audit_27",
+      "summary": "results/optimization-packed-27-summary.json",
+      "decision": "Proven 24 B/two-object point savings and zero-byte/eight-object partition savings; point-stream tails remained unresolved after the bounded repeat and a final baseline entered critical disk mode. Rejected conservatively; exact 640-path accepted18 source restored; all 40 artifact audits and restored full/race/vet checks passed."
+    }
+  ],
+  "initial_profile_coverage": {
+    "paged/buffered/maximum": [
+      "results/optimization-paged-10-buffered-64-before",
+      "results/optimization-paged-10-buffered-1-before",
+      "results/optimization-paged-10-buffered-16-before",
+      "results/optimization-paged-10-buffered-4-before"
+    ],
+    "write/buffered/maximum": [
+      "results/optimization-write-09-workers256-after",
+      "results/optimization-write-09-postrestart-workers16-before",
+      "results/optimization-write-09-workers16-before",
+      "results/optimization-write-09-after",
+      "results/optimization-write-09-postrestart-workers16-after",
+      "results/optimization-write-09-before"
+    ],
+    "write/buffered/sustainable": [
+      "results/optimization-write-09-sustainable-before",
+      "results/optimization-write-09-health-before",
+      "results/optimization-write-09-health-after-retry1"
+    ],
+    "read/buffered/maximum": [
+      "results/optimization-read-04-after",
+      "results/optimization-read-07-after",
+      "results/optimization-read-01-before",
+      "results/optimization-read-03-after",
+      "results/optimization-read-02-after",
+      "results/optimization-read-05-after",
+      "results/optimization-read-06-after",
+      "results/optimization-read-01-after"
+    ],
+    "read/buffered/sustainable": [
+      "results/optimization-read-08-buffered-sustainable-before"
+    ],
+    "paged/stream/maximum": [
+      "results/optimization-paged-10-stream-16-before",
+      "results/optimization-paged-10-stream-1-before",
+      "results/optimization-paged-10-stream-4-before"
+    ],
+    "paged/buffered/sustainable": [
+      "results/optimization-paged-10-buffered-sustainable-before"
+    ],
+    "read/stream/maximum": [
+      "results/optimization-read-08-stream-after",
+      "results/optimization-read-08-stream-before"
+    ],
+    "read/stream/sustainable": [
+      "results/optimization-read-08-stream-sustainable-before",
+      "results/optimization-read-08-stream-sustainable-after"
+    ],
+    "paged/stream/sustainable": [
+      "results/optimization-paged-10-stream-sustainable-before"
+    ]
+  },
+  "commit_policy": "User authorized one separate commit per successful optimization; rejected and unaccepted candidates stay out.",
+  "commit_series": {
+    "base": "5a07badd5f3a567f3990e0c70aba6c8d28e7fbc0",
+    "tip": "7e1ad6f718929342200c5b9bc126e5a5e7fc7d1c",
+    "count": 12,
+    "signed": true,
+    "working_source_preserved": true
+  },
+  "comparison_after_pause": "/extra/scylladb/gocql/tests/driver-comparison/results/master-comparison-20261101T222337Z",
+  "parked_checkpoint": "/extra/scylladb/gocql/tests/driver-comparison/PARKED-STATE.json",
+  "backup_directory": "/extra/scylladb/gocql-parks/20261101T223801Z",
+  "current_roadmap": "ROADMAP-STATE.json",
+  "current_checkpoint": "PARKED-CHECKPOINT.json"
+}

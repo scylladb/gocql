@@ -1,0 +1,26 @@
+{
+  "candidate": 1,
+  "baseline": "7e1ad6f718929342200c5b9bc126e5a5e7fc7d1c",
+  "primary_workload": "paged buffered: 4 workers, 128 rows x 4 KiB, page size 32, four populated plus terminal empty page",
+  "metric": "allocated bytes per partition (memory candidate), CPU/op regression <=2%; all controls per roadmap",
+  "mechanism": "replace escaping full InternalExecutionRequest page copy with immutable per-page tablet feedback/version value captured by asynchronous attempt closures",
+  "memory_budget": "no additional retained storage; smaller capture per page; existing streaming request fields preserved",
+  "acceptance": "at least 10% lower allocated bytes/op; focused microbenchmark is screening only; parent requires canonical A-B-B-A, confirmation, real Scylla and controls",
+  "source_sha256": {
+    "internal/execution/v2_execute.go": "7705dd59bafdee0e7bbd825f2371b7ef54fc4dd290e229a059e80976711be4e6",
+    "v2_page_capture_test.go": "817fec361c8a4ff9c28adba6e4256db5d47d99c88a20d32c82eb3d35dfc7e7de"
+  },
+  "audit": [
+    "InternalAdmitExecution constructs a private request copy and finalizes options/routing/logical execution before returning it; buffered page execution subsequently reads that request",
+    "pageRoutingCapture is a local value shared read-only by one executePage call; separate pages never write its feedback/version fields",
+    "executeTypedAttempt reads the captured feedback stamp and version even after later page starts; retries/repair reuse the same stamp",
+    "Async workers, input retain/release, writer leases, delayed retries, observer invocation, winner cancellation and loser response release remain unchanged",
+    "InternalExecutionRequest tabletFeedback and tabletVersionBlock are still used by the separately owned streaming request and are intentionally retained"
+  ],
+  "coverage": [
+    "new serial and prefetched continuation test with accepted blocked loser writer, retained page lease, and Close/Wait timing",
+    "existing stamp/placement fence tests cover stale metadata, overlapping observations, schema identity changes and enqueue ownership",
+    "focused race tests repeated 20 times"
+  ],
+  "status": "screening; no acceptance or commit"
+}

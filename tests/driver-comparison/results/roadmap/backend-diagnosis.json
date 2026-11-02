@@ -1,0 +1,73 @@
+{
+  "time": "2026-11-02T03:17:29.445247+00:00",
+  "scope": "read-only diagnosis; no load, restart, configuration/data changes, or unrelated-service changes",
+  "baseline": "frozen original 7e1ad6f implementation,64workers,write maximum,30s,CPU8/GOMAXPROCS1,LOCAL_QUORUM",
+  "invalid_observation": "write-baseline/write-0-pair1-A",
+  "decision": "blocked: restore healthy original64-worker write baseline before accepting write-related/shared-execution experiments",
+  "failure": {
+    "server_write_timeouts": 64,
+    "completed": 1580342,
+    "successful_in_window": 1580214,
+    "reported_throughput_ops_s": 52673.8,
+    "client_context_timeout_counter": 0,
+    "client_rejected_arrivals": 0,
+    "client_peak_queue": 0,
+    "warning": "server WriteTimeout errors are errors even though harness context-timeout counter is0"
+  },
+  "verified_findings": [
+    "All three server logs show sl:default scheduling queues8056\u201313210tasks during03:13:22\u201326; symbolized task locations are predominantly commitlog.cc:1577 and:2582, called from replica/database.cc and storage_proxy.cc",
+    "At03:13:25.928 node1/node2 commitlog_blocked_on_new_segment are13209, pending_allocations7079/12454, active_allocations20288/25663; blocked-memory cumulative rises to25823/32673 by window end",
+    "All nodes begin with no pending memtable flushes and develop two flushing memtables totaling467271680bytes/node near20s; compactions become active near25s",
+    "The shared nvme0n1 device write await rises from0.44\u20130.60ms in first15s to12/40/24ms in subsequent5s intervals; weighted average outstanding I/O rises from3.5\u20135.7 to50/123/81; throughput falls from580\u2013697MiB/s to286\u2013424MiB/s",
+    "Server CPUs0,1,4,5,6,7 average37\u201340%busy,21\u201325%iowait; clientCPU8 averages76%busy. This observation does not show serverCPU saturation",
+    "Current dedicated-node cgroups report no CPU throttling, OOM/high/max memory events; config has5GiBcontainer/3GiBScylla,32MiBcommitlogsegments,periodic10ssync,hard commitlog size limit=true,write_request_timeout=2000ms",
+    "Filesystem free space remains154\u2013158GB(~92%used); no critical-disk-mode warning appears in measurement-window logs. All three nodes currentlyUN,compactionstats pending0 and no current commitlog allocation blockers",
+    "Startup-health preserves old-address gossip/unknown-address warnings during rejoin; all current nodes resolve at26/27/28 and window logs implicate commitlog rather than network loss; no causal attribution of timeouts to those historical startup warnings"
+  ],
+  "proximate_root_cause": "Backend commitlog new-segment allocation starvation and flush/storage backpressure concurrent with a sharp shared-device latency increase; requests exceed the server2s write deadline. Baseline client queue/cancellation machinery is not identified as cause.",
+  "uncertainty": "This single failed observation and5s sampling establish the backend failure path but do not isolate ultimate cause among SSD sustained-write/cache behavior, storage contention from other tenants, commitlog allocation/recycling, or flush scheduling. No Scylla-source/binary version match was assumed from local checkout line numbers.",
+  "remedy_prerequisites": [
+    "Obtain bounded device and per-cgroup I/O attribution during any separately authorized original-baseline diagnostic; retain latency/queue/commitlog/flush time series and server logs at finer cadence to identify competing I/O versus Scylla-internal recycling",
+    "Use an isolated storage environment or validated sustainedI/O provisioning with enough headroom for all threeRF3servers; diagnose current6.3GB/s calibrated write-bandwidth expectation against observedlatency cliff before changing the scheduler configuration",
+    "If commitlog/flush tuning or backendmemory changes are needed, treat them as a separately documented backend remediation with old/new configuration evidence; do not silently substitute tuned config, extend timeouts, lower rates/workers, or enlarge queues to qualify a driver candidate",
+    "After remedy, repeat the untouched original64worker30s maximum and preserved52503.01/s fixed-rate write controls with zero errors/timeouts/rejections/backlog, and establish balanced healthy realScylla comparisons before driver acceptance"
+  ],
+  "artifacts": {
+    "calculated_window": "backend-diagnosis/window-summary.json",
+    "server_logs": [
+      "backend-diagnosis/node1-window.log",
+      "backend-diagnosis/node2-window.log",
+      "backend-diagnosis/node3-window.log"
+    ],
+    "runtime_config": "backend-diagnosis/runtime-config-local.json",
+    "current_cgroups": "backend-diagnosis/current-cgroups.json",
+    "current_admin": [
+      "backend-diagnosis/status.txt",
+      "backend-diagnosis/compactionstats.txt",
+      "backend-diagnosis/node1-info.txt"
+    ],
+    "startup": "startup-health.json",
+    "raw_measurement": "write-baseline/write-0-pair1-A/measurement.json",
+    "raw_metrics": "write-baseline/write-0-pair1-A/health.metrics.jsonl.gz"
+  },
+  "acceptance": "No experiment accepted by this diagnosis; local emulator results cannot replace healthy realScylla validation",
+  "evidence_sha256": {
+    "backend-diagnosis/node2-current.prom": "d7cd723eb847e1d06042afea6b5690a239dc39119c42758f0498a275a87561b8",
+    "backend-diagnosis/node1-window.log": "6c4695b9741cdd921899788026215c24b567485c9d1524d12d316567d0a971ad",
+    "backend-diagnosis/node1-info.txt": "3e8151280f5aac9c185286a6465c6b4312c3ba6515ec1e28e0e48750af11a430",
+    "backend-diagnosis/compactionstats.txt": "98d03fb8c21408c45b472f0ddbb01233be845b8fe90cb104ac84dd9ea97e4203",
+    "backend-diagnosis/runtime-config.json": "259a3fc0de03eaaa533921f3b61a1936eabcbf222d7fb4beefab22626bd9a733",
+    "backend-diagnosis/physical-io.yaml": "d6954f13f8a46f3acce2ac88a15dfca2ab417053cc737ba902f07dba7fabaf02",
+    "backend-diagnosis/node3-current.prom": "ea2ca07403e60d9f7b4eae89d39944be17e93daa656354fa3884882d8a8c8e1a",
+    "backend-diagnosis/window-summary.json": "24122036a2f9d45958813722716edd98cd939d7c755ee50394f272bcd0160054",
+    "backend-diagnosis/node1-current.prom": "b96b931c38fefdf5d0f66a845f437e31ebcaac28d96cad9a57d37a77bc095b2f",
+    "backend-diagnosis/status.txt": "151f1db2354ee2e6ab4b4e4fb50f91e17cfe2fabde055dea51ccd98e6262297f",
+    "backend-diagnosis/node1-prewindow.log": "cba813ccc03a717262b8eb80b62182a85e34b3e77f1946baac3d9b84f88d4836",
+    "backend-diagnosis/runtime-config-local.json": "d6d96e9324292a3c8bc0c5bffd8b499e3be674b2bd0e480677451c7039828553",
+    "backend-diagnosis/node2-window.log": "df3c478f81b03955c237685d6718622a46f765a9f8a68aa7db6a9d0cb4ed138a",
+    "backend-diagnosis/current-cgroups.json": "e7374b3c64a893f9a32bea0a8303f6c15f24d10012490d350684d72b8e27d6df",
+    "backend-diagnosis/node1-inspect.json": "332d50d9f259587010948c46a8acc175da278fb9d4bcc85edb2169a68c386a93",
+    "backend-diagnosis/node3-window.log": "941faf727b53a94b1ee1ed3c685bad6fc0d0062d435414a36f5992887b6a979a",
+    "backend-diagnosis/scylla.yaml": "4a803486b350e0dc6d87fb751ee6ef65145be1ac5d9c53b216a1fdce2f285591"
+  }
+}

@@ -1,0 +1,106 @@
+{
+  "paged-master": {
+    "throughput": 3420.9666666666667,
+    "p99_us": 1708.0,
+    "cpu_us_per_op": 289.6338913106867,
+    "bytes_per_op": 12985.458796658393,
+    "allocs_per_op": 149.89890256170975,
+    "server_cpu_cores": 0.9543732518384332,
+    "runs": 2,
+    "throughput_range": [
+      3411.133333333333,
+      3430.8
+    ]
+  },
+  "paged-v2-buffered": {
+    "throughput": 2831.1000000000004,
+    "p99_us": 2098.0,
+    "cpu_us_per_op": 351.97033471308157,
+    "bytes_per_op": 26638.0218941333,
+    "allocs_per_op": 205.0878779947111,
+    "server_cpu_cores": 0.8052509360341222,
+    "runs": 2,
+    "throughput_range": [
+      2829.3,
+      2832.9
+    ]
+  },
+  "paged-v2-stream": {
+    "throughput": 1812.9333333333334,
+    "p99_us": 10455.0,
+    "cpu_us_per_op": 526.5542002910895,
+    "bytes_per_op": 26435.671925395196,
+    "allocs_per_op": 283.8307247370723,
+    "server_cpu_cores": 0.5345077821719806,
+    "runs": 2,
+    "throughput_range": [
+      1802.8,
+      1823.0666666666666
+    ]
+  },
+  "point-master": {
+    "throughput": 127838.45,
+    "p99_us": 1128.5,
+    "cpu_us_per_op": 7.802639684756274,
+    "bytes_per_op": 2302.499710170344,
+    "allocs_per_op": 32.025979036705024,
+    "server_cpu_cores": 0.7592731285852456,
+    "runs": 2,
+    "throughput_range": [
+      127182.83333333333,
+      128494.06666666667
+    ]
+  },
+  "point-v2-buffered": {
+    "throughput": 81162.05,
+    "p99_us": 1623.0,
+    "cpu_us_per_op": 12.302264130476068,
+    "bytes_per_op": 9620.080919685312,
+    "allocs_per_op": 66.9158715340889,
+    "server_cpu_cores": 0.5256609327232182,
+    "runs": 2,
+    "throughput_range": [
+      80216.56666666667,
+      82107.53333333334
+    ]
+  },
+  "point-v2-stream": {
+    "throughput": 45902.11666666667,
+    "p99_us": 505.0,
+    "cpu_us_per_op": 21.55722127282342,
+    "bytes_per_op": 10950.18017563757,
+    "allocs_per_op": 125.62509447904446,
+    "server_cpu_cores": 0.3334706517924345,
+    "runs": 2,
+    "throughput_range": [
+      45373.433333333334,
+      46430.8
+    ]
+  },
+  "write-master": {
+    "throughput": 143138.96666666667,
+    "p99_us": 1043.0,
+    "cpu_us_per_op": 6.964898965066073,
+    "bytes_per_op": 1835.1090970869245,
+    "allocs_per_op": 25.018570823155482,
+    "server_cpu_cores": 0.7553056270184508,
+    "runs": 2,
+    "throughput_range": [
+      142383.23333333334,
+      143894.7
+    ]
+  },
+  "write-v2": {
+    "throughput": 87842.79999999999,
+    "p99_us": 1630.5,
+    "cpu_us_per_op": 11.366443777450293,
+    "bytes_per_op": 8520.726207706948,
+    "allocs_per_op": 60.915808578039304,
+    "server_cpu_cores": 0.5241254382546376,
+    "runs": 2,
+    "throughput_range": [
+      87115.96666666666,
+      88569.63333333333
+    ]
+  }
+}

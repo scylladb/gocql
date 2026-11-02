@@ -1,0 +1,145 @@
+{
+  "note": "Timing diagnostic only: CPUs10-15 shared with builds/tests. No performance acceptance inference. Allocation accounting stable. Baseline source restored after copying compatible benchmark test only.",
+  "records": [
+    {
+      "version": "baseline",
+      "case": "point-read",
+      "ns_per_op": 279.6,
+      "bytes_per_op": 640,
+      "allocs_per_op": 6
+    },
+    {
+      "version": "baseline",
+      "case": "point-read",
+      "ns_per_op": 321.0,
+      "bytes_per_op": 640,
+      "allocs_per_op": 6
+    },
+    {
+      "version": "baseline",
+      "case": "point-read",
+      "ns_per_op": 467.1,
+      "bytes_per_op": 640,
+      "allocs_per_op": 6
+    },
+    {
+      "version": "baseline",
+      "case": "point-read",
+      "ns_per_op": 399.5,
+      "bytes_per_op": 640,
+      "allocs_per_op": 6
+    },
+    {
+      "version": "baseline",
+      "case": "point-read",
+      "ns_per_op": 257.7,
+      "bytes_per_op": 640,
+      "allocs_per_op": 6
+    },
+    {
+      "version": "baseline",
+      "case": "point-write",
+      "ns_per_op": 583.5,
+      "bytes_per_op": 1088,
+      "allocs_per_op": 10
+    },
+    {
+      "version": "baseline",
+      "case": "point-write",
+      "ns_per_op": 560.7,
+      "bytes_per_op": 1088,
+      "allocs_per_op": 10
+    },
+    {
+      "version": "baseline",
+      "case": "point-write",
+      "ns_per_op": 553.1,
+      "bytes_per_op": 1088,
+      "allocs_per_op": 10
+    },
+    {
+      "version": "baseline",
+      "case": "point-write",
+      "ns_per_op": 613.6,
+      "bytes_per_op": 1088,
+      "allocs_per_op": 10
+    },
+    {
+      "version": "baseline",
+      "case": "point-write",
+      "ns_per_op": 560.6,
+      "bytes_per_op": 1088,
+      "allocs_per_op": 10
+    },
+    {
+      "version": "prototype",
+      "case": "point-read",
+      "ns_per_op": 207.9,
+      "bytes_per_op": 672,
+      "allocs_per_op": 6
+    },
+    {
+      "version": "prototype",
+      "case": "point-read",
+      "ns_per_op": 207.2,
+      "bytes_per_op": 672,
+      "allocs_per_op": 6
+    },
+    {
+      "version": "prototype",
+      "case": "point-read",
+      "ns_per_op": 197.8,
+      "bytes_per_op": 672,
+      "allocs_per_op": 6
+    },
+    {
+      "version": "prototype",
+      "case": "point-read",
+      "ns_per_op": 195.7,
+      "bytes_per_op": 672,
+      "allocs_per_op": 6
+    },
+    {
+      "version": "prototype",
+      "case": "point-read",
+      "ns_per_op": 193.5,
+      "bytes_per_op": 672,
+      "allocs_per_op": 6
+    },
+    {
+      "version": "prototype",
+      "case": "point-write",
+      "ns_per_op": 437.5,
+      "bytes_per_op": 1120,
+      "allocs_per_op": 10
+    },
+    {
+      "version": "prototype",
+      "case": "point-write",
+      "ns_per_op": 688.4,
+      "bytes_per_op": 1120,
+      "allocs_per_op": 10
+    },
+    {
+      "version": "prototype",
+      "case": "point-write",
+      "ns_per_op": 943.9,
+      "bytes_per_op": 1120,
+      "allocs_per_op": 10
+    },
+    {
+      "version": "prototype",
+      "case": "point-write",
+      "ns_per_op": 1081.0,
+      "bytes_per_op": 1120,
+      "allocs_per_op": 10
+    },
+    {
+      "version": "prototype",
+      "case": "point-write",
+      "ns_per_op": 858.5,
+      "bytes_per_op": 1120,
+      "allocs_per_op": 10
+    }
+  ]
+}

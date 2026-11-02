@@ -1,0 +1,11 @@
+{
+  "source": "/extra/scylladb/gocql/testdata/pki",
+  "files": {
+    "ca.crt": "630dfe0d96f0d1c770c631d2e9827078ac790dae83bb8abb73c5d55a97797d12",
+    "cassandra.crt": "4b675511cbb8445449d1c7a37c6bdaddc3bb0b0553c32668371905a00bb75586",
+    "cassandra.key": "60b5c5c685c5b86131bd7a2c3bd2eda77f6c5a562547c0382008443ea7456bde",
+    "gocql.crt": "ace4923aa672dacc8deebe8623c39c32a46ababe164519af00114dd97b50d521",
+    "gocql.key": "8ba7f19724efddc3c87dd4fb5b9d95b15a543e04e5bf5802016c756186672f33"
+  },
+  "note": "Existing ignored test-only certificate fixture files copied to isolated worktree after missing-fixture TLS failures; no source changes."
+}

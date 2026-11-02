@@ -1,0 +1,72 @@
+{
+  "accepted": false,
+  "acceptance_note": "Coordinator must verify healthy real Scylla confirmation, all canonical controls, correctness and memory bounds.",
+  "cases": {
+    "paged-buffered:0": {
+      "completed_pairs": 2,
+      "expected_pairs": 2,
+      "valid": true,
+      "rate": 0,
+      "throughput": {
+        "mean_percent": 1.2340789146800368,
+        "ci95_percent": [
+          0.4975063712519434,
+          1.9706514581081302
+        ],
+        "paired_percent": [
+          0.4975063712519434,
+          1.9706514581081302
+        ],
+        "pairs": 2,
+        "resamples": 20000,
+        "seed": 74183
+      },
+      "cpu_per_op": {
+        "mean_percent": 1.0796768981229776,
+        "ci95_percent": [
+          0.46790605471909164,
+          1.6914477415268636
+        ],
+        "paired_percent": [
+          0.46790605471909164,
+          1.6914477415268636
+        ],
+        "pairs": 2,
+        "resamples": 20000,
+        "seed": 74183
+      },
+      "bytes_per_op": {
+        "mean_percent": 12.023077930962963,
+        "ci95_percent": [
+          12.021136971400937,
+          12.025018890524986
+        ],
+        "paired_percent": [
+          12.021136971400937,
+          12.025018890524986
+        ],
+        "pairs": 2,
+        "resamples": 20000,
+        "seed": 74183
+      },
+      "allocs_per_op": {
+        "mean_percent": 2.458352160487082,
+        "ci95_percent": [
+          2.454888027863622,
+          2.4618162931105414
+        ],
+        "paired_percent": [
+          2.454888027863622,
+          2.4618162931105414
+        ],
+        "pairs": 2,
+        "resamples": 20000,
+        "seed": 74183
+      },
+      "median_p99_regression_percent": -2.616407982261637,
+      "promising": true,
+      "confirmed_primary_threshold": false,
+      "p99_pass": true
+    }
+  }
+}

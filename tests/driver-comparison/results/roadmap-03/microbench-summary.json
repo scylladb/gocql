@@ -1,0 +1,21 @@
+{
+  "generic": 12134.5,
+  "fused": 2807.5,
+  "decode_only_reduction_pct": 76.86348840084058,
+  "binary": "/extra/scylladb/gocql/.codex-cache/driver-comparison/roadmap-03-codec.test",
+  "binary_sha256": "85329a7335376c2df09b194e080d03913ecbf368aeca191422eb219baa73df44",
+  "source_manifest": "source.json",
+  "source_manifest_sha256": "b849a2be502a05ffa77cc758a86cde0cbb029bbeb837c9cab812b315f2ca18dc",
+  "cpu": 10,
+  "command": [
+    "taskset",
+    "-c",
+    "10",
+    "/extra/scylladb/gocql/.codex-cache/driver-comparison/roadmap-03-codec.test",
+    "-test.run=^$",
+    "-test.bench=^BenchmarkFusedRowPaged$",
+    "-test.benchmem",
+    "-test.count=6",
+    "-test.benchtime=500ms"
+  ]
+}

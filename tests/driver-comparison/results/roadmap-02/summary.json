@@ -1,0 +1,51 @@
+{
+  "candidate": 2,
+  "status": "implemented; correctness verified; waiting for parent performance screen and final decision",
+  "worktree": "/extra/scylladb/gocql/.codex-cache/driver-comparison/roadmap-02-source",
+  "patch": "candidate.patch",
+  "baseline": "7e1ad6f718929342200c5b9bc126e5a5e7fc7d1c",
+  "acceptance_claim": false,
+  "commit": null,
+  "verification": [
+    {
+      "command": "go test ./...",
+      "result": "pass",
+      "log": "default-tests-v2.log"
+    },
+    {
+      "command": "go test -race ./...",
+      "result": "pass",
+      "log": "race-all-v2.log"
+    },
+    {
+      "command": "go vet ./...",
+      "result": "pass",
+      "log": "vet-v2.log"
+    },
+    {
+      "command": "go test -race ./internal/transport -run Test(NativeReadAhead|ExclusiveIOEntry) -count=1",
+      "result": "pass",
+      "log": "race-focused-final-v2.log"
+    },
+    {
+      "command": "go test -race . -run ^TestV2PageContextCancellationWinsAndJoinsRead$ -count=100",
+      "result": "pass",
+      "log": "race-cancellation-final-100.log"
+    },
+    {
+      "command": "git diff --check",
+      "result": "pass"
+    }
+  ],
+  "memory": "<=min(ReadAheadBytes,4KiB) lazily allocated retained scratch per exclusive reservation; reused across pages and cleared before shared admission",
+  "timing_scope": "Microbench mechanism only:128KiB represented as32768 scalar reads requires36 underlying reads; zero steady-state allocations. Not canonical performance evidence.",
+  "failed_observations_retained": [
+    "default-tests.log",
+    "default-tests-final.log",
+    "race-all.log",
+    "race-cancellation-repeat.log",
+    "race-cancellation-baseline-repeat.log",
+    "prototype-v1.patch"
+  ],
+  "remaining": "Parent must screen paged-stream canonical workload, confirm promising result with paired bootstrap and real Scylla, all canonical/fixed-rate controls, and old-default/proposed-default comparison before accepting memory-increasing default change."
+}

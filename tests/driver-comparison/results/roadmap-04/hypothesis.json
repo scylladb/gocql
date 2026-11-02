@@ -1,0 +1,9 @@
+{
+  "candidate": 4,
+  "baseline": "7e1ad6f718929342200c5b9bc126e5a5e7fc7d1c",
+  "primary_workload": "point buffered reads; acknowledged writes secondary after healthy original write baseline",
+  "metric": "CPU/op reduction >=3% or throughput increase >=3%; full acceptance requires local+real Scylla paired CI and controls",
+  "mechanism": "Record successful WriteParam offsets and normalized cell state while encoding; slice once-frozen immutable chain directly, eliminating cell prefix reads, ValueReader snapshots and repeated descriptor validation. The offset replaces redundant per-cell type metadata; counter detection reads retained Columns.",
+  "memory_budget": "No additional retained payload/slab/cell descriptor bytes; temporary ParamWriter gains a 24-byte capture slice (allocator class may add 32 bytes per bind). All capture storage is final EncodedValues.Cells; no pooling or extra lifetimes.",
+  "ownership": "isolated detached worktree roadmap-04-source; no primary driver changes; no timing while another candidate is being measured"
+}

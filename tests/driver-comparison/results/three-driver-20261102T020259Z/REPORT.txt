@@ -1,0 +1,75 @@
+Three-driver local benchmark and CPU profiling
+
+All three implementations were measured in this experiment; no numbers are reused from earlier reports.
+Sources: gocql/master 1ceaac8172bda26e8b8d701ac356982d33729b27, current 7e1ad6f718929342200c5b9bc126e5a5e7fc7d1c,
+scylla-go-driver ce81923df69aad9b5f06d62f5bc9f50ad990bd7e plus the disclosed benchmark API-access shim.
+Two 30-second measurements per case, forward then reverse order, zero errors/timeouts/rejections.
+All clients: CPU 8, GOMAXPROCS=1, native v4, LOCAL_QUORUM, no TLS/compression/retries.
+Point and write: 64 workers. Paging: 4 workers, 128 rows x 4 KiB, pages of 32 plus empty terminal page.
+Point data: 100000 keys x 1 KiB. Full dataset validation before each run; SHA256 inside timing.
+Emulator: CPU 0,1,4,5, GOMAXPROCS=4, three hosts/one shard per host, no replication or persistence.
+Closed-loop throughput, not a fixed-rate sustainable-capacity claim. Values below are medians of two runs.
+
+THROUGHPUT (operations/s; paged operation = a complete 128-row partition)
+Case | master | current buffered | scylla-go-driver (explicit pages, no prefetch)
+Point | 126307.7 | 81836.9 | 48989.6
+Paged | 3403.5 | 2786.9 | 674.6
+Write | 142886.3 | 88609.1 | 50743.7
+
+FULL MEASUREMENTS
+Case | workers | ops/s | CPU us/op | client CPU cores | allocated B/op | allocations/op | p99 us | throughput min..max
+paged-master | 4 | 3403.5 | 290.551 | 0.9889 | 13000.679 | 149.901 | 1740.0 | 3397.4..3409.6
+paged-scyllago-explicit | 4 | 674.567 | 351.443 | 0.2371 | 545118.608 | 429.479 | 8487.0 | 674.4..674.8
+paged-scyllago-stock | 4 | 623.5 | 359.742 | 0.2243 | 545918.39 | 438.519 | 8891.0 | 622.2..624.8
+paged-v2-buffered | 4 | 2786.95 | 357.049 | 0.9951 | 26639.21 | 205.099 | 2189.0 | 2780.0..2793.9
+paged-v2-stream | 4 | 1811.017 | 530.103 | 0.96 | 26435.649 | 283.83 | 10651.0 | 1803.8..1818.2
+point-master | 64 | 126307.717 | 7.887 | 0.9962 | 2302.435 | 32.026 | 1142.0 | 124738.3..127877.2
+point-scyllago | 64 | 48989.583 | 3.86 | 0.1891 | 2545.508 | 22.008 | 2149.0 | 48863.6..49115.6
+point-v2-buffered | 64 | 81836.867 | 12.198 | 0.9982 | 9620.274 | 66.916 | 1596.5 | 81538.4..82135.4
+point-v2-stream | 4 | 45217.683 | 21.804 | 0.9859 | 10950.187 | 125.624 | 513.0 | 45064.1..45371.3
+write-master | 64 | 142886.317 | 6.983 | 0.9978 | 1835.099 | 25.019 | 1034.5 | 142323.6..143449.0
+write-scyllago | 64 | 50743.683 | 3.114 | 0.158 | 1201.318 | 13.007 | 2016.5 | 50538.2..50949.2
+write-v2 | 64 | 88609.05 | 11.25 | 0.9969 | 8520.645 | 60.915 | 1635.5 | 87698.4..89519.7
+
+WHAT THE THIRD DRIVER CHANGES ABOUT THE CONCLUSION
+Scylla-go-driver does not outperform master or current at these worker counts. Its point/write CPU
+cost per operation is lower, but its client is largely idle. The unmodified writer batches requests
+and sleeps for 1 ms when its request queue is empty. This is a throughput/latency/CPU tradeoff,
+not evidence that lower CPU/op automatically means higher throughput. The causal contribution
+of batching versus other implementation differences has not been isolated by an A/B test.
+Master/current write coalescing is disabled; scylla-go-driver exposes no disable switch. Both
+already have buffering/coalescing facilities; this must not be described as a missing feature.
+
+For paging, scylla-go-driver allocates roughly a complete partition payload on every operation
+because ParseRowsResult/Buffer.readCopy copies cell bytes. It is not a good zero-copy model.
+The stock iterator, measured separately, keeps its mandatory prefetch and still uses the same
+copying decoder. Compare its separate row rather than silently treating it as no-prefetch paging.
+
+Useful implementation candidates remain: synchronous non-speculative execution; compact request
+lifetime state; reusable scalar/header encoding scratch; lightweight routing cursors; fewer
+scalar decoder wrapper copies; bounded streaming read-ahead. Current already implements many
+general optimizations, and no proposed production optimization was implemented or proven here.
+
+SCYLLA-GO-DRIVER ADAPTATIONS (all existing upstream source files unchanged)
+Only new build-tagged benchmark_access.go added to ce81923; no existing upstream file edited.
+Raw int32/blob value access and per-worker Query clone; prepared consistency set to LOCAL_QUORUM because upstream Prepare hard-codes ALL.
+Explicit paging forwards page state through original Query.Exec and execution callback; no prefetch.
+Stock upstream iterator measured separately with mandatory prefetch.
+Unbound admin/cleanup queries use public transport outside timing: upstream NTS leaves fallback node lists empty.
+Caller supplies 10-second logical operation deadline; native writer batching and 1ms empty-queue sleep unchanged.
+Owned upstream result-cell bytes are consumed directly; no additional AsBlob copy.
+Its session keyspace is bench_compare, required for its default-keyspace-only token routing.
+Master/current use fully qualified CQL; the same prepared CQL strings and data are used for all three.
+Scylla-go-driver always requests omitted prepared result metadata. Master/current preserve their
+metadata-ID-based safety policy; no metadata-ID extension is advertised by this emulator.
+There is no equivalent incremental streaming API in scylla-go-driver; current streaming rows
+are supplementary cases and are not relabeled as a scylla-go-driver streaming implementation.
+
+VALIDATION AND ARTIFACTS
+Five correctness modes passed: master, current buffered/streaming, scylla explicit/stock iterator.
+All 24 observations include process affinity records, client CPU and before/after heap profiles,
+a separate emulator CPU profile, workload JSON, and lossless raw HDR histograms.
+Readable CPU/allocation profiles are under each case directory. profile-attribution.json normalizes
+CPU samples by completed operations; cumulative entries overlap and must not be added together.
+context.json pins sources, builds and adaptations. setup-notes.json retains initial smoke failures.
+The original parked artifacts and retained driver commits remain unchanged.

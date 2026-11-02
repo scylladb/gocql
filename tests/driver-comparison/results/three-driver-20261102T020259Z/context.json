@@ -1,0 +1,66 @@
+{
+  "name": "three-driver-20261102T020259Z",
+  "cache": "/extra/scylladb/gocql/.codex-cache/driver-comparison/three-driver-20261102T020259Z",
+  "output": "/extra/scylladb/gocql/tests/driver-comparison/results/three-driver-20261102T020259Z",
+  "harness": "/extra/scylladb/gocql/.codex-cache/driver-comparison/three-driver-20261102T020259Z/harness",
+  "scylla_source": "/extra/scylladb/gocql/.codex-cache/driver-comparison/three-driver-20261102T020259Z/scylla-source",
+  "master_source": "/extra/scylladb/gocql/.codex-cache/driver-comparison/old-source",
+  "v2_source": "/extra/scylladb/gocql",
+  "scylla_head": "ce81923df69aad9b5f06d62f5bc9f50ad990bd7e",
+  "seconds": 30,
+  "repeats": 2,
+  "expected_observations": 24,
+  "client_cpu": 8,
+  "client_gomaxprocs": 1,
+  "server_cpu": [
+    0,
+    1,
+    4,
+    5
+  ],
+  "server_gomaxprocs": 4,
+  "server_pid": 2050404,
+  "binary_hashes": {
+    "master": "ad4e41f4234b8f09c095ec71093d95eeb57f1fc0342928e0c8c83b9e56653a82",
+    "v2": "27acb3f9e7821bf68c922d674258cd5bd11359cee28370165e350f3bff7ea02e",
+    "scyllago": "545f41ecd6e4c590e0d131ade25c111790fc85173494a82e5c78f2f8bd02214c"
+  },
+  "emulator_sha256": "aaf4ad33c3afcb60a76909e0d456dcf3f07f5a664fb6d326c5ae7027fa1360e8",
+  "emulator_source_sha256": "c6ecc0cb8ad297f9d18cf7a63f7febce6b0da5d612519c8c555c2872dff816aa",
+  "compiler": "go version go1.25.0 linux/amd64",
+  "master_head": "1ceaac8172bda26e8b8d701ac356982d33729b27",
+  "v2_head": "7e1ad6f718929342200c5b9bc126e5a5e7fc7d1c",
+  "source_files": {
+    "analyze_emulator_profiles.py": "4f733f4c74c0cb1f3f8a3de31a8c7511daf335748a85c827a01f6b6d7feb2cd8",
+    "run_three_driver_profiles.py": "549c60d7d3ccac59c990e9aa5a8a1689a31a750a27e168059450b6d756b93361",
+    "go.mod": "bf6666122a341f87876d9d14dded46dc6768aceded7990fe1ee7634e6e20af42",
+    "profile.go": "728bacccaf362a3867397ee9fc1e3cde65928110b149df5492524e69639d757f",
+    "run_emulator_profiles.py": "a092224d61187131188164ff80085a5798eccb684b26352c8fd9a150ceae1000",
+    "main.go": "5c93151a6c74e104307890c27c2dedcc54a8ae518cbf776b343004f9c0498e63",
+    "scyllago.go": "058c85de096bf2e48d06b07132a32dad94eb58e080056bf1c7d391cb33b34b45",
+    "old.go": "78c41d0d5c23bb7c8844d9399dfab5fe726c3c5c98304ceeeeb3ac54e19296df",
+    "v2.go": "48982ab02c9e237bc33b9da96014c46305cb146dad8d88dbd191416b35015d50",
+    "benchmark_access.go": "17b7469c565d4dbbf88215734674abc6268a7d020037c663c65fb33bfb106026",
+    "core_test.go": "c148bf7e62ce47a81bb8bfe03499052acbac1f8681cd340631f9903de44f3318",
+    "go.sum": "957fdad9b7b945031c4c0a9369c1a6fbac68e71258905b82bbab46e1e555a241",
+    "emulator/main.go": "c6ecc0cb8ad297f9d18cf7a63f7febce6b0da5d612519c8c555c2872dff816aa",
+    "emulator/main_test.go": "204c39ce45629104641e13bc6442bc5470cec3766b997e5e8af69b0a37a36564"
+  },
+  "backend": "Synthetic native-v4 TCP emulator; three hosts with one advertised shard each; shard-aware port 9042; no metadata-ID extension, replication, disk I/O or consistency work.",
+  "scylla_adaptations": [
+    "Only new build-tagged benchmark_access.go added to ce81923; no existing upstream file edited.",
+    "Raw int32/blob value access and per-worker Query clone; prepared consistency set to LOCAL_QUORUM because upstream Prepare hard-codes ALL.",
+    "Explicit paging forwards page state through original Query.Exec and execution callback; no prefetch.",
+    "Stock upstream iterator measured separately with mandatory prefetch.",
+    "Unbound admin/cleanup queries use public transport outside timing: upstream NTS leaves fallback node lists empty.",
+    "Caller supplies 10-second logical operation deadline; native writer batching and 1ms empty-queue sleep unchanged.",
+    "Owned upstream result-cell bytes are consumed directly; no additional AsBlob copy."
+  ],
+  "comparison_limits": [
+    "Master/V2 coalescing disabled; upstream scylla-go-driver coalescing cannot be disabled through its API.",
+    "No claim this benchmark shim is an unmodified public API or a complete supported API implementation.",
+    "CPU includes identical SHA256 row validation and common harness accounting.",
+    "Closed-loop throughput; not a fixed-rate sustainable-capacity measurement."
+  ],
+  "started": "2026-11-02T02:08:36.675374+00:00"
+}

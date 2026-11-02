@@ -1,0 +1,88 @@
+{
+  "accepted": false,
+  "acceptance_note": "Coordinator must verify healthy real Scylla confirmation, all canonical controls, correctness and memory bounds.",
+  "cases": {
+    "paged-buffered:0": {
+      "completed_pairs": 2,
+      "expected_pairs": 2,
+      "valid": true,
+      "rate": 0,
+      "variant_medians": {
+        "A": {
+          "throughput": 2820.416666666667,
+          "cpu_per_op": 0.00035315336969856217,
+          "bytes_per_op": 26638.719328854582,
+          "allocs_per_op": 205.09638952118877,
+          "p99_us": 2130.0
+        },
+        "B": {
+          "throughput": 2816.5333333333333,
+          "cpu_per_op": 0.00035354497169960404,
+          "bytes_per_op": 23437.631809540995,
+          "allocs_per_op": 200.07945996947896,
+          "p99_us": 2129.0
+        }
+      },
+      "throughput": {
+        "mean_percent": -0.13762783787722999,
+        "ci95_percent": [
+          -0.24214505079140913,
+          -0.03311062496305084
+        ],
+        "paired_percent": [
+          -0.24214505079140913,
+          -0.03311062496305084
+        ],
+        "pairs": 2,
+        "resamples": 20000,
+        "seed": 74183
+      },
+      "cpu_per_op": {
+        "mean_percent": -0.1109408969854564,
+        "ci95_percent": [
+          -0.2872046682513174,
+          0.06532287428040462
+        ],
+        "paired_percent": [
+          -0.2872046682513174,
+          0.06532287428040462
+        ],
+        "pairs": 2,
+        "resamples": 20000,
+        "seed": 74183
+      },
+      "bytes_per_op": {
+        "mean_percent": 12.016671899386306,
+        "ci95_percent": [
+          12.014486299118055,
+          12.018857499654557
+        ],
+        "paired_percent": [
+          12.014486299118055,
+          12.018857499654557
+        ],
+        "pairs": 2,
+        "resamples": 20000,
+        "seed": 74183
+      },
+      "allocs_per_op": {
+        "mean_percent": 2.4461322322893384,
+        "ci95_percent": [
+          2.441260880748841,
+          2.451003583829836
+        ],
+        "paired_percent": [
+          2.441260880748841,
+          2.451003583829836
+        ],
+        "pairs": 2,
+        "resamples": 20000,
+        "seed": 74183
+      },
+      "median_p99_regression_percent": -0.046948356807507974,
+      "promising": true,
+      "confirmed_primary_threshold": false,
+      "p99_pass": true
+    }
+  }
+}

@@ -1,0 +1,32 @@
+[
+  {
+    "candidate": 1,
+    "patch": "tests/driver-comparison/results/roadmap-01/candidate-complete.patch",
+    "returncode": 0,
+    "output": ""
+  },
+  {
+    "candidate": 2,
+    "patch": "tests/driver-comparison/results/roadmap-02/candidate.patch",
+    "returncode": 0,
+    "output": ""
+  },
+  {
+    "candidate": 3,
+    "patch": "tests/driver-comparison/results/roadmap-03/candidate.patch",
+    "returncode": 0,
+    "output": ""
+  },
+  {
+    "candidate": 4,
+    "patch": "tests/driver-comparison/results/roadmap-04/candidate.patch",
+    "returncode": 0,
+    "output": ""
+  },
+  {
+    "candidate": 5,
+    "patch": "tests/driver-comparison/results/roadmap-05/candidate.patch",
+    "returncode": 0,
+    "output": ""
+  }
+]

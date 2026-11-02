@@ -1,0 +1,4 @@
+# Bulk experiment evidence is archived; see ../PARKED-CHECKPOINT.json.
+*
+!.gitignore
+!go.mod

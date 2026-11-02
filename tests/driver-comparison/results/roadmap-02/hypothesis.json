@@ -1,0 +1,23 @@
+{
+  "candidate": 2,
+  "baseline": "7e1ad6f718929342200c5b9bc126e5a5e7fc7d1c",
+  "primary": "Paged streaming: 4 workers, 128 x 4 KiB rows, page size 32, four populated pages plus terminal empty page",
+  "metric": "CPU/op primary; fewer source reads as mechanism evidence; throughput secondary",
+  "mechanism": "Native v3/v4 checked bodies only; single available-progress socket reads; adaptive 256..4096 fill target; direct bulk bypass; exact frame boundary clipping",
+  "memory_budget": "At most min(ReadAheadBytes,4096) retained scratch bytes per exclusive reservation; lazy observed-body-sized allocation; reuse across pages; release before shared admission. Existing total storage ceilings unchanged.",
+  "api_change": false,
+  "source_hashes": {
+    "internal/frame/stream.go": "11127d92cce1df8377de6dc0c5c07fd4c11005f58525094889fad8cab6402615",
+    "internal/transport/conn.go": "389829c934145dc147150f43d17e41dca977fc309f6269306e0621ebee987809",
+    "internal/transport/v2_connection_state.go": "89b45264000382490b723568aa180ea430cfb9eb035300ddd420f96a0e5b395d",
+    "internal/transport/v2_stream_transport.go": "bce8eff67cf4d6d91114ab8678c7c649b53bf13ab641217760c6a4d8ce400744",
+    "v2_fixture_stream_test.go": "0b1dc5d81639ed920d610df19007646ebb5f1de5065748eb65dcf5fb6ed614c6",
+    "v2_row_stream_test.go": "9479671640370a3551e8d205179ad3a9d7396babc165ece57fc478bd37fafc3b",
+    "v2_stream_transport_bench_test.go": "52885f3821bd28539c5433fd4f7f04672389c2fb6967fc637afb2aa1a6a83a67",
+    "internal/transport/v2_stream_read_ahead.go": "81dba703a23f2fe055045322cecef1f4501e73c880e85b4b73bff0a59dd2e72a",
+    "internal/transport/v2_stream_read_ahead_test.go": "ecf52364dd714c141e67d19f48cef03d917afd8300d05b5f46be7fce5c157edc"
+  },
+  "test_adjustments": "Existing zero-prefix blob assertions allow <=4KiB prefix staging while requiring direct bulk output into caller backing; existing 320KiB working storage ceilings unchanged.",
+  "correctness_fix": "Both InternalWithIO entry closing gates preserve recorded winning cancellationCause, matching existing postcall behavior; manual-close ErrClosed precedence unchanged.",
+  "patch_sha256": "5f8b42b57312388caa54a61bc6b34f283e07ad6a8bb4715f387b7b4195bf21b9"
+}

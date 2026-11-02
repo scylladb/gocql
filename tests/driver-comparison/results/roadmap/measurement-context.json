@@ -1,0 +1,6 @@
+{
+  "recorded_at": "2026-11-02T03:22:01.465011+00:00",
+  "note": "Dedicated Scylla resumed during candidate01 local screen/confirmation, baseline write failed before confirmation. Candidate02 first local screen overlapped stopping dedicated Scylla. These are exploratory local observations; none qualify real-backend acceptance. Remaining local confirmations/screens run after dedicated Scylla shutdown.",
+  "accepted": false,
+  "scylla_stop_log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

@@ -1,0 +1,158 @@
+{
+  "paged-master": {
+    "throughput": 3403.5,
+    "p99_us": 1740.0,
+    "cpu_us_per_op": 290.5507949375572,
+    "bytes_per_op": 13000.679137445459,
+    "allocs_per_op": 149.90073918719781,
+    "server_cpu_cores": 0.9559065864159927,
+    "runs": 2,
+    "throughput_range": [
+      3397.4,
+      3409.6
+    ]
+  },
+  "paged-scyllago-explicit": {
+    "throughput": 674.5666666666666,
+    "p99_us": 8487.0,
+    "cpu_us_per_op": 351.44274953765034,
+    "bytes_per_op": 545118.6083784022,
+    "allocs_per_op": 429.47860781102827,
+    "server_cpu_cores": 0.06676568487824586,
+    "runs": 2,
+    "throughput_range": [
+      674.3666666666667,
+      674.7666666666667
+    ]
+  },
+  "paged-scyllago-stock": {
+    "throughput": 623.5,
+    "p99_us": 8891.0,
+    "cpu_us_per_op": 359.742216974772,
+    "bytes_per_op": 545918.3901821342,
+    "allocs_per_op": 438.51881656036136,
+    "server_cpu_cores": 0.062300825704427396,
+    "runs": 2,
+    "throughput_range": [
+      622.2333333333333,
+      624.7666666666667
+    ]
+  },
+  "paged-v2-buffered": {
+    "throughput": 2786.95,
+    "p99_us": 2189.0,
+    "cpu_us_per_op": 357.0490249255361,
+    "bytes_per_op": 26639.209842919485,
+    "allocs_per_op": 205.0994133098506,
+    "server_cpu_cores": 0.7815208589524596,
+    "runs": 2,
+    "throughput_range": [
+      2780.0333333333333,
+      2793.866666666667
+    ]
+  },
+  "paged-v2-stream": {
+    "throughput": 1811.0166666666667,
+    "p99_us": 10651.0,
+    "cpu_us_per_op": 530.1032824522609,
+    "bytes_per_op": 26435.649366123595,
+    "allocs_per_op": 283.8300670733939,
+    "server_cpu_cores": 0.5158371081141357,
+    "runs": 2,
+    "throughput_range": [
+      1803.8333333333333,
+      1818.2
+    ]
+  },
+  "point-master": {
+    "throughput": 126307.71666666667,
+    "p99_us": 1142.0,
+    "cpu_us_per_op": 7.886800125677423,
+    "bytes_per_op": 2302.4354130609127,
+    "allocs_per_op": 32.02578333316641,
+    "server_cpu_cores": 0.751498192694261,
+    "runs": 2,
+    "throughput_range": [
+      124738.26666666666,
+      127877.16666666667
+    ]
+  },
+  "point-scyllago": {
+    "throughput": 48989.58333333333,
+    "p99_us": 2149.0,
+    "cpu_us_per_op": 3.8596081174042203,
+    "bytes_per_op": 2545.5079895406925,
+    "allocs_per_op": 22.007621739336635,
+    "server_cpu_cores": 0.1526992027323839,
+    "runs": 2,
+    "throughput_range": [
+      48863.6,
+      49115.566666666666
+    ]
+  },
+  "point-v2-buffered": {
+    "throughput": 81836.86666666667,
+    "p99_us": 1596.5,
+    "cpu_us_per_op": 12.19779248808353,
+    "bytes_per_op": 9620.273604471407,
+    "allocs_per_op": 66.91601354811328,
+    "server_cpu_cores": 0.5296126515026267,
+    "runs": 2,
+    "throughput_range": [
+      81538.36666666667,
+      82135.36666666667
+    ]
+  },
+  "point-v2-stream": {
+    "throughput": 45217.683333333334,
+    "p99_us": 513.0,
+    "cpu_us_per_op": 21.803673352248765,
+    "bytes_per_op": 10950.187488604573,
+    "allocs_per_op": 125.62437879445923,
+    "server_cpu_cores": 0.33180331474516245,
+    "runs": 2,
+    "throughput_range": [
+      45064.1,
+      45371.26666666667
+    ]
+  },
+  "write-master": {
+    "throughput": 142886.31666666665,
+    "p99_us": 1034.5,
+    "cpu_us_per_op": 6.982962829932333,
+    "bytes_per_op": 1835.098675197386,
+    "allocs_per_op": 25.018547869019606,
+    "server_cpu_cores": 0.75386410201532,
+    "runs": 2,
+    "throughput_range": [
+      142323.6,
+      143449.03333333333
+    ]
+  },
+  "write-scyllago": {
+    "throughput": 50743.683333333334,
+    "p99_us": 2016.5,
+    "cpu_us_per_op": 3.113943468668677,
+    "bytes_per_op": 1201.3184701161194,
+    "allocs_per_op": 13.006589816462578,
+    "server_cpu_cores": 0.15566549102853955,
+    "runs": 2,
+    "throughput_range": [
+      50538.2,
+      50949.166666666664
+    ]
+  },
+  "write-v2": {
+    "throughput": 88609.05,
+    "p99_us": 1635.5,
+    "cpu_us_per_op": 11.25019244839747,
+    "bytes_per_op": 8520.644758980761,
+    "allocs_per_op": 60.91539969812474,
+    "server_cpu_cores": 0.5249828568577701,
+    "runs": 2,
+    "throughput_range": [
+      87698.43333333333,
+      89519.66666666667
+    ]
+  }
+}

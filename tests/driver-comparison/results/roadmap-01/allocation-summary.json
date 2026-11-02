@@ -1,0 +1,67 @@
+{
+  "baseline": {
+    "samples": [
+      {
+        "ns_per_op": 10779.0,
+        "bytes_per_op": 5851,
+        "allocs_per_op": 53
+      },
+      {
+        "ns_per_op": 10937.0,
+        "bytes_per_op": 5852,
+        "allocs_per_op": 53
+      },
+      {
+        "ns_per_op": 10832.0,
+        "bytes_per_op": 5850,
+        "allocs_per_op": 53
+      },
+      {
+        "ns_per_op": 10531.0,
+        "bytes_per_op": 5851,
+        "allocs_per_op": 53
+      },
+      {
+        "ns_per_op": 10570.0,
+        "bytes_per_op": 5853,
+        "allocs_per_op": 53
+      }
+    ],
+    "median_bytes_per_op": 5851,
+    "median_allocs_per_op": 53
+  },
+  "candidate": {
+    "samples": [
+      {
+        "ns_per_op": 15736.0,
+        "bytes_per_op": 5208,
+        "allocs_per_op": 52
+      },
+      {
+        "ns_per_op": 11964.0,
+        "bytes_per_op": 5207,
+        "allocs_per_op": 52
+      },
+      {
+        "ns_per_op": 10503.0,
+        "bytes_per_op": 5206,
+        "allocs_per_op": 52
+      },
+      {
+        "ns_per_op": 10613.0,
+        "bytes_per_op": 5209,
+        "allocs_per_op": 52
+      },
+      {
+        "ns_per_op": 10485.0,
+        "bytes_per_op": 5209,
+        "allocs_per_op": 52
+      }
+    ],
+    "median_bytes_per_op": 5208,
+    "median_allocs_per_op": 52
+  },
+  "allocation_reduction_percent": 10.989574431721072,
+  "scope": "Allocation screening only: existing one-page 1KiB blob net.Pipe fixture; not canonical paged workload. Concurrent fixture timing on CPUs10-15 excludes CPU/latency acceptance claims.",
+  "acceptance": "pending parent canonical screening, paired confirmation, healthy real Scylla and regression controls"
+}

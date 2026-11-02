@@ -1,0 +1,138 @@
+Driver performance source comparison and local CPU profiling
+
+Sources: current 7e1ad6f; gocql/master 1ceaac8; scylla-go-driver/main ce81923.
+Scylla-go-driver source was inspected, not benchmarked. No driver optimization was implemented.
+
+LOCAL MEASUREMENTS
+Two 30-second runs per case, forward then reverse order. Client CPU 8/GOMAXPROCS=1.
+TCP emulator on CPU 0,1,4,5/GOMAXPROCS=4. Public adapters and SHA256 validation unchanged.
+Three emulated hosts, one connection each, native v4 without Scylla shard/metadata-ID extensions.
+Emulator does no replication, persistence, or consistency processing. Synthetic dataset is materialized
+before timing; canonical acknowledged writes and overwritten values have readback semantics.
+Point/write 64 workers; paging 4 workers; point stream 4 workers. All cases use 100000 point keys
+with 1 KiB blobs or 1024 partitions x 128 rows x 4 KiB, page size 32, prefetch zero.
+Paging uses four populated pages plus one empty terminal page.
+These are closed-loop throughput measurements, not fixed-rate sustainable-capacity tests.
+
+Case | ops/s | CPU us/op | allocated B/op | allocations/op | p99 us
+paged-master | 3421.0 | 289.634 | 12985.5 | 149.899 | 1708.0
+paged-v2-buffered | 2831.1 | 351.970 | 26638.0 | 205.088 | 2098.0
+paged-v2-stream | 1812.9 | 526.554 | 26435.7 | 283.831 | 10455.0
+point-master | 127838.4 | 7.803 | 2302.5 | 32.026 | 1128.5
+point-v2-buffered | 81162.1 | 12.302 | 9620.1 | 66.916 | 1623.0
+point-v2-stream | 45902.1 | 21.557 | 10950.2 | 125.625 | 505.0
+write-master | 143139.0 | 6.965 | 1835.1 | 25.019 | 1043.0
+write-v2 | 87842.8 | 11.366 | 8520.7 | 60.916 | 1630.5
+
+Buffered V2 vs master throughput:
+point: -36.51%; CPU/op +57.67%; allocated bytes 4.18x
+paged: -17.24%; CPU/op +21.52%; allocated bytes 2.05x
+write: -38.63%; CPU/op +63.20%; allocated bytes 4.64x
+
+PROFILING DIAGNOSIS
+The local gap closely reproduces the retained real-Scylla point/paging gap. Client CPU is near one
+core while emulator CPU averages below one of its four available cores. Client setup/decoding costs
+are the strongest explanation; this is not a measurement of a proposed optimization.
+
+First point profile: mallocgc cumulative cost 1.625 us/op V2 vs 0.532 us/op master;
+background marking 0.440 vs 0.101 us/op. These two functions have separate CPU stacks;
+other GC cumulative entries overlap them and must not be summed. Request/lifetime allocation,
+copying, cancellation, validation and routing are substantial extra work in V2.
+
+Paged stream socket reader: 219.457 and 216.835 us/partition across the two runs.
+Paged buffered socket reader: 44.768 and 45.299 us/partition. The extra ~173 us in the reader
+is almost the full total stream-vs-buffered CPU difference of ~175 us/partition. Raw small
+scalar/length reads and repeated deadline/locking work are the main streaming lead.
+SHA256 validation remains inside all client timings and consumes substantial paged CPU.
+
+Paged buffered duffcopy: 16.258 and 19.414 us/partition. Master is about 0.6. Caller profiles
+identify RowReader.nextValue, fixedCursor, NewValueReader, readFramedValue and scalar codec
+wrappers. This is wrapper-state copying, not evidence that a blob is copied many extra times.
+
+PROMISING TECHNIQUES TO TEST
+
+1. Inline execution when speculation is disabled
+Both references execute ordinary non-speculative operations on the calling goroutine. V2 executePage always allocates an outcome channel, copies the execution request, retains an owner, and starts an attempt goroutine, even with Speculation=nil and one allowed attempt.
+Add a synchronous first-attempt path and enter the asynchronous coordinator only when speculation actually requires competing attempts. Keep retry decisions, cancellation, result ownership and observer ordering equivalent.
+Evidence: Saved and new CPU profiles contain allocation, GC, request-copy and scheduling costs; executePage is a major allocation site. A causal speedup still requires an isolated A/B experiment.
+References: https://github.com/scylladb/scylla-go-driver/blob/ce81923df69aad9b5f06d62f5bc9f50ad990bd7e/query.go#L20 https://github.com/scylladb/gocql/blob/1ceaac8172bda26e8b8d701ac356982d33729b27/query_executor.go#L145
+Current: internal/execution/v2_execute.go:688, internal/execution/v2_execute.go:733
+
+2. Bounded read buffering for streaming
+Scylla-go-driver uses an 8 KiB bufio reader; master also buffers reads. V2 uses an unbuffered transferable connection reader, so streaming scalar lengths and scalar values can cause many small socket reads.
+Prototype bounded read-ahead inside the exclusive streaming reader, or transfer buffered unread bytes explicitly. Respect native frame/verified-segment boundaries, streaming limits, partial-read errors and read deadlines. Simply placing bufio on the existing shared reader breaks its current transfer capability check.
+Evidence: Real-backend paged-stream profile attributes 41.36% cumulative CPU to InternalConnReader.Read, and 44.41% to StreamRowReader.column; these overlap. Streaming also allocates and synchronizes for exclusive acquire/release per logical operation.
+References: https://github.com/scylladb/scylla-go-driver/blob/ce81923df69aad9b5f06d62f5bc9f50ad990bd7e/transport/conn.go#L475 https://github.com/scylladb/gocql/blob/1ceaac8172bda26e8b8d701ac356982d33729b27/conn.go#L470
+Current: internal/transport/dial.go:96, internal/transport/conn.go:2080, internal/transport/v2_connection_state.go:155, internal/wire/stream.go:185
+
+3. Reusable parameter encoding scratch
+Scylla-go-driver rebinds an existing scalar byte buffer. Master reuses a worker Query and pooled framing, although WithContext still clones a Query. V2 creates a fresh immutable Bound, owner, parameter builder, encoded-cell slice, and reparses the framed scalar parameters before constructing the request.
+Use compact scalar storage and reusable internal scratch, and capture routing cells while encoding rather than encoding and then decoding them. Preserve immutable public handles, concurrent bindings, borrowed input drain, and validation of untrusted values.
+Evidence: Binding, scalar slabs, cursor/descriptor creation and input-owner construction are visible allocation sites. An existing repeated-scalar-bound prototype was rejected; avoid repeating that exact change.
+References: https://github.com/scylladb/scylla-go-driver/blob/ce81923df69aad9b5f06d62f5bc9f50ad990bd7e/query.go#L155 https://github.com/scylladb/scylla-go-driver/blob/ce81923df69aad9b5f06d62f5bc9f50ad990bd7e/transport/query.go#L26 https://github.com/scylladb/gocql/blob/1ceaac8172bda26e8b8d701ac356982d33729b27/session.go#L2056
+Current: internal/execution/v2_statement.go:165, internal/binding/v2_statement.go:12, internal/protocol/request.go:85
+
+4. Pooled contiguous framing for small requests
+Master takes a pooled write framer; scylla-go-driver resets a connection-owned bytes.Buffer. The V2 typed path builds new immutable scalar slabs and span indices for every request despite already reusing the final writev vector.
+Benchmark a small-request scalar/header buffer owned until synchronous write completion, with the existing segmented path for borrowed or large payloads. Bound retained storage. Do not pool publicly retained immutable objects before their lifetime ends.
+Evidence: Builder.writable, ReserveParts and Freeze allocate in point profiles. Earlier 256-to-64-byte slab and continuation-descriptor micro-optimizations saved bytes but failed retention gates; no speedup is claimed for repeating them.
+References: https://github.com/scylladb/scylla-go-driver/blob/ce81923df69aad9b5f06d62f5bc9f50ad990bd7e/transport/conn.go#L122 https://github.com/scylladb/gocql/blob/1ceaac8172bda26e8b8d701ac356982d33729b27/conn.go#L2219 https://github.com/scylladb/gocql/blob/1ceaac8172bda26e8b8d701ac356982d33729b27/framer.go#L126
+Current: internal/protocol/request.go:25, internal/protocol/request.go:148, internal/wire/builder.go:113, internal/transport/v2_transport_writer.go:43
+
+5. Compact routing cursor over shared topology
+Scylla-go-driver passes small QueryInfo plus an offset into precomputed replica arrays. V2 already precomputes host indices and placements, but allocates a substantial per-page LazyRoutingPlan with permutation, emitted-target storage, locality groups and latency state.
+Specialize the common first eligible target and defer fallback/emitted-target state until needed, preserving distribution, tablet invalidation, leader/conditional semantics, liveness and duplicate suppression.
+Evidence: RoutingPolicy.Plan is about 5.5% of allocated bytes in the first local point profile. Compact uint8 permutations are already retained; other emitted-target packing attempts were rejected.
+References: https://github.com/scylladb/scylla-go-driver/blob/ce81923df69aad9b5f06d62f5bc9f50ad990bd7e/transport/policy.go#L23 https://github.com/scylladb/scylla-go-driver/blob/ce81923df69aad9b5f06d62f5bc9f50ad990bd7e/implementor-notes.md https://github.com/scylladb/gocql/blob/1ceaac8172bda26e8b8d701ac356982d33729b27/policies.go#L950
+Current: internal/routing/v2_policy.go:284, internal/routing/v2_policy.go:302
+
+6. Decode simple scalar cells directly from a shared cursor
+Master and scylla-go-driver decode simple scalars from byte slices. V2 routes each cell through framed chain views, ValueReader state, fixedCursor, scalar codec and lease/type validation layers. The compiled row plan exists already, but the scalar read still copies wrapper state repeatedly.
+Investigate a fused scalar decode path for compiled built-in row plans, preserving length checks, null/unset behavior, lease liveness and the generic nested-codec path.
+Evidence: New paged-buffered profiles charge 16.3 and 19.4 microseconds/partition to runtime.duffcopy, versus about 0.6 for master. A pprof caller inspection links most samples to RowReader.nextValue, fixedCursor, NewValueReader, readFramedValue and scalar decode wrappers. The parked iteration28 narrower cursor-width prototype is not accepted or included in these binaries.
+References: https://github.com/scylladb/gocql/blob/1ceaac8172bda26e8b8d701ac356982d33729b27/frame.go https://github.com/scylladb/scylla-go-driver/blob/ce81923df69aad9b5f06d62f5bc9f50ad990bd7e/frame/cqlvalue.go
+Current: internal/codec/rows_codec.go, internal/codec/value_api.go, internal/codec/value_io.go
+
+7. Lazily construct optional retry and observation machinery
+Scylla-go-driver creates its retry decider only after a failure. V2 always registers a logical execution, creates separate binding and logical input owners, logical completion channels and context scopes, and constructs attempt events even when observers and latency tracking are disabled.
+Consolidate internal lifetime records and avoid optional machinery on the success path while preserving deterministic Close/Wait, session shutdown joining, timeouts and borrowed-input safety. Some lifecycle state is required by this API and cannot simply be deleted.
+Evidence: Admission, context propagation and input-owner constructors allocate heavily. The earlier removal of a single redundant completion channel saved 128 B/op but did not pass performance gates; this recommendation concerns the overall lifecycle design.
+References: https://github.com/scylladb/scylla-go-driver/blob/ce81923df69aad9b5f06d62f5bc9f50ad990bd7e/query.go#L26 https://github.com/scylladb/gocql/blob/1ceaac8172bda26e8b8d701ac356982d33729b27/query_executor.go#L145
+Current: internal/execution/v2_execute.go:525, internal/execution/v2_execution_lifetime.go:63, internal/execution/v2_runtime_types.go:12
+
+ALREADY IMPLEMENTED
+Prepared statements and reusable compiled codecs
+Token- and shard-aware routing
+Immutable metadata and precomputed placement/host indexes
+writev and bounded writer-vector reuse
+Optional write coalescing
+Call-request/timer and legacy framer pools
+Bounded receive-buffer cache
+Result metadata omission when ID-based invalidation is negotiated
+
+CAUTIONS
+This is source inspection and CPU/allocation attribution, not an A/B measurement of any proposed optimization.
+The archived alpha scylla-go-driver was not benchmarked; no claim it is faster overall.
+The emulator advertises native v4 without Scylla metadata-ID or shard extensions: three hosts with one connection each rather than the real backend's two shards per host. This causes legitimate metadata parsing differences relative to the real Scylla runs. Compare drivers within each experiment, not absolute numbers across backends.
+CPU/op includes identical payload hashing and harness costs. Cumulative pprof rows overlap.
+No production driver source was changed; prior retained commits and parked artifacts remain intact.
+
+Prior tiny slab/descriptor/lifetime changes that failed performance gates remain rejected.
+The next experiment should test structural request-path or bounded streaming-read changes.
+No claim that the archived alpha driver is faster as a whole.
+
+VALIDATION
+16/16 observations valid, zero errors/timeouts/rejections, process affinity verified.
+Full dataset warming/validation before each observation; missing/overwrite/delete checks for
+master, V2 buffered and V2 stream. Emulator overwrite/paging tests passed with the race detector.
+Client/emulator profiles and readable reports retained under each observation directory.
+Emulator stopped; all four listening endpoints closed. Parked artifacts are unchanged.
+
+REPRODUCTION
+The runner reuses the frozen binary paths and verifies their hashes in context.json.
+Build emulator: cd tests/driver-comparison && go build -o /tmp/gocql-native-v4-emulator ./emulator
+Start emulator: taskset -c 0,1,4,5 env GOMAXPROCS=4 /tmp/gocql-native-v4-emulator
+Run from repository root, replacing OUT and PID:
+taskset -c 2,18 python3 tests/driver-comparison/run_emulator_profiles.py OUT PID
+OUT must be a new directory. Stop only that emulator PID when complete.
+Analyze: python3 tests/driver-comparison/analyze_emulator_profiles.py OUT

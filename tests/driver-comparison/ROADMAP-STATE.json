@@ -1,0 +1,890 @@
+{
+  "status": "parked at user request; no optimizations accepted",
+  "created_at": "2026-11-02T03:26:02.181826+00:00",
+  "original_v2": "7e1ad6f718929342200c5b9bc126e5a5e7fc7d1c",
+  "master_reference": "1ceaac8172bda26e8b8d701ac356982d33729b27",
+  "historical_state": "OPTIMIZATION-STATE.json",
+  "acceptance": {
+    "performance_percent": 3,
+    "memory_bytes_percent": 10,
+    "memory_max_cpu_regression_percent": 2,
+    "max_median_p99_regression_percent": 5,
+    "paired_bootstrap_confidence": 0.95,
+    "confirmation_pairs": 6,
+    "maximum_confirmation_batches": 2,
+    "errors_timeouts_rejected_allowed": 0,
+    "real_scylla_and_all_canonical_controls_required": true
+  },
+  "baseline_health": {
+    "status": "failed original64-worker write maximum; fixed-rate run not started after failure",
+    "evidence": "results/roadmap/write-baseline/",
+    "diagnosis": "results/roadmap/backend-diagnosis.json",
+    "errors": 64,
+    "client_timeouts": 0,
+    "rejected": 0,
+    "original_write_fixed_rate": 52503.01,
+    "cause": "commitlog reserve starvation and memtable flush/storage backpressure; underlying shared-storage cause unresolved"
+  },
+  "measurement_context": "results/roadmap/measurement-context.json",
+  "accepted": [],
+  "items": [
+    {
+      "id": 1,
+      "rank": 1,
+      "title": "Remove the full request copy per page",
+      "primary_workload": "paged-buffered",
+      "kind": "memory",
+      "decision": "deferred",
+      "prerequisite": "real_backend_write_baseline",
+      "next_step": "Complete clean real-Scylla paired confirmation and every canonical/fixed-rate control after restoring original64-worker writes.",
+      "commit": null,
+      "evidence": "results/roadmap-01/",
+      "reason": "Local primary threshold met. Healthy real Scylla six-pair confirmation, all canonical/fixed-rate controls, and applicable default/memory comparisons remain blocked by original64-worker write baseline failure.",
+      "local_summary": "results/roadmap-01/local-confirm-clean/summary.json",
+      "local_primary": {
+        "completed_pairs": 6,
+        "expected_pairs": 6,
+        "valid": true,
+        "rate": 0,
+        "variant_medians": {
+          "A": {
+            "throughput": 2822.383333333333,
+            "cpu_per_op": 0.00035272431215794143,
+            "bytes_per_op": 26637.6525958549,
+            "allocs_per_op": 205.07928813386764,
+            "p99_us": 2132.0
+          },
+          "B": {
+            "throughput": 2820.7166666666662,
+            "cpu_per_op": 0.00035331441920283767,
+            "bytes_per_op": 23437.128754866153,
+            "allocs_per_op": 200.0728818664819,
+            "p99_us": 2135.0
+          }
+        },
+        "throughput": {
+          "mean_percent": -0.16730311930335992,
+          "ci95_percent": [
+            -0.6078446467172741,
+            0.20488995957825087
+          ],
+          "paired_percent": [
+            -0.43651167168675675,
+            0.19238032291566398,
+            -1.1477104527406357,
+            0.04019482668935481,
+            -0.10872776694439423,
+            0.4565560259466084
+          ],
+          "pairs": 6,
+          "resamples": 20000,
+          "seed": 74183
+        },
+        "cpu_per_op": {
+          "mean_percent": -0.18084635068801314,
+          "ci95_percent": [
+            -0.6255771260099278,
+            0.20268374970822492
+          ],
+          "paired_percent": [
+            -0.40472987704003316,
+            0.06345433116001775,
+            -1.1565711136852785,
+            0.17085854404292888,
+            -0.22730397952333004,
+            0.4692139909176163
+          ],
+          "pairs": 6,
+          "resamples": 20000,
+          "seed": 74183
+        },
+        "bytes_per_op": {
+          "mean_percent": 12.014079031424426,
+          "ci95_percent": [
+            12.001936569269567,
+            12.024625551500716
+          ],
+          "paired_percent": [
+            12.014873666270343,
+            12.034828702267419,
+            11.988085348652056,
+            12.012624999533806,
+            12.019864703857086,
+            12.014196767965846
+          ],
+          "pairs": 6,
+          "resamples": 20000,
+          "seed": 74183
+        },
+        "allocs_per_op": {
+          "mean_percent": 2.4394583668364853,
+          "ci95_percent": [
+            2.413786361236799,
+            2.4610052944835203
+          ],
+          "paired_percent": [
+            2.440708984720452,
+            2.482199358032411,
+            2.384330906050458,
+            2.438230220416815,
+            2.45326500843579,
+            2.438015723362985
+          ],
+          "pairs": 6,
+          "resamples": 20000,
+          "seed": 74183
+        },
+        "median_p99_regression_percent": 0.1407129455909928,
+        "promising": true,
+        "confirmed_primary_threshold": true,
+        "p99_pass": true
+      },
+      "production_applied": false,
+      "local_screen": "results/roadmap-01/local-screen-clean/summary.json",
+      "complete_patch": "results/roadmap-01/candidate-complete.patch",
+      "frozen_build": "results/roadmap-01/frozen-build.json"
+    },
+    {
+      "id": 2,
+      "rank": 2,
+      "title": "Add bounded streaming read-ahead",
+      "primary_workload": "paged-stream",
+      "kind": "performance",
+      "decision": "deferred",
+      "prerequisite": "real_backend_write_baseline",
+      "next_step": "Complete real Scylla confirmation/controls, RSS/memory-bound audit and old-default/proposed-default comparison; preserve cancellation-cause regression tests.",
+      "commit": null,
+      "evidence": "results/roadmap-02/",
+      "reason": "Local primary threshold met. Healthy real Scylla six-pair confirmation, all canonical/fixed-rate controls, and applicable default/memory comparisons remain blocked by original64-worker write baseline failure.",
+      "local_summary": "results/roadmap-02/local-confirm/summary.json",
+      "local_primary": {
+        "completed_pairs": 6,
+        "expected_pairs": 6,
+        "valid": true,
+        "rate": 0,
+        "variant_medians": {
+          "A": {
+            "throughput": 1827.55,
+            "cpu_per_op": 0.0005251320714493306,
+            "bytes_per_op": 26435.500044156885,
+            "allocs_per_op": 283.8306550366159,
+            "p99_us": 10451.0
+          },
+          "B": {
+            "throughput": 2488.9166666666665,
+            "cpu_per_op": 0.00037731293664633675,
+            "bytes_per_op": 30616.352782381175,
+            "allocs_per_op": 284.78745252081956,
+            "p99_us": 7635.0
+          }
+        },
+        "throughput": {
+          "mean_percent": 36.86417899635308,
+          "ci95_percent": [
+            35.86812400656333,
+            37.75303713052408
+          ],
+          "paired_percent": [
+            37.254901960784295,
+            37.19021858322977,
+            36.772457919802235,
+            36.6480001449827,
+            34.70520778346107,
+            38.614287585858406
+          ],
+          "pairs": 6,
+          "resamples": 20000,
+          "seed": 74183
+        },
+        "cpu_per_op": {
+          "mean_percent": 28.5303366362133,
+          "ci95_percent": [
+            28.122479604774956,
+            28.982984291749027
+          ],
+          "paired_percent": [
+            28.8745115106384,
+            28.562500059293782,
+            28.2244964979007,
+            28.20058433070831,
+            27.803791040736648,
+            29.516136378001967
+          ],
+          "pairs": 6,
+          "resamples": 20000,
+          "seed": 74183
+        },
+        "bytes_per_op": {
+          "mean_percent": -15.814898849224946,
+          "ci95_percent": [
+            -15.816642148986697,
+            -15.812790134120881
+          ],
+          "paired_percent": [
+            -15.813766489466241,
+            -15.814157216441615,
+            -15.817191142481057,
+            -15.816434836599935,
+            -15.817356566132524,
+            -15.8104868442283
+          ],
+          "pairs": 6,
+          "resamples": 20000,
+          "seed": 74183
+        },
+        "allocs_per_op": {
+          "mean_percent": -0.33708176321495625,
+          "ci95_percent": [
+            -0.3379485137257647,
+            -0.33622200142719255
+          ],
+          "paired_percent": [
+            -0.3361693275777844,
+            -0.33767423001451746,
+            -0.335710926882693,
+            -0.33849708114825905,
+            -0.3383189734545988,
+            -0.3361200402118847
+          ],
+          "pairs": 6,
+          "resamples": 20000,
+          "seed": 74183
+        },
+        "median_p99_regression_percent": -26.94478997225146,
+        "promising": true,
+        "confirmed_primary_threshold": true,
+        "p99_pass": true
+      },
+      "production_applied": false,
+      "local_screen": "results/roadmap-02/local-screen-clean/summary.json",
+      "complete_patch": "results/roadmap-02/candidate.patch",
+      "frozen_build": "results/roadmap-02/frozen-build.json",
+      "clean_screen_primary": {
+        "completed_pairs": 2,
+        "expected_pairs": 2,
+        "valid": true,
+        "rate": 0,
+        "variant_medians": {
+          "A": {
+            "throughput": 1807.5333333333333,
+            "cpu_per_op": 0.0005310853744132796,
+            "bytes_per_op": 26435.74986100725,
+            "allocs_per_op": 283.82984031805245,
+            "p99_us": 10643.0
+          },
+          "B": {
+            "throughput": 2469.1666666666665,
+            "cpu_per_op": 0.000379505288715363,
+            "bytes_per_op": 30616.680723196332,
+            "allocs_per_op": 284.7933301783329,
+            "p99_us": 7779.0
+          }
+        },
+        "throughput": {
+          "mean_percent": 36.60607380594311,
+          "ci95_percent": [
+            36.38707553897633,
+            36.82507207290988
+          ],
+          "paired_percent": [
+            36.82507207290988,
+            36.38707553897633
+          ],
+          "pairs": 2,
+          "resamples": 20000,
+          "seed": 74183
+        },
+        "cpu_per_op": {
+          "mean_percent": 28.54146033504258,
+          "ci95_percent": [
+            28.523691976637622,
+            28.559228693447537
+          ],
+          "paired_percent": [
+            28.559228693447537,
+            28.523691976637622
+          ],
+          "pairs": 2,
+          "resamples": 20000,
+          "seed": 74183
+        },
+        "bytes_per_op": {
+          "mean_percent": -15.815442692084735,
+          "ci95_percent": [
+            -15.817038208992805,
+            -15.813847175176665
+          ],
+          "paired_percent": [
+            -15.813847175176665,
+            -15.817038208992805
+          ],
+          "pairs": 2,
+          "resamples": 20000,
+          "seed": 74183
+        },
+        "allocs_per_op": {
+          "mean_percent": -0.33946040429866375,
+          "ci95_percent": [
+            -0.3407604833476796,
+            -0.3381603252496479
+          ],
+          "paired_percent": [
+            -0.3381603252496479,
+            -0.3407604833476796
+          ],
+          "pairs": 2,
+          "resamples": 20000,
+          "seed": 74183
+        },
+        "median_p99_regression_percent": -26.90970590998778,
+        "promising": true,
+        "confirmed_primary_threshold": false,
+        "p99_pass": true
+      }
+    },
+    {
+      "id": 3,
+      "rank": 3,
+      "title": "Fuse built-in scalar decoding",
+      "primary_workload": "paged-buffered",
+      "kind": "performance",
+      "decision": "deferred",
+      "prerequisite": "real_backend_write_baseline",
+      "next_step": "Complete real Scylla confirmation and canonical/fixed-rate controls after local qualification.",
+      "commit": null,
+      "evidence": "results/roadmap-03/",
+      "local_primary": {
+        "completed_pairs": 6,
+        "expected_pairs": 6,
+        "valid": true,
+        "rate": 0,
+        "variant_medians": {
+          "A": {
+            "throughput": 2816.15,
+            "cpu_per_op": 0.00035382367654530477,
+            "bytes_per_op": 26636.809601140012,
+            "allocs_per_op": 205.06801283534827,
+            "p99_us": 2134.0
+          },
+          "B": {
+            "throughput": 3101.5333333333333,
+            "cpu_per_op": 0.0003207414597303025,
+            "bytes_per_op": 26634.76558412811,
+            "allocs_per_op": 205.07557331408574,
+            "p99_us": 1948.0
+          }
+        },
+        "throughput": {
+          "mean_percent": 10.174944906167116,
+          "ci95_percent": [
+            9.78860574824321,
+            10.51628699192878
+          ],
+          "paired_percent": [
+            9.860084632884236,
+            10.612137392699372,
+            9.441883437602883,
+            10.568055193342651,
+            9.881693869591412,
+            10.68581491088214
+          ],
+          "pairs": 6,
+          "resamples": 20000,
+          "seed": 74183
+        },
+        "cpu_per_op": {
+          "mean_percent": 9.32884179642327,
+          "ci95_percent": [
+            9.093517947572005,
+            9.562917332040081
+          ],
+          "paired_percent": [
+            9.178304127859427,
+            9.364827706768642,
+            8.836668891062349,
+            9.720453168463639,
+            9.199784232164054,
+            9.673012652221502
+          ],
+          "pairs": 6,
+          "resamples": 20000,
+          "seed": 74183
+        },
+        "bytes_per_op": {
+          "mean_percent": 0.010622011057429917,
+          "ci95_percent": [
+            0.004274434140444372,
+            0.016614572959341063
+          ],
+          "paired_percent": [
+            0.016156277211398784,
+            0.0018308457026217084,
+            0.008557215092119819,
+            0.021088625140763817,
+            -0.0002992443878246931,
+            0.016398347585500073
+          ],
+          "pairs": 6,
+          "resamples": 20000,
+          "seed": 74183
+        },
+        "allocs_per_op": {
+          "mean_percent": 0.00171508920592441,
+          "ci95_percent": [
+            -0.010597930467350544,
+            0.01351559509885821
+          ],
+          "paired_percent": [
+            0.01340744437556829,
+            -0.01637810776280446,
+            -0.00141728452982548,
+            0.021564292774378657,
+            -0.019453190444851387,
+            0.012567380823080843
+          ],
+          "pairs": 6,
+          "resamples": 20000,
+          "seed": 74183
+        },
+        "median_p99_regression_percent": -8.716026241799435,
+        "promising": true,
+        "confirmed_primary_threshold": true,
+        "p99_pass": true
+      },
+      "local_summary": "results/roadmap-03/local-confirm/summary.json",
+      "production_applied": false,
+      "reason": "Local primary threshold met. Healthy real Scylla six-pair confirmation, all canonical/fixed-rate controls, and applicable default/memory comparisons remain blocked by original64-worker write baseline failure.",
+      "local_screen": "results/roadmap-03/local-screen/summary.json",
+      "complete_patch": "results/roadmap-03/candidate.patch",
+      "frozen_build": "results/roadmap-03/frozen-build.json"
+    },
+    {
+      "id": 4,
+      "rank": 4,
+      "title": "Encode parameters and capture routing information in one pass",
+      "primary_workload": "point-buffered",
+      "kind": "performance",
+      "decision": "rejected",
+      "prerequisite": "real_backend_write_baseline",
+      "next_step": "CPU gain must justify the measured32B/bind increase, then real read/write confirmation and controls.",
+      "commit": null,
+      "evidence": "results/roadmap-04/",
+      "local_primary": {
+        "completed_pairs": 2,
+        "expected_pairs": 2,
+        "valid": true,
+        "rate": 0,
+        "variant_medians": {
+          "A": {
+            "throughput": 80509.73333333334,
+            "cpu_per_op": 1.2411916737376586e-05,
+            "bytes_per_op": 9620.339640840068,
+            "allocs_per_op": 66.91608864547959,
+            "p99_us": 1641.0
+          },
+          "B": {
+            "throughput": 81467.18333333333,
+            "cpu_per_op": 1.225266692377077e-05,
+            "bytes_per_op": 9652.012919100973,
+            "allocs_per_op": 66.91588868855419,
+            "p99_us": 1648.0
+          }
+        },
+        "throughput": {
+          "mean_percent": 1.19053010990392,
+          "ci95_percent": [
+            0.5021827925528743,
+            1.8788774272549658
+          ],
+          "paired_percent": [
+            0.5021827925528743,
+            1.8788774272549658
+          ],
+          "pairs": 2,
+          "resamples": 20000,
+          "seed": 74183
+        },
+        "cpu_per_op": {
+          "mean_percent": 1.2817058475180998,
+          "ci95_percent": [
+            0.6134019697134119,
+            1.9500097253227877
+          ],
+          "paired_percent": [
+            0.6134019697134119,
+            1.9500097253227877
+          ],
+          "pairs": 2,
+          "resamples": 20000,
+          "seed": 74183
+        },
+        "bytes_per_op": {
+          "mean_percent": -0.32923243317185547,
+          "ci95_percent": [
+            -0.3292707980793175,
+            -0.32919406826439346
+          ],
+          "paired_percent": [
+            -0.3292707980793175,
+            -0.32919406826439346
+          ],
+          "pairs": 2,
+          "resamples": 20000,
+          "seed": 74183
+        },
+        "allocs_per_op": {
+          "mean_percent": 0.00029881738712322914,
+          "ci95_percent": [
+            0.00025976939003191646,
+            0.0003378653842145418
+          ],
+          "paired_percent": [
+            0.00025976939003191646,
+            0.0003378653842145418
+          ],
+          "pairs": 2,
+          "resamples": 20000,
+          "seed": 74183
+        },
+        "median_p99_regression_percent": 0.4265691651432091,
+        "promising": false,
+        "confirmed_primary_threshold": false,
+        "p99_pass": true
+      },
+      "local_summary": "results/roadmap-04/local-screen/summary.json",
+      "production_applied": false,
+      "reason": "Local ABBA screen missed both3percent CPU/throughput improvement and10percent byte reduction. No full-workload confirmation or commit warranted for this prototype.",
+      "local_screen": "results/roadmap-04/local-screen/summary.json",
+      "complete_patch": "results/roadmap-04/candidate.patch",
+      "frozen_build": "results/roadmap-04/frozen-build.json"
+    },
+    {
+      "id": 5,
+      "rank": 5,
+      "title": "Reuse small request-framing storage",
+      "primary_workload": "point-buffered",
+      "kind": "performance",
+      "decision": "rejected",
+      "prerequisite": "real_backend_write_baseline",
+      "next_step": "CPU gain must justify bounded16KiB idle pool, then healthy real write/read controls and old-default comparison.",
+      "commit": null,
+      "evidence": "results/roadmap-05/",
+      "local_primary": {
+        "completed_pairs": 2,
+        "expected_pairs": 2,
+        "valid": true,
+        "rate": 0,
+        "variant_medians": {
+          "A": {
+            "throughput": 80608.68333333333,
+            "cpu_per_op": 1.2389309309201368e-05,
+            "bytes_per_op": 9620.193079596336,
+            "allocs_per_op": 66.9159783030243,
+            "p99_us": 1628.0
+          },
+          "B": {
+            "throughput": 81715.83333333334,
+            "cpu_per_op": 1.2226193561219022e-05,
+            "bytes_per_op": 9044.528115395973,
+            "allocs_per_op": 64.91601462601204,
+            "p99_us": 1633.0
+          }
+        },
+        "throughput": {
+          "mean_percent": 1.3794966710429346,
+          "ci95_percent": [
+            -0.6605551945588761,
+            3.4195485366447453
+          ],
+          "paired_percent": [
+            3.4195485366447453,
+            -0.6605551945588761
+          ],
+          "pairs": 2,
+          "resamples": 20000,
+          "seed": 74183
+        },
+        "cpu_per_op": {
+          "mean_percent": 1.311344762550809,
+          "ci95_percent": [
+            -0.66290783712315,
+            3.285597362224768
+          ],
+          "paired_percent": [
+            3.285597362224768,
+            -0.66290783712315
+          ],
+          "pairs": 2,
+          "resamples": 20000,
+          "seed": 74183
+        },
+        "bytes_per_op": {
+          "mean_percent": 5.983923180604112,
+          "ci95_percent": [
+            5.9833718836998955,
+            5.9844744775083285
+          ],
+          "paired_percent": [
+            5.9844744775083285,
+            5.9833718836998955
+          ],
+          "pairs": 2,
+          "resamples": 20000,
+          "seed": 74183
+        },
+        "allocs_per_op": {
+          "mean_percent": 2.9887684936567016,
+          "ci95_percent": [
+            2.988519882076124,
+            2.9890171052372794
+          ],
+          "paired_percent": [
+            2.9890171052372794,
+            2.988519882076124
+          ],
+          "pairs": 2,
+          "resamples": 20000,
+          "seed": 74183
+        },
+        "median_p99_regression_percent": 0.30712530712531105,
+        "promising": false,
+        "confirmed_primary_threshold": false,
+        "p99_pass": true
+      },
+      "local_summary": "results/roadmap-05/local-screen/summary.json",
+      "production_applied": false,
+      "reason": "Local ABBA screen missed both3percent CPU/throughput improvement and10percent byte reduction. No full-workload confirmation or commit warranted for this prototype.",
+      "local_screen": "results/roadmap-05/local-screen/summary.json",
+      "complete_patch": "results/roadmap-05/candidate.patch",
+      "frozen_build": "results/roadmap-05/frozen-build.json"
+    },
+    {
+      "id": 6,
+      "rank": 6,
+      "title": "Share immutable profile state",
+      "primary_workload": "point-buffered",
+      "kind": "memory",
+      "decision": "deferred",
+      "prerequisite": "retained_changes_reprofile",
+      "next_step": "Re-profile after accepted first-wave changes; design immutable snapshot reference with separate execution overrides and profile-replacement tests.",
+      "commit": null
+    },
+    {
+      "id": 7,
+      "rank": 7,
+      "title": "Consolidate execution-lifetime storage",
+      "primary_workload": "point-buffered/write",
+      "kind": "memory",
+      "decision": "deferred",
+      "prerequisite": "healthy_write_and_lifetime_design",
+      "next_step": "Restore original64-worker writes; prove embedded owners still drain accepted writers, blocked observers and session shutdown before changing lifetimes.",
+      "commit": null
+    },
+    {
+      "id": 8,
+      "rank": 8,
+      "title": "Reduce repeated metadata reconstruction",
+      "primary_workload": "point-buffered",
+      "kind": "memory",
+      "decision": "deferred",
+      "prerequisite": "retained_changes_reprofile",
+      "next_step": "Re-profile after first-wave retention; preserve full changed-shape parsing/schema conflict handling and compare metadata-ID-disabled path.",
+      "commit": null
+    },
+    {
+      "id": 9,
+      "rank": 9,
+      "title": "Make routing plans smaller by construction",
+      "primary_workload": "point-buffered",
+      "kind": "memory",
+      "decision": "deferred",
+      "prerequisite": "retained_changes_reprofile",
+      "next_step": "Re-profile after first-wave retention; use a different mechanism from previously rejected duplicate-state packing, preserving traversal/distribution/strict-shard/tablet tests.",
+      "commit": null
+    },
+    {
+      "id": 10,
+      "rank": 10,
+      "title": "Avoid redundant deadline scopes",
+      "primary_workload": "point-buffered",
+      "kind": "memory",
+      "decision": "deferred",
+      "prerequisite": "cancellation_domain_proof",
+      "next_step": "Re-profile first; identify paths without independent page/speculative/prefetch domains and prove blocked-writer/observer cancellation before removing scopes.",
+      "commit": null
+    },
+    {
+      "id": 11,
+      "rank": 11,
+      "title": "Remove repeated runtime lookups and unnecessary locks",
+      "primary_workload": "point-buffered",
+      "kind": "performance",
+      "decision": "deferred",
+      "prerequisite": "multicore_contention_evidence",
+      "next_step": "Capture post-retention single-core profiles and multicore lock-contention controls before separating runtime bookkeeping from prepare-cache synchronization.",
+      "commit": null
+    },
+    {
+      "id": 12,
+      "rank": 12,
+      "title": "Construct optional observation machinery lazily",
+      "primary_workload": "point-buffered/write",
+      "kind": "performance",
+      "decision": "deferred",
+      "prerequisite": "healthy_write_and_observer_contract",
+      "next_step": "Restore original64-worker writes and capture fresh profiles with/without observers; preserve metrics, accounting, callback ordering and cancellation return timing.",
+      "commit": null
+    },
+    {
+      "id": 13,
+      "rank": 13,
+      "title": "Improve receive-cache hit rate",
+      "primary_workload": "mixed-small-large",
+      "kind": "memory/performance",
+      "decision": "deferred",
+      "prerequisite": "mixed_response_rss_instrumentation",
+      "next_step": "Add hit/miss and RSS observations plus mixed small/large workload; compare4/16/64 objects under unchanged16MiB/individual ceilings through opt-in experimental config.",
+      "commit": null
+    },
+    {
+      "id": 14,
+      "rank": 14,
+      "title": "Restore bounded shared-reader buffering",
+      "primary_workload": "point-buffered",
+      "kind": "performance",
+      "decision": "deferred",
+      "prerequisite": "exclusive_unread_byte_transfer_design",
+      "next_step": "Settle exclusive ownership transfer of unread bytes, events/native/v5 framing and deadlines; inspect read-ahead candidate outcome before a separate shared-reader prototype.",
+      "commit": null
+    },
+    {
+      "id": 15,
+      "rank": 15,
+      "title": "Tune coalescing then try opportunistic batching",
+      "primary_workload": "point-buffered/write",
+      "kind": "performance",
+      "decision": "deferred",
+      "prerequisite": "healthy_write_baseline",
+      "next_step": "Restore original64-worker write maximum/fixed target; sweep0/10/50/100us separately from opportunistic ready-only draining and preserve latency/partial-write/cancel accounting.",
+      "commit": null
+    },
+    {
+      "id": 16,
+      "rank": 16,
+      "title": "Add a reusable execution handle",
+      "primary_workload": "point-buffered/write",
+      "kind": "memory",
+      "decision": "deferred",
+      "prerequisite": "single_flight_handle_lifetime_design",
+      "next_step": "Design additive worker-owned handle and reject rebinding until prior input drains; first restore write baseline. Avoid repeating rejected immutable Bound constructor/scalar changes.",
+      "commit": null
+    },
+    {
+      "id": 17,
+      "rank": 17,
+      "title": "Use dedicated streaming connections",
+      "primary_workload": "point-stream/mixed",
+      "kind": "performance",
+      "decision": "deferred",
+      "prerequisite": "fixed_connection_budget_pool_design",
+      "next_step": "Design explicit pool split with unchanged total connection budget and token/shard coverage; add mixed-traffic/connection/RSS controls on healthy backend.",
+      "commit": null
+    },
+    {
+      "id": 18,
+      "rank": 18,
+      "title": "Decode rows in batches",
+      "primary_workload": "paged-buffered",
+      "kind": "performance",
+      "decision": "deferred",
+      "prerequisite": "batch_callback_lease_design",
+      "next_step": "Evaluate scalar fusion first, then design additive page callback API with cancellation and caller destinations; borrowed values cannot outlive callback/page lease.",
+      "commit": null
+    },
+    {
+      "id": 19,
+      "rank": 19,
+      "title": "Read directly from verified v5 units",
+      "primary_workload": "paged-v5-lz4",
+      "kind": "performance",
+      "decision": "deferred",
+      "prerequisite": "v5_lz4_canonical_workloads",
+      "next_step": "Add separate v5/LZ4 workloads and validated-unit ownership/CRC-before-exposure tests; current canonical emulator is nativev4 only and cannot decide this candidate.",
+      "commit": null
+    },
+    {
+      "id": 20,
+      "rank": 20,
+      "title": "Revisit synchronous non-speculative execution",
+      "primary_workload": "point-buffered/write",
+      "kind": "performance",
+      "decision": "deferred",
+      "prerequisite": "transport_cancellation_before_sync",
+      "next_step": "Accepted/coalesced writes currently join completion before releasing spans; redesign interruptible accepted writes and blocked-observer cancellation first. Keep async fallback; do not repeat synchronous execution unchanged.",
+      "commit": null
+    }
+  ],
+  "updated_at": "2026-11-02T03:55:44.834042+00:00",
+  "next_validation_order": [
+    2,
+    3,
+    1
+  ],
+  "rejected": [
+    4,
+    5
+  ],
+  "deferred": [
+    1,
+    2,
+    3,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20
+  ],
+  "inconclusive": [],
+  "measurement_context_note": "Original item01 local runs and item02 initial screen are exploratory because dedicated Scylla startup/flush/stop could share emulator server CPUs. Item01 clean screen+six-pair confirmation and item02 clean screen replace those for local qualification. Original observations remain unchanged.",
+  "checks": {
+    "restored_default": "results/roadmap/restored-default-tests.log",
+    "restored_unit_race": "results/roadmap/restored-unit-race.log",
+    "restored_vet": "results/roadmap/restored-vet.log",
+    "restored_integration_compile_only": "results/roadmap/restored-integration-compile.log",
+    "harness_race_CPU8_GOMAXPROCS1": "results/roadmap/harness-race.log",
+    "harness_vet": "results/roadmap/harness-vet.log",
+    "python18tests": "results/roadmap/python-tests-final.log",
+    "patches_apply_to_baseline": "results/roadmap/patch-apply-check.json"
+  },
+  "combined_result": {
+    "accepted_changes": 0,
+    "current_head": "7e1ad6f718929342200c5b9bc126e5a5e7fc7d1c",
+    "original_tree": "fea8095b391fbac84a6c3dd028b6f109e49cdabe",
+    "tracked_driver_diff_empty": true,
+    "decision": "No combined candidate exists; production is identical to original baseline. Combined real performance qualification remains blocked with the original write baseline. No gain or convergence claimed."
+  },
+  "artifact_audit": "results/roadmap/final-audit.json",
+  "shutdown": "results/roadmap/final-shutdown.json",
+  "artifact_counts": {
+    "frozen_builds": 6,
+    "sessions": 12,
+    "measured_observations": 77,
+    "successful_observations": 76,
+    "failed_observations": 1
+  },
+  "finished_at": "2026-11-02T03:57:58.192905+00:00",
+  "shutdown_verified": true,
+  "parked_at": "2026-11-02T11:17:45.342884+00:00",
+  "resume_policy": "Do not resume optimization or benchmark loads without an explicit user request.",
+  "parked_checkpoint": "PARKED-CHECKPOINT.json"
+}

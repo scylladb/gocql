@@ -1,0 +1,36 @@
+{
+  "restored-default-tests": {
+    "log": "tests/driver-comparison/results/roadmap/restored-default-tests.log",
+    "passed": true,
+    "sha256": "c34553ad54fef2e88dd319e508ccbf2d1312f207a9ba0fcd7194e85d96cc414e"
+  },
+  "restored-unit-race": {
+    "log": "tests/driver-comparison/results/roadmap/restored-unit-race.log",
+    "passed": true,
+    "sha256": "5f6b9f5ea9354ff7b54b4e74c1c13fa03f278f452fed8c2095e67ddf30b3150b"
+  },
+  "restored-vet": {
+    "log": "tests/driver-comparison/results/roadmap/restored-vet.log",
+    "passed": true,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "restored-integration-compile": {
+    "log": "tests/driver-comparison/results/roadmap/restored-integration-compile.log",
+    "passed": true,
+    "sha256": "2dded26059bb6afc18d110094e19d7b656471b54c9aaad831b76307f3503752f"
+  },
+  "harness-race": {
+    "log": "tests/driver-comparison/results/roadmap/harness-race.log",
+    "passed": true,
+    "sha256": "b75d12b0b1fb9f296b485709af7a71607fe551966cd1233a5127833dfb8bd16c"
+  },
+  "harness-vet": {
+    "log": "tests/driver-comparison/results/roadmap/harness-vet.log",
+    "passed": true,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "python-tests-final": {
+    "log": "tests/driver-comparison/results/roadmap/python-tests-final.log",
+    "passed": true
+  }
+}

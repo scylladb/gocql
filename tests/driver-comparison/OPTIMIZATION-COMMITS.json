@@ -1,0 +1,120 @@
+{
+  "base": "5a07badd5f3a567f3990e0c70aba6c8d28e7fbc0",
+  "commits": [
+    {
+      "iteration": 1,
+      "commit": "02d39e021658f1a873ff9067d128976916f2b21b",
+      "subject": "Reduce scalar parameter slab allocation",
+      "files": [
+        "internal/binding/v2_statement.go"
+      ]
+    },
+    {
+      "iteration": 2,
+      "commit": "3a79655ae10725ff9d96a6b08781a492952f96dc",
+      "subject": "Reduce typed request envelope slab allocation",
+      "files": [
+        "internal/protocol/request.go"
+      ]
+    },
+    {
+      "iteration": 3,
+      "commit": "c3fb2a65f2bd01cb290344c2593503c83ed1ea66",
+      "subject": "Use one cancellation scope for page execution",
+      "files": [
+        "internal/execution/v2_execute.go",
+        "v2_execute_test.go"
+      ]
+    },
+    {
+      "iteration": 4,
+      "commit": "2b969938ff315465739537a0ad31cf68f0ce07e7",
+      "subject": "Allocate delayed retry notification only when needed",
+      "files": [
+        "internal/execution/v2_execute.go",
+        "v2_execute_test.go"
+      ]
+    },
+    {
+      "iteration": 5,
+      "commit": "6c1e1bcb6679a92748139c8825d9b37cc9c40317",
+      "subject": "Reuse bounded typed writer span descriptors",
+      "files": [
+        "internal/transport/conn.go",
+        "internal/transport/v2_transport_writer.go",
+        "internal/transport/v2_writer_scratch_test.go"
+      ]
+    },
+    {
+      "iteration": 6,
+      "commit": "b953ba23ad2b6ce07821b0039b14fca2122de17a",
+      "subject": "Keep only the pinned destination in routing plans",
+      "files": [
+        "internal/routing/v2_policy.go",
+        "v2_policy_test.go"
+      ]
+    },
+    {
+      "iteration": 7,
+      "commit": "23bf3c4a528719772a90c57f98ea6a2e56fe8a19",
+      "subject": "Embed scalar builders in typed request envelopes",
+      "files": [
+        "internal/protocol/request.go",
+        "internal/wire/builder.go",
+        "internal/wire/builder_test.go"
+      ]
+    },
+    {
+      "iteration": 8,
+      "commit": "3bce4610214450d8d4941f9de7938e7884b72114",
+      "subject": "Validate scalar kinds without allocating descriptors",
+      "files": [
+        "internal/codec/dynamic.go",
+        "internal/codec/stream_codec_test.go",
+        "internal/codec/stream_validate.go",
+        "internal/cqltype/type.go",
+        "internal/cqltype/v2_type_test.go"
+      ]
+    },
+    {
+      "iteration": 10,
+      "commit": "9e36b1307d00431cd498a86c85b4781c7a656b37",
+      "subject": "Share native request header and body framing storage",
+      "files": [
+        "internal/protocol/request.go",
+        "internal/protocol/request_header_test.go"
+      ]
+    },
+    {
+      "iteration": 13,
+      "commit": "bf066dd38d1cbe6e55a0ab3c1453031014216ab5",
+      "subject": "Reserve bounded descriptors for prepared request framing",
+      "files": [
+        "internal/protocol/request.go",
+        "internal/wire/builder.go",
+        "internal/wire/builder_test.go"
+      ]
+    },
+    {
+      "iteration": 16,
+      "commit": "82d23737a685271adfc49330c9ac0b895ec32763",
+      "subject": "Reuse immutable streaming validation plans on continuations",
+      "files": [
+        "internal/codec/stream_page_validation_test.go",
+        "internal/codec/stream_reader.go",
+        "internal/execution/v2_row_stream.go",
+        "internal/transport/v2_stream_transport.go",
+        "v2_stream_validation_reuse_test.go"
+      ]
+    },
+    {
+      "iteration": 18,
+      "commit": "7e1ad6f718929342200c5b9bc126e5a5e7fc7d1c",
+      "subject": "Compact inline replica permutation storage",
+      "files": [
+        "internal/routing/v2_policy.go",
+        "internal/routing/compact_permutation_test.go"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,57 @@
+{
+  "master": "1ceaac8172bda26e8b8d701ac356982d33729b27",
+  "master_reference": "results/three-driver-20261102T020259Z/summary.json",
+  "independent_candidates_not_combined": true,
+  "rows": [
+    {
+      "candidate": 1,
+      "title": "Remove the full request copy per page",
+      "master_ops_s": 3403.5,
+      "candidate_ops_s": 2820.7166666666662,
+      "candidate_vs_master_percent": -17.123059595514434,
+      "master_adapter": "buffered",
+      "same_source_emulator": true,
+      "comparison": "separate local runs; not a paired head-to-head comparison"
+    },
+    {
+      "candidate": 2,
+      "title": "Add bounded streaming read-ahead",
+      "master_ops_s": 3403.5,
+      "candidate_ops_s": 2488.9166666666665,
+      "candidate_vs_master_percent": -26.87184760785466,
+      "master_adapter": "buffered",
+      "same_source_emulator": true,
+      "comparison": "separate local runs; not a paired head-to-head comparison"
+    },
+    {
+      "candidate": 3,
+      "title": "Fuse built-in scalar decoding",
+      "master_ops_s": 3403.5,
+      "candidate_ops_s": 3101.5333333333333,
+      "candidate_vs_master_percent": -8.872239361441657,
+      "master_adapter": "buffered",
+      "same_source_emulator": true,
+      "comparison": "separate local runs; not a paired head-to-head comparison"
+    },
+    {
+      "candidate": 4,
+      "title": "Encode parameters and capture routing information in one pass",
+      "master_ops_s": 126307.71666666667,
+      "candidate_ops_s": 81467.18333333333,
+      "candidate_vs_master_percent": -35.5010244161646,
+      "master_adapter": "buffered",
+      "same_source_emulator": true,
+      "comparison": "separate local runs; not a paired head-to-head comparison"
+    },
+    {
+      "candidate": 5,
+      "title": "Reuse small request-framing storage",
+      "master_ops_s": 126307.71666666667,
+      "candidate_ops_s": 81715.83333333334,
+      "candidate_vs_master_percent": -35.304163918198185,
+      "master_adapter": "buffered",
+      "same_source_emulator": true,
+      "comparison": "separate local runs; not a paired head-to-head comparison"
+    }
+  ]
+}

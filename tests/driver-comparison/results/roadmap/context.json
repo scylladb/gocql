@@ -1,0 +1,19 @@
+{
+  "time": "2026-11-02T03:23:02.398061+00:00",
+  "emulator_binary_sha256": "840c9e2869d3650727d5c0eb75d361c9999ab34a2dcc2afe7a61121f829b2d4f",
+  "emulator_source_sha256": "c6ecc0cb8ad297f9d18cf7a63f7febce6b0da5d612519c8c555c2872dff816aa",
+  "emulator_pid": 2624385,
+  "emulator_cpu": [
+    0,
+    1,
+    4,
+    5
+  ],
+  "emulator_gomaxprocs": 4,
+  "client_cpu": 8,
+  "client_gomaxprocs": 1,
+  "master_reference": "1ceaac8172bda26e8b8d701ac356982d33729b27",
+  "original_v2": "7e1ad6f718929342200c5b9bc126e5a5e7fc7d1c",
+  "current_head": "7e1ad6f718929342200c5b9bc126e5a5e7fc7d1c",
+  "note": "v2-only optimization; no master or scylla-go-driver execution."
+}

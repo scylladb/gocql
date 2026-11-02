@@ -1,0 +1,38 @@
+{
+  "candidate": 5,
+  "status": "implemented; performance acceptance pending parent-orchestrated local/real gates",
+  "baseline": "7e1ad6f718929342200c5b9bc126e5a5e7fc7d1c",
+  "worktree": "/extra/scylladb/gocql/.codex-cache/driver-comparison/roadmap-05-source",
+  "patch": "candidate.patch",
+  "source_manifest": "source-manifest.json",
+  "mechanism": "bounded transport-owned scalar/header scratch for <=256-byte native v3/v4 prepared frames; all canonical value spans retained unchanged; generic path remains for complex/large/compressed/v5 requests",
+  "memory": "global64-object channel, each256 bytes;16KiB idle payload capacity plus channel metadata;256 bytes per eligible in-flight accepted writer; immutable span index remains per-write",
+  "allocation_proof": {
+    "reference_B_op": 640,
+    "candidate_B_op": 64,
+    "reference_allocs_op": 3,
+    "candidate_allocs_op": 1,
+    "scope": "prepared scalar frame only, not overall operation",
+    "cpu": "singlecore transport encode medians227.5ns segmented vs145.9ns scratch; microbenchmark only"
+  },
+  "correctness": {
+    "full_default": "go test ./... passes, default-tests.log",
+    "focused_race": "go test -race ./internal/protocol ./internal/transport passes, focused-race.log",
+    "lifetime_race": "targeted root cancellation/orphans/fatal-close/speculative-loser/delayed-retry/page-cancellation/TLS/canonical-reprepare tests pass, lifetime-race.log",
+    "vet": "go vet ./internal/protocol ./internal/transport passes, vet.log",
+    "wire": "256 version/option combinations across v3/v4 match generic bytes; limits/null/unset/malformed values/fallback checked",
+    "storage": "small-frame cancellation before admission/during accepted write/coalescer queue, partial writes/errors/panics, TLS and64-object bound tested",
+    "large_payload": "generic segmented fallback retains original payload backing"
+  },
+  "rejected_prototype": {
+    "archive": "contiguous-prototype-rejected.tar.gz",
+    "reason": "full tests rejected small borrowed payload copying; canonical writer backing identity0 vs expected4*len(input). Revised prototype preserves all canonical value spans; test unchanged"
+  },
+  "tradeoffs": [
+    "adds bounded idle retention",
+    "small prepared scalar framing duplicates a limited validated protocol shape; shared parameter flag helper prevents flag drift",
+    "large writes and streaming path currently unchanged"
+  ],
+  "committed": false,
+  "timed_full_workloads": false
+}
