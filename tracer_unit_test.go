@@ -85,7 +85,7 @@ func newTraceServer(t *testing.T, cfg traceConfig) *traceServer {
 		}.write(resp, stream, writeID)
 		return true
 	})
-	ts.setExecuteHook(func(id uint64, stream int, resp *framer) bool {
+	ts.setExecuteHook(func(id uint64, _ *framer, stream int, resp *framer) bool {
 		if id < durationID || id > eventsID {
 			return false
 		}
