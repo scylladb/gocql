@@ -58,7 +58,18 @@ type namedValue struct {
 	name  string
 }
 
-// NamedValue produce a value which will bind to the named parameter in a query
+// NamedValue produces a value that binds to the explicit :name bind marker
+// with the given name. Named values can be passed in any order, but a query
+// must bind either all of its values by name or none, each name must be
+// passed once even if its marker appears several times, and batches do not
+// support them. Unquoted marker names are lowercase, as with other CQL
+// identifiers.
+//
+// Use NamedValue only for markers written as :name. Do not bind an anonymous ?
+// marker through the name the server reports for it, such as "IN(id)" or
+// "in(id)" for an IN restriction: the server makes that name up, and it varies
+// between server versions and so can differ between nodes during a rolling
+// upgrade.
 func NamedValue(name string, value any) any {
 	return &namedValue{
 		name:  name,
