@@ -3073,6 +3073,15 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 				}
 			}
 
+			// Reject named values before marshaling them by position, which
+			// could fail with a misleading type error first.
+			for _, value := range values {
+				if _, ok := value.(*namedValue); ok {
+					putBatchQueryValues(req.statements)
+					return &Iter{err: errNamedValuesInBatch}
+				}
+			}
+
 			if len(values) != info.request.actualColCount {
 				putBatchQueryValues(req.statements)
 				return &Iter{err: fmt.Errorf("gocql: batch statement %d expected %d values send got %d", i, info.request.actualColCount, len(values))}
