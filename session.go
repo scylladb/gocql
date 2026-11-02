@@ -639,10 +639,20 @@ func (s *Session) Query(stmt string, values ...any) *Query {
 	return qry
 }
 
+// QueryInfo is the prepared metadata of a statement, as reported by the node
+// that prepared it.
 type QueryInfo struct {
-	Id          []byte
-	Args        []ColumnInfo
-	Rval        []ColumnInfo
+	// Id is the prepared statement id.
+	Id []byte
+	// Args are the statement's bind markers, in the order values are bound.
+	// Bind by index: the server makes up the Name of an anonymous ? marker
+	// that does not stand for a column, such as "IN(id)" or "in(id)", and
+	// that name varies between server versions.
+	Args []ColumnInfo
+	// Rval are the columns of the result.
+	Rval []ColumnInfo
+	// PKeyColumns are the indexes into Args of the partition key components.
+	// It is nil with protocol v3, whose prepared metadata does not report them.
 	PKeyColumns []int
 }
 
@@ -652,6 +662,12 @@ type QueryInfo struct {
 // values will be marshalled as part of the query execution.
 // During execution, the meta data of the prepared query will be routed to the
 // binding callback, which is responsible for producing the query argument values.
+//
+// The callback must return values in the order of q.Args and identify markers
+// by index, not by q.Args[i].Name: see QueryInfo.Args. It can run more than
+// once per execution, for example when a node asks for the statement to be
+// prepared again, and each run sees the metadata of the node chosen for that
+// attempt, so it should have no side effects.
 func (s *Session) Bind(stmt string, b func(q *QueryInfo) ([]any, error)) *Query {
 	qry := queryPool.Get().(*Query)
 	qry.session = s
@@ -3519,6 +3535,8 @@ func (b *Batch) Query(stmt string, args ...any) *Batch {
 // Bind adds the query to the batch operation and correlates it with a binding callback
 // that will be invoked when the batch is executed. The binding callback allows the application
 // to define which query argument values will be marshalled as part of the batch execution.
+//
+// The callback follows the same rules as the one passed to Session.Bind.
 func (b *Batch) Bind(stmt string, bind func(q *QueryInfo) ([]any, error)) {
 	b.Entries = append(b.Entries, BatchEntry{Stmt: stmt, binding: bind})
 }
@@ -3799,7 +3817,10 @@ type ColumnInfo struct {
 	TypeInfo TypeInfo
 	Keyspace string
 	Table    string
-	Name     string
+	// Name is the column or bind marker name. For an anonymous ? bind marker
+	// that does not stand for a column, the server makes the name up, such as
+	// "IN(id)" or "in(id)", and it is not stable across server versions.
+	Name string
 }
 
 func (c ColumnInfo) String() string {

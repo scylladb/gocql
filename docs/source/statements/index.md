@@ -62,6 +62,10 @@ query := session.Query(
 )
 ```
 
+Bind `?` markers positionally. Use `gocql.NamedValue` only for explicit
+`:name` markers, never with a name the server reports for a `?` marker; see
+[Bind markers](bind-markers.md).
+
 With native protocol v4 or newer, pass `gocql.UnsetValue` for a bound column
 that should not be updated. This lets applications reuse one prepared update
 shape for optional fields.
@@ -92,6 +96,7 @@ falling back, pinning every execution of the statement to one replica set.
 :maxdepth: 1
 :hidden:
 
+bind-markers
 paging
 batches
 lightweight-transactions
