@@ -2524,6 +2524,62 @@ func (c *Conn) prepareStatement(ctx context.Context, stmt string, tracer Tracer,
 	}
 }
 
+// orderNamedValues returns values in bind-marker order. Positional values are
+// returned unchanged. When values are NamedValues, each one is placed at every
+// bind marker with the same name, so it is marshaled with that marker's type
+// and lands at the right routing key index regardless of the order the caller
+// passed it in. Only explicit :name markers have names that are stable across
+// servers; names the server synthesizes for anonymous ? markers (such as
+// "IN(id)" or "in(id)") must not be bound by name.
+//
+// A :name marker used several times in a statement takes one value: ScyllaDB
+// reports it as one marker, Cassandra as one marker per occurrence, and both
+// bind every occurrence to the first value sent under that name.
+//
+// Mixing named and positional values is rejected, since the protocol carries
+// either a name for every value or for none, and so are a name passed more
+// than once, a name that matches no marker, and a marker left without a value.
+func orderNamedValues(columns []ColumnInfo, values []any) ([]any, error) {
+	named := 0
+	for _, v := range values {
+		if _, ok := v.(*namedValue); ok {
+			named++
+		}
+	}
+	if named == 0 {
+		return values, nil
+	}
+	if named != len(values) {
+		return nil, errors.New("gocql: cannot mix named and positional query values")
+	}
+
+	ordered := make([]any, len(columns))
+	for i, v := range values {
+		nv := v.(*namedValue)
+		for _, prev := range values[:i] {
+			if prev.(*namedValue).name == nv.name {
+				return nil, fmt.Errorf("gocql: named value %q passed more than once", nv.name)
+			}
+		}
+		found := false
+		for j := range columns {
+			if columns[j].Name == nv.name {
+				ordered[j] = nv
+				found = true
+			}
+		}
+		if !found {
+			return nil, fmt.Errorf("gocql: no bind marker named %q in statement", nv.name)
+		}
+	}
+	for j, v := range ordered {
+		if v == nil {
+			return nil, fmt.Errorf("gocql: no named value for bind marker %q", columns[j].Name)
+		}
+	}
+	return ordered, nil
+}
+
 func marshalQueryValue(typ TypeInfo, value any, dst *queryValues) error {
 	if named, ok := value.(*namedValue); ok {
 		dst.name = named.name
@@ -2666,6 +2722,13 @@ func (c *Conn) executeQueryWithMetrics(ctx context.Context, qry *Query, metrics 
 			if err != nil {
 				return &Iter{err: err}
 			}
+		}
+
+		// Named values first: a :name marker repeated in the statement is
+		// passed once but may fill several markers.
+		values, err = orderNamedValues(info.request.columns, values)
+		if err != nil {
+			return &Iter{err: err}
 		}
 
 		if len(values) != info.request.actualColCount {

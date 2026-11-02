@@ -1006,6 +1006,7 @@ func (s *Session) routingKeyInfo(ctx context.Context, stmt string, keyspace stri
 		routingKeyInfo := &routingKeyInfo{
 			indexes:     info.request.pkeyColumns,
 			types:       types,
+			columns:     info.request.columns,
 			lwt:         info.request.lwt,
 			partitioner: partitioner,
 			keyspace:    keyspace,
@@ -1041,6 +1042,7 @@ func (s *Session) routingKeyInfo(ctx context.Context, stmt string, keyspace stri
 	routingKeyInfo := &routingKeyInfo{
 		indexes:     make([]int, size),
 		types:       make([]TypeInfo, size),
+		columns:     info.request.columns,
 		lwt:         info.request.lwt,
 		partitioner: partitioner,
 		keyspace:    keyspace,
@@ -3688,6 +3690,11 @@ func createRoutingKey(routingKeyInfo *routingKeyInfo, values []any) ([]byte, err
 		return nil, nil
 	}
 
+	values, err := orderNamedValues(routingKeyInfo.columns, values)
+	if err != nil {
+		return nil, err
+	}
+
 	if len(routingKeyInfo.indexes) == 1 {
 		// single column routing key
 		routingKey, err := Marshal(
@@ -3819,6 +3826,7 @@ type routingKeyInfo struct {
 	table       string
 	indexes     []int
 	types       []TypeInfo
+	columns     []ColumnInfo // bind markers, used to place NamedValues
 	lwt         bool
 }
 
