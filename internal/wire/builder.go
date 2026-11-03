@@ -283,6 +283,10 @@ func (b *Builder) PatchUint32(m Mark, v uint32) error {
 // It invalidates all existing marks, even when the result is empty. Borrowed
 // payloads remain borrowed; the caller must still honor their lifetime.
 func (b *Builder) Freeze() (Chain, error) {
+	return b.freezeWithIndex(nil)
+}
+
+func (b *Builder) freezeWithIndex(storage *FrameIndex) (Chain, error) {
 	if b.ownedMode {
 		c, err := NewChain(Borrow(b.ownedBuffer))
 		*b = Builder{generation: b.generation + 1, currentPart: -1}
@@ -293,7 +297,14 @@ func (b *Builder) Freeze() (Chain, error) {
 		c.head = b.parts[0].span
 		c.len = b.len
 		if len(b.parts) > 1 {
-			c.tail = make([]indexedSpan, len(b.parts)-1)
+			if storage != nil && cap(storage.tail) >= len(b.parts)-1 {
+				c.tail = storage.tail[:len(b.parts)-1]
+			} else {
+				c.tail = make([]indexedSpan, len(b.parts)-1)
+			}
+			if storage != nil {
+				storage.tail = c.tail
+			}
 			end := int64(c.head.Len())
 			for i := 1; i < len(b.parts); i++ {
 				end += int64(b.parts[i].span.Len())

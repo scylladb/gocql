@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Freeze one v2 source tree and its unchanged comparison client before timing."""
+"""Freeze one driver source tree and its comparison client before timing."""
 import argparse
 import hashlib
 import json
@@ -14,6 +14,10 @@ HERE = Path(__file__).resolve().parent
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source', type=Path, required=True)
+    parser.add_argument('--driver', choices=('v2', 'old'), default='v2',
+                        help='old builds the pinned master adapter with the same measurement harness')
+    parser.add_argument('--adapter-source', type=Path,
+                        help='Frozen adapter for a historical driver API; common measurement code stays current')
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
     source = args.source.resolve()
@@ -38,19 +42,29 @@ def main():
         if path.suffix == '.go' or path.name in ('go.mod', 'go.sum'):
             shutil.copy2(path, harness / path.name)
             harness_hashes[path.name] = hashlib.sha256(path.read_bytes()).hexdigest()
+    if args.adapter_source:
+        adapter = args.adapter_source.resolve()
+        name = 'old.go' if args.driver == 'old' else 'v2.go'
+        shutil.copy2(adapter, harness / name)
+        harness_hashes[name] = hashlib.sha256(adapter.read_bytes()).hexdigest()
     mod = harness / 'go.mod'
     old = HERE.parents[1] / '.codex-cache/driver-comparison/old-source'
-    text = mod.read_text().replace('=> ../../.codex-cache/driver-comparison/old-source', '=> ' + str(old))
-    mod.write_text(text.replace('=> ../..', '=> ' + str(frozen)))
-    binary = out / 'v2'
+    text = mod.read_text().replace('=> ../../.codex-cache/driver-comparison/old-source',
+                                  '=> ' + str(frozen if args.driver == 'old' else old))
+    mod.write_text(text.replace('=> ../..', '=> ' + str(frozen if args.driver == 'v2' else HERE.parents[1])))
+    binary = out / args.driver
     env = dict(os.environ, GOWORK='off')
     with (out / 'build.log').open('w') as log:
-        subprocess.run(['go', 'build', '-trimpath', '-buildvcs=false', '-o', str(binary), '.'],
+        command = ['go', 'build', '-trimpath', '-buildvcs=false']
+        if args.driver == 'old':
+            command.append('-tags=old')
+        subprocess.run(command + ['-o', str(binary), '.'],
                        cwd=harness, env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
     build = subprocess.check_output(['go', 'version', '-m', str(binary)], text=True)
     frozen_harness_hashes = {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
                              for p in harness.iterdir() if p.is_file()}
-    manifest = {'git_head': git('rev-parse', 'HEAD').strip(), 'source': str(source),
+    manifest = {'git_head': git('rev-parse', 'HEAD').strip(), 'source': str(source), 'driver': args.driver,
+                'adapter_source': str(args.adapter_source.resolve()) if args.adapter_source else None,
                 'frozen_source': str(frozen), 'driver_source_hashes': hashes,
                 'harness_input_hashes': harness_hashes,
                 'harness_source_hashes': frozen_harness_hashes, 'binary': str(binary),

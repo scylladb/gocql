@@ -45,7 +45,7 @@ def order(stage):
     if stage in ('screen', 'controls'):
         return [('A', 'B'), ('B', 'A')]
     if stage == 'confirm':
-        return [('A', 'B')] * 3 + [('B', 'A')] * 3
+        return [('A', 'B'), ('B', 'A')] * 3
     raise ValueError('unknown stage')
 
 
@@ -83,34 +83,49 @@ def read_manifest(path, binary):
     return dict(data, verified_build=build, manifest_sha256=r.sha(path))
 
 
-def failures(result, case, rate, driver='v2', streaming=None):
-    scenario, stream, workers, _ = CASES[case]
+def failures(result, case, rate, driver='v2', streaming=None, seconds=30, workers=None, gomaxprocs=1,
+             allow_capacity_shortfall=False):
+    scenario, stream, canonical_workers, _ = CASES[case]
+    workers = canonical_workers if workers is None else workers
     m = result['measurement']
     issues = []
+    if result.get('measurement_error'):
+        issues.append('measurement reported an error: ' + result['measurement_error'])
     expected = {'driver': driver, 'scenario': scenario, 'stream': stream if streaming is None else streaming,
-                'concurrency': workers, 'gomaxprocs': 1}
+                'concurrency': workers, 'gomaxprocs': gomaxprocs}
     for key, value in expected.items():
         if result.get(key) != value:
             issues.append(f'{key} differs from canonical configuration')
-    if m.get('duration_seconds') != 30 or m.get('target_rate') != rate:
+    if m.get('duration_seconds') != seconds or m.get('target_rate') != rate:
         issues.append('duration or rate differs from canonical configuration')
-    if not r.valid(result) or m.get('timeouts') != 0 or m.get('rejected') != 0:
+    if not r.valid(result) or m.get('timeouts') != 0 or (not allow_capacity_shortfall and m.get('rejected') != 0):
         issues.append('error, timeout, rejection, affinity, histogram or drain failure')
-    if m.get('queue_capacity') != 1024:
-        issues.append('arrival queue capacity differs from 1024')
+    if m.get('queue_capacity') != max(1024, workers * 4):
+        issues.append('arrival queue capacity differs from canonical worker-scaled capacity')
     if not m.get('affinity_checks', 0):
         issues.append('missing client affinity checks')
     for name in ('dispatch_latency', 'queue_latency', 'schedule_lag'):
         if m.get(name, {}).get('overflow') != 0:
             issues.append(f'{name} histogram overflow or missing histogram')
-    if rate:
-        q = m.get('backlog_samples', [])[:30]
+    if rate and not allow_capacity_shortfall:
+        q = m.get('backlog_samples', [])[:math.ceil(seconds)]
         growing = (len(q) > 8 and statistics.mean(q[-len(q)//4:]) >
                    statistics.mean(q[:len(q)//4]) + max(1, workers / 4))
         if m['throughput'] < .99 * rate or growing:
             issues.append('fixed-rate delivery or backlog failure')
     if m['completed'] <= 0:
         issues.append('no completed operations')
+    for phase in (m, result.get('warmup', {})):
+        if 'offered' in phase and phase['offered'] != phase['admitted'] + phase['rejected']:
+            issues.append('arrival accounting does not conserve offered operations')
+        if 'queue_rejected' in phase and phase['rejected'] != phase['queue_rejected'] + phase['arrival_deadline_rejected']:
+            issues.append('rejected-arrival reasons do not match total rejections')
+    warm = result.get('warmup')
+    if warm and (warm.get('errors') or warm.get('timeouts') or (not allow_capacity_shortfall and warm.get('rejected')) or
+                 warm.get('affinity_error') or warm.get('admitted') != warm.get('completed') or
+                 any(warm.get(name, {}).get('overflow') != 0 for name in
+                     ('latency', 'dispatch_latency', 'queue_latency', 'schedule_lag'))):
+        issues.append('warmup error, rejection, affinity, histogram or drain failure')
     configuration = {'protocol': 4, 'consistency': 'LOCAL_QUORUM',
                      'compression': 'none', 'tls': False, 'coalesce_wait_ns': 0,
                      'page_size': 32, 'prefetch': 0, 'retries': 0,
@@ -119,6 +134,21 @@ def failures(result, case, rate, driver='v2', streaming=None):
         if result.get('evidence', {}).get(key) != value:
             issues.append(f'{key} differs from canonical driver configuration')
     return issues
+
+
+def only_queue_capacity_failures(result):
+    """Producer deadline failures and legacy ambiguous rejects are not overload."""
+    for phase in (result.get('warmup', {}), result['measurement']):
+        if phase.get('arrival_deadline_rejected', 0):
+            return False
+        if phase.get('rejected', 0) != phase.get('queue_rejected', 0):
+            return False
+    if any(phase.get('queue_rejected', 0) for phase in (result.get('warmup', {}), result['measurement'])):
+        return True
+    m = result['measurement']
+    q = m.get('backlog_samples', [])[:math.ceil(m['duration_seconds'])]
+    return (len(q) > 8 and statistics.mean(q[-len(q)//4:]) >
+            statistics.mean(q[:len(q)//4]) + max(1, result['concurrency'] / 4))
 
 
 def metrics(result):
@@ -131,23 +161,35 @@ def metrics(result):
             'p99_us': m['latency']['p99_us']}
 
 
-def read_observation(directory, case, rate, pair, variant, returncode, driver='v2', streaming=None):
+def read_observation(directory, case, rate, pair, variant, returncode, driver='v2', streaming=None,
+                     seconds=30, workers=None, profiling=True, cpus='8', gomaxprocs=1):
     """Retain measurements even when the client exits unsuccessfully."""
     path = directory / 'measurement.json'
     if not path.exists():
         raise RuntimeError(f'{directory.name}: client returned {returncode}; no measurement result')
     result = r.compact(path)
-    issues = failures(result, case, rate, driver=driver, streaming=streaming)
+    issues = failures(result, case, rate, driver=driver, streaming=streaming,
+                      seconds=seconds, workers=workers, gomaxprocs=gomaxprocs)
     if returncode:
         issues.append(f'client returned {returncode}')
-    for suffix in ('cpu.pprof', 'heap.before.pprof', 'heap.after.pprof'):
+    for suffix in (('cpu.pprof', 'heap.before.pprof', 'heap.after.pprof') if profiling else ()):
         profile = directory / ('measurement.' + suffix)
         if not profile.exists() or not profile.stat().st_size:
             issues.append(f'missing {suffix}')
+    if not profiling and result.get('profiles'):
+        issues.append('profiling enabled during performance comparison')
+    instrumentation = result.get('instrumentation')
+    if not profiling and instrumentation and (instrumentation.get('cpu_profiling') or
+            instrumentation.get('forced_gc') or instrumentation.get('heap_sample_rate') != 512 * 1024):
+        issues.append('profiling, forced collection or changed allocation sampling during performance comparison')
     process_path = directory / 'measurement.json.process.json'
     process = json.loads(process_path.read_text()) if process_path.exists() else {}
-    if process.get('masks') != ['8'] or not process.get('checks'):
+    if process.get('masks') != [cpus] or not process.get('checks') or process.get('affinity_error'):
         issues.append('external process affinity audit missing or failed')
+    if not profiling:
+        for option in (process.get('runtime_environment', {}).get('GODEBUG') or '').split(','):
+            if option.startswith('memprofilerate=') and option != 'memprofilerate=524288':
+                issues.append('changed allocation sampling in runtime environment')
     m = result['measurement']
     return {'case': case, 'rate': rate, 'pair': pair, 'variant': variant,
             'directory': directory.name, 'returncode': returncode,

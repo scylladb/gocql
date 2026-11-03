@@ -34,6 +34,9 @@ type Cursor struct {
 
 func NewCursor(c Chain) *Cursor { return &Cursor{chain: c, remaining: c.Len()} }
 
+// ResetCursor reuses private parser storage after its prior owner has drained.
+func ResetCursor(cursor *Cursor, chain Chain) { *cursor = Cursor{chain: chain, remaining: chain.Len()} }
+
 func (c *Cursor) Remaining() int64 { return c.remaining }
 
 // Read implements io.Reader over the remaining immutable spans without a

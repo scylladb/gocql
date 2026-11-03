@@ -1,5 +1,5 @@
 {
-  "status": "parked at explicit user request; incomplete and not performance accepted",
+  "status": "resumed under measured-convergence policy; incomplete and not performance accepted",
   "accepted_changes": 0,
   "goal_achieved": false,
   "source_baseline": "7e1ad6f718929342200c5b9bc126e5a5e7fc7d1c",
@@ -60,13 +60,13 @@
       "master_ops_s": 129008.98333333334,
       "candidate_ops_s": 97417.16666666666,
       "ratio": 0.7551192494476159,
-      "target_met": false,
       "master_cpu_us_op": 7.712059682443351,
       "candidate_cpu_us_op": 10.241840376816565,
       "master_allocated_bytes_op": 2302.4870887002076,
       "candidate_allocated_bytes_op": 5079.4529918406515,
       "master_allocations_op": 32.02594784133127,
-      "candidate_allocations_op": 45.01347091150189
+      "candidate_allocations_op": 45.01347091150189,
+      "historical_target_met": false
     },
     {
       "case": "point-stream",
@@ -74,13 +74,13 @@
       "master_ops_s": 123305.38333333333,
       "candidate_ops_s": 85435.78333333333,
       "ratio": 0.6928795890636297,
-      "target_met": false,
       "master_cpu_us_op": 8.07732378603321,
       "candidate_cpu_us_op": 11.680825579479123,
       "master_allocated_bytes_op": 2298.042914943545,
       "candidate_allocated_bytes_op": 6593.706911735724,
       "master_allocations_op": 32.012083126989296,
-      "candidate_allocations_op": 65.01331947211429
+      "candidate_allocations_op": 65.01331947211429,
+      "historical_target_met": false
     },
     {
       "case": "write",
@@ -88,13 +88,13 @@
       "master_ops_s": 138936.96666666667,
       "candidate_ops_s": 105096.78333333333,
       "ratio": 0.7564349924630089,
-      "target_met": false,
       "master_cpu_us_op": 7.1711894355674115,
       "candidate_cpu_us_op": 9.489270669288318,
       "master_allocated_bytes_op": 1835.1175458144987,
       "candidate_allocated_bytes_op": 4389.944334654436,
       "master_allocations_op": 25.018630370453188,
-      "candidate_allocations_op": 39.01175095326773
+      "candidate_allocations_op": 39.01175095326773,
+      "historical_target_met": false
     },
     {
       "case": "paged-buffered",
@@ -102,13 +102,13 @@
       "master_ops_s": 3383.0166666666664,
       "candidate_ops_s": 3224.883333333333,
       "ratio": 0.953256708755992,
-      "target_met": false,
       "master_cpu_us_op": 292.99733470846604,
       "candidate_cpu_us_op": 308.3722492076153,
       "master_allocated_bytes_op": 12992.745592692074,
       "candidate_allocated_bytes_op": 15453.27645047387,
       "master_allocations_op": 149.90108348553122,
-      "candidate_allocations_op": 131.1240509461948
+      "candidate_allocations_op": 131.1240509461948,
+      "historical_target_met": false
     },
     {
       "case": "paged-stream",
@@ -116,13 +116,13 @@
       "master_ops_s": 3401.9333333333334,
       "candidate_ops_s": 2931.7,
       "ratio": 0.8617746771443688,
-      "target_met": false,
       "master_cpu_us_op": 290.8996525198126,
       "candidate_cpu_us_op": 338.482857251604,
       "master_allocated_bytes_op": 12993.943592505599,
       "candidate_allocated_bytes_op": 18229.795255522666,
       "master_allocations_op": 149.90066783543577,
-      "candidate_allocations_op": 175.13565783300726
+      "candidate_allocations_op": 175.13565783300726,
+      "historical_target_met": false
     }
   ],
   "real_write_qualification": {
@@ -174,7 +174,7 @@
   },
   "explicit_incremental": {
     "accepted": false,
-    "scope": "Explicit incremental receive; single observations, no 10% target or acceptance claim",
+    "scope": "Explicit incremental receive; historical single-observation diagnostics, no acceptance claim",
     "observations": [
       {
         "case": "point-incremental",
@@ -255,7 +255,7 @@
   },
   "final_build_manifest": "/extra/scylladb/gocql/.codex-cache/driver-comparison/redesign-final-bounded/manifest.json",
   "final_production_source_mismatches": [],
-  "real_performance_blocker": "Three original-v2 healthy maxima and three unchanged 52503.01/s controls were not achieved; dedicated benchmark storage or a host is the fallback prerequisite.",
+  "real_performance_blocker": "Dedicated benchmark host with pinned compiler/image, RF3/shards/memory/connection budgets, physical CPU isolation, calibrated storage, three healthy original write maxima and three unchanged 52503.01/s controls, stable master and wire/dataset equivalence.",
   "remaining_implementation": [
     "Reuse request header/framing storage with transport-safe lifetime ownership.",
     "Move remaining cursor state into query storage behind lightweight generation handles.",
@@ -263,15 +263,25 @@
     "Reprofile and reduce remaining context, framing, receive and cursor allocations."
   ],
   "remaining_acceptance": [
-    "All five cases must exceed pinned master by at least 10% with a six-pair 95% lower confidence bound >=1.10 on emulator and healthy real Scylla.",
-    "Matched-rate controls, <=5% median p99 regression, RSS/syscall accounting and mixed-response memory plateau.",
-    "Per-change qualification and reviewable retained revisions; current broad working-tree implementation is experimental."
+    "Healthy frozen master baselines and 70%/85% matched-rate controls plus historical absolute controls",
+    "Six 120-second confirmation pairs; repeat inconclusive confirmation once",
+    "Separate worker sweep 1,4,16,64,256,1024 and multiprocessor diagnostics",
+    "Dedicated Scylla qualification and complete emulator/Scylla final matrix",
+    "New cumulative comparisons against master, original v2 and parked reference",
+    "Normalized whole-driver CPU/op cost ranking, syscalls, batches, queue/block/mutex diagnostics",
+    "30-minute mixed-response memory/RSS plateau and lease/callback/goroutine accounting",
+    "Live reusable query/paging and compatible-server v5 correctness",
+    "Two consecutive complete profile passes without reproducible improvement"
   ],
   "release_published": false,
-  "updated": "2026-11-02T18:32:01.991837+00:00",
+  "updated": "2026-11-02T19:30:04.642536+00:00",
   "shutdown": "/extra/scylladb/gocql/tests/driver-comparison/results/redesign-20261102T124236Z/final-shutdown.json",
   "final_source_hashes": "/extra/scylladb/gocql/tests/driver-comparison/results/redesign-20261102T124236Z/final-source-hashes.json",
   "parked_at": "2026-11-02T18:32:01.991837+00:00",
-  "resume_policy": "Resume implementation or benchmark loads only when explicitly requested.",
-  "parking_backup": "/extra/scylladb/gocql-parks/redesign-20261102T183201Z"
+  "resume_policy": "Resumed at explicit user request; continue from current state in unique result directories.",
+  "parking_backup": "/extra/scylladb/gocql-parks/redesign-20261102T183201Z",
+  "active_state": "CONVERGENCE-STATE.json",
+  "active_policy": "CONVERGENCE.md",
+  "current_branch": "optimize-convergence-20261102",
+  "current_production_reference": "f363e371832e7d8260e2858fba867fe591f655a4"
 }

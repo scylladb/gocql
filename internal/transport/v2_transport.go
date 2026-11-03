@@ -101,7 +101,19 @@ func (c *Conn) InternalExecuteTyped(ctx context.Context, req *attemptRequest) (*
 		}
 		return nil, runtimeerrors.NewQueryError(runtimeerrors.QueryErrorState{InternalErr: err})
 	}
-	packet, err := c.InternalBuildTypedRequest(req, stream)
+	frameRequest := *req
+	framing := req.Framing
+	if framing != nil && (c.InternalVersion != 4 || c.InternalCompressor != nil || !framing.TryAcquire()) {
+		framing = nil
+	}
+	frameRequest.Framing = framing
+	framingTransferred := false
+	defer func() {
+		if framing != nil && !framingTransferred {
+			framing.Release()
+		}
+	}()
+	packet, err := c.InternalBuildTypedRequest(&frameRequest, stream)
 	if err != nil {
 		return failBeforeWrite(err)
 	}
@@ -126,7 +138,11 @@ func (c *Conn) InternalExecuteTyped(ctx context.Context, req *attemptRequest) (*
 		ownedPayloads := payloadOwners
 		payloadOwners = nil
 		inputLease := req.Lease
+		ownedFraming := framing
 		lease := wire.NewLease(packet, func() {
+			if ownedFraming != nil {
+				ownedFraming.Release()
+			}
 			if inputLease != nil {
 				inputLease.Release()
 			}
@@ -135,6 +151,7 @@ func (c *Conn) InternalExecuteTyped(ctx context.Context, req *attemptRequest) (*
 			}
 			c.endShared()
 		})
+		framingTransferred = true
 		n, err = c.submitTyped(ctx, packet, lease)
 	} else {
 		n, err = writer.InternalWriteSpans(ctx, packet)

@@ -26,7 +26,7 @@ import (
 
 type StreamOutputField[R any] struct {
 	loc             fieldLocation
-	compile         func(cqltype.DataType) (streamFieldPlan[R], error)
+	compile         func(cqltype.DataType) (streamFieldPlan[R], bool, error)
 	resetMissing    func(*R)
 	canResetMissing func() bool
 }
@@ -46,14 +46,15 @@ func makeStreamColumn[R, V any](loc fieldLocation, decoder StreamDecoder[V], fie
 		if ptr := field(dst); ptr != nil {
 			resetStreamDeclaration(decoder, ptr)
 		}
-	}, compile: func(t cqltype.DataType) (streamFieldPlan[R], error) {
+	}, compile: func(t cqltype.DataType) (streamFieldPlan[R], bool, error) {
 		if decoder == nil || field == nil {
-			return streamFieldPlan[R]{}, cqltype.TypeValidation("stream field", "nil codec or accessor")
+			return streamFieldPlan[R]{}, false, cqltype.TypeValidation("stream field", "nil codec or accessor")
 		}
 		plan, err := compileStreamValuePlan(decoder, t)
 		if err != nil {
-			return streamFieldPlan[R]{}, err
+			return streamFieldPlan[R]{}, false, err
 		}
+		buffered, builtin := plan.(bufferedStreamPlan[V])
 		return streamFieldPlan[R]{reset: func(dst *R) {
 			if ptr := field(dst); ptr != nil {
 				plan.Reset(ptr)
@@ -64,7 +65,7 @@ func makeStreamColumn[R, V any](loc fieldLocation, decoder StreamDecoder[V], fie
 				return cqltype.TypeValidation("stream field", "accessor returned nil")
 			}
 			return ReadStreamColumn(reader, plan, ptr)
-		}}, nil
+		}}, builtin && buffered.bufferedCapable(), nil
 	}}
 }
 
@@ -78,6 +79,9 @@ type streamRowsPlan[R any] struct {
 	ordered []streamFieldPlan[R]
 	columns cqltype.Columns
 }
+type cacheableStreamRowsPlan[R any] struct{ streamRowsPlan[R] }
+
+func (p cacheableStreamRowsPlan[R]) streamCacheable() bool { return true }
 
 func StreamRow[R any](reset func(*R), fields ...StreamOutputField[R]) StreamRowDecoder[R] {
 	return streamRowsCodec[R]{reset: reset, fields: append([]StreamOutputField[R](nil), fields...)}
@@ -106,6 +110,7 @@ func (c streamRowsCodec[R]) compile(columns cqltype.Columns, strict bool, option
 		return nil, err
 	}
 	plan := streamRowsPlan[R]{reset: c.reset, ordered: make([]streamFieldPlan[R], columns.Len()), columns: columns, resets: make([]func(*R), len(c.fields))}
+	cacheable := true
 	matched := make([]bool, len(c.fields))
 	for _, field := range mapping {
 		if field >= 0 {
@@ -123,12 +128,16 @@ func (c streamRowsCodec[R]) compile(columns cqltype.Columns, strict bool, option
 			plan.ordered[index] = streamFieldPlan[R]{decode: func(r *StreamRowReader, _ *R) error { return r.SkipColumn() }}
 			continue
 		}
-		compiled, err := c.fields[field].compile(cqltype.ColumnSlice(columns)[index].Type)
+		compiled, bounded, err := c.fields[field].compile(cqltype.ColumnSlice(columns)[index].Type)
 		if err != nil {
 			return nil, fmt.Errorf("gocql: streaming column %d (%s): %w", index, cqltype.ColumnSlice(columns)[index].Name, err)
 		}
 		plan.ordered[index] = compiled
+		cacheable = cacheable && bounded
 		plan.resets[field] = compiled.reset
+	}
+	if cacheable {
+		return cacheableStreamRowsPlan[R]{plan}, nil
 	}
 	return plan, nil
 }
@@ -162,6 +171,18 @@ type streamOneColumn[T any] struct{ decoder StreamDecoder[T] }
 type streamOneColumnPlan[T any] struct {
 	plan    StreamValuePlan[T]
 	columns cqltype.Columns
+}
+
+// CacheableStreamRowPlan permits only bounded built-in plan storage. Opaque
+// custom plans and nested custom codecs may retain arbitrary application state;
+// their immutable wire validation can still be cached independently.
+func CacheableStreamRowPlan[R any](plan StreamRowPlan[R]) bool {
+	p, ok := plan.(interface{ streamCacheable() bool })
+	return ok && p.streamCacheable()
+}
+func (p streamOneColumnPlan[T]) streamCacheable() bool {
+	value, ok := p.plan.(bufferedStreamPlan[T])
+	return ok && value.bufferedCapable()
 }
 
 func StreamOneColumn[T any](decoder StreamDecoder[T]) StreamRowDecoder[T] {

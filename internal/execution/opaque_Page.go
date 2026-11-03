@@ -12,7 +12,6 @@ import (
 )
 
 type PageStorage[R any] struct {
-	cursor            queryCursor
 	pendingRelease    func()
 	mu                sync.Mutex
 	destination       *R
@@ -32,4 +31,9 @@ type PageStorage[R any] struct {
 	InternalRelease   func()
 }
 
-func PageData[R any](v *Page[R]) *PageStorage[R] { return &v.privateStorage }
+func PageData[R any](v *Page[R]) *PageStorage[R] {
+	if v.privateStorage.PageStorage == nil {
+		v.privateStorage.PageStorage = new(PageStorage[R])
+	}
+	return v.privateStorage.PageStorage
+}

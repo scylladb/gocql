@@ -1,11 +1,12 @@
 # Reusable-query redesign: implementation and evidence
 
-**Parked at explicit user request. Resume only when requested.**
+**Historical implementation snapshot. Optimization has resumed under the
+[measured convergence policy](CONVERGENCE.md).**
 
 **Status: incomplete and experimental. No performance change is accepted and no
 release was published.** The implementation improves original v2 in local
-screening, but none of the five canonical cases reaches the required 1.10× pinned
-master ratio. Real Scylla acceptance is also blocked by the unchanged write
+screening, and these historical observations compare with pinned master. The former
+master-win requirement is superseded. Real Scylla acceptance is also blocked by the unchanged write
 control. [Machine-readable state](REDESIGN-STATE.json) records the remaining work.
 
 ## Source and environment
@@ -129,8 +130,7 @@ Pinned master versus wave 3:
 | Complete partition, buffered | 4 | 3,383.02 | 3,224.88 | 0.953 |
 | Complete partition, streaming decoder | 4 | 3,401.93 | 2,931.70 | 0.862 |
 
-The master screen fails the 1.10 target in every case. Six-pair confirmation was
-not justified. CPU/op, allocation counts/bytes, raw histograms, profiles, process
+These historical screens did not justify confirmation under the former policy. CPU/op, allocation counts/bytes, raw histograms, profiles, process
 affinity and emulator boundary snapshots are retained with each observation.
 Maximum-rate p99 values are descriptive; they do not qualify a matched-offered-rate
 latency gate. New-revision fixed-rate controls, RSS/syscall accounting and healthy
@@ -144,7 +144,7 @@ master; no final-tree performance claim is made.
 ## Explicit incremental receive
 
 These separate 30-second observations use four workers, the same dataset,
-validation, connection budget and configured coalescing. They have no 10% target
+validation, connection budget and configured coalescing. They have no acceptance target
 and are individual diagnostics, not paired acceptance evidence.
 
 | Case | ops/s | CPU µs/op | Allocated bytes/op | Allocations/op |
@@ -189,8 +189,7 @@ ownership, moving remaining cursor state behind lightweight generation handles,
 remaining scalar fusion, and further allocation/CPU reductions. Reprofile those
 costs and qualify changes independently.
 
-After restoring the real baseline prerequisite, run all canonical maximum and
-fixed-rate controls, matched-rate p99 checks, RSS/syscall and mixed-memory
-measurements, then six balanced paired 30-second comparisons. Every case must
-have a 95% lower throughput-ratio bound at least 1.10 against pinned master on
-both emulator and healthy real Scylla. The task remains incomplete until then.
+The active prerequisites and retention rules are in [CONVERGENCE.md](CONVERGENCE.md).
+They require a dedicated real benchmark host, unprofiled comparisons, frozen master
+matched rates, and 120-second confirmation windows. Master is a comparison
+reference, without a required winning margin. The task remains incomplete.

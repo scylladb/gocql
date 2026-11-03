@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -272,15 +273,30 @@ type stats struct {
 	QueueCapacity, PeakQueue, EndQueue                                         int
 	AllocBytes, Mallocs, GC                                                    uint64
 	CPUSeconds, Elapsed, Rate                                                  float64
-	Start, End                                                                 string
+	Start, End, DrainEnd                                                       string
 	Drained                                                                    int64
 	AffinityChecks                                                             int64
 	AffinityError                                                              string
 	Backlog                                                                    []int
+	MemoryBefore, MemoryAfter                                                  memorySnapshot
+	LateArrivals, QueueRejected, ArrivalDeadlineRejected                       int64
+}
+
+// Use the phase's existing ReadMemStats calls; never force collection in a
+// performance observation. These values include driver and harness live state.
+type memorySnapshot struct {
+	HeapAlloc, HeapInuse, HeapObjects, StackInuse, Sys uint64
+	Goroutines                                         int
+}
+
+func memory(m *runtime.MemStats) memorySnapshot {
+	return memorySnapshot{HeapAlloc: m.HeapAlloc, HeapInuse: m.HeapInuse,
+		HeapObjects: m.HeapObjects, StackInuse: m.StackInuse, Sys: m.Sys,
+		Goroutines: runtime.NumGoroutine()}
 }
 
 func (s *stats) result() any {
-	return map[string]any{"admitted": s.Admitted, "completed": s.Completed, "in_window": s.InWindow, "drained": s.Drained, "errors": s.Errors, "timeouts": s.Timeouts, "error_samples": s.ErrorSamples, "offered": s.Offered, "rejected": s.Rejected, "missed_schedules_over_1ms": s.Missed, "queue_capacity": s.QueueCapacity, "peak_queue": s.PeakQueue, "end_queue": s.EndQueue, "backlog_samples": s.Backlog, "latency": s.Latency.export(), "dispatch_latency": s.Dispatch.export(), "queue_latency": s.Queue.export(), "schedule_lag": s.Schedule.export(), "alloc_bytes": s.AllocBytes, "mallocs": s.Mallocs, "gc": s.GC, "cpu_seconds_including_drain": s.CPUSeconds, "duration_seconds": s.Elapsed, "throughput": float64(s.InWindow) / s.Elapsed, "target_rate": s.Rate, "start": s.Start, "end": s.End, "affinity_checks": s.AffinityChecks, "affinity_error": s.AffinityError}
+	return map[string]any{"admitted": s.Admitted, "completed": s.Completed, "in_window": s.InWindow, "drained": s.Drained, "errors": s.Errors, "timeouts": s.Timeouts, "error_samples": s.ErrorSamples, "offered": s.Offered, "rejected": s.Rejected, "missed_schedules_over_1ms": s.Missed, "queue_capacity": s.QueueCapacity, "peak_queue": s.PeakQueue, "end_queue": s.EndQueue, "backlog_samples": s.Backlog, "latency": s.Latency.export(), "dispatch_latency": s.Dispatch.export(), "queue_latency": s.Queue.export(), "schedule_lag": s.Schedule.export(), "alloc_bytes": s.AllocBytes, "mallocs": s.Mallocs, "gc": s.GC, "cpu_seconds_including_drain": s.CPUSeconds, "duration_seconds": s.Elapsed, "throughput": float64(s.InWindow) / s.Elapsed, "target_rate": s.Rate, "start": s.Start, "end": s.End, "drain_end": s.DrainEnd, "late_arrivals": s.LateArrivals, "queue_rejected": s.QueueRejected, "arrival_deadline_rejected": s.ArrivalDeadlineRejected, "affinity_checks": s.AffinityChecks, "affinity_error": s.AffinityError, "memory_before": s.MemoryBefore, "memory_after": s.MemoryAfter}
 }
 func cpu() float64 {
 	var r syscall.Rusage
@@ -288,6 +304,10 @@ func cpu() float64 {
 	return float64(r.Utime.Sec+r.Stime.Sec) + float64(r.Utime.Usec+r.Stime.Usec)/1e6
 }
 func affinity() error {
+	expected := os.Getenv("GOCQL_BENCH_CPUS")
+	if expected == "" {
+		expected = "8"
+	}
 	files, e := filepath.Glob("/proc/self/task/*/status")
 	if e != nil {
 		return e
@@ -304,7 +324,7 @@ func affinity() error {
 		for _, l := range strings.Split(string(b), "\n") {
 			if strings.HasPrefix(l, "Cpus_allowed_list:") {
 				found = true
-				if strings.TrimSpace(strings.TrimPrefix(l, "Cpus_allowed_list:")) != "8" {
+				if strings.TrimSpace(strings.TrimPrefix(l, "Cpus_allowed_list:")) != expected {
 					return fmt.Errorf("%s: %s", p, l)
 				}
 			}
@@ -322,18 +342,24 @@ type arrival struct {
 }
 
 func phase(workers []worker, scenario string, duration time.Duration, rate float64) (*stats, error) {
+	return phaseWithSleep(workers, scenario, duration, rate, time.Sleep)
+}
+
+func phaseWithSleep(workers []worker, scenario string, duration time.Duration, rate float64, sleep func(time.Duration)) (*stats, error) {
 	s := &stats{Latency: histogram(), Dispatch: histogram(), Queue: histogram(), Schedule: histogram(), Elapsed: duration.Seconds(), Rate: rate}
 	if e := affinity(); e != nil {
 		return nil, e
 	}
 	var before, after runtime.MemStats
 	runtime.ReadMemStats(&before)
+	s.MemoryBefore = memory(&before)
 	c0 := cpu()
 	start := time.Now()
 	end := start.Add(duration)
 	s.Start = start.UTC().Format(time.RFC3339Nano)
 	s.End = end.UTC().Format(time.RFC3339Nano)
-	ctx, cancel := context.WithDeadline(context.Background(), end.Add(15*time.Second))
+	deliveryEnd := end.Add(15 * time.Second)
+	ctx, cancel := context.WithDeadline(context.Background(), deliveryEnd)
 	defer cancel()
 	done := make(chan struct{})
 	monitorDone := make(chan struct{})
@@ -415,13 +441,18 @@ func phase(workers []worker, scenario string, duration time.Duration, rate float
 			scheduled := start.Add(time.Duration(float64(seq) / rate * 1e9))
 			now := time.Now()
 			if now.Before(scheduled) {
-				time.Sleep(scheduled.Sub(now))
+				sleep(scheduled.Sub(now))
 				now = time.Now()
 			}
-			if !now.Before(end) {
+			// Every generated arrival was scheduled inside the measurement
+			// window. Timer wakeup lateness belongs in scheduled latency and
+			// the existing bounded drain, rather than a false queue rejection.
+			late := !now.Before(end)
+			if late && !now.Before(deliveryEnd) {
 				s.mu.Lock()
 				s.Offered += int64(total - seq)
 				s.Rejected += int64(total - seq)
+				s.ArrivalDeadlineRejected += int64(total - seq)
 				s.Missed += int64(total - seq)
 				s.mu.Unlock()
 				break
@@ -429,6 +460,9 @@ func phase(workers []worker, scenario string, duration time.Duration, rate float
 			s.mu.Lock()
 			s.Offered++
 			s.Schedule.record(now.Sub(scheduled))
+			if late {
+				s.LateArrivals++
+			}
 			if now.Sub(scheduled) > time.Millisecond {
 				s.Missed++
 			}
@@ -442,11 +476,12 @@ func phase(workers []worker, scenario string, duration time.Duration, rate float
 			default:
 				s.mu.Lock()
 				s.Rejected++
+				s.QueueRejected++
 				s.mu.Unlock()
 			}
 		}
 		if wait := time.Until(end); wait > 0 {
-			time.Sleep(wait)
+			sleep(wait)
 		}
 		s.EndQueue = len(queue)
 		close(queue)
@@ -455,10 +490,12 @@ func phase(workers []worker, scenario string, duration time.Duration, rate float
 	close(done)
 	<-monitorDone
 	runtime.ReadMemStats(&after)
+	s.MemoryAfter = memory(&after)
 	s.CPUSeconds = cpu() - c0
 	s.AllocBytes = after.TotalAlloc - before.TotalAlloc
 	s.Mallocs = after.Mallocs - before.Mallocs
 	s.GC = uint64(after.NumGC - before.NumGC)
+	s.DrainEnd = time.Now().UTC().Format(time.RFC3339Nano)
 	if e := affinity(); e != nil {
 		s.AffinityError = e.Error()
 	}
@@ -478,14 +515,23 @@ func run() (resultErr error) {
 	rate := flag.Float64("rate", 0, "scheduled arrivals/s; zero means closed loop")
 	output := flag.String("output", "", "JSON path")
 	profilePrefix := flag.String("profile-prefix", "", "write measured-phase CPU and before/after heap profiles with this prefix")
+	synchronizationProfiles := flag.Bool("synchronization-profiles", false, "diagnostic block/mutex sampling; requires profile-prefix")
 	flag.Parse()
-	if runtime.GOMAXPROCS(0) != 1 {
-		return errors.New("GOMAXPROCS must be 1")
+	expectedProcs := 1
+	if value := os.Getenv("GOCQL_BENCH_GOMAXPROCS"); value != "" {
+		var err error
+		expectedProcs, err = strconv.Atoi(value)
+		if err != nil || expectedProcs < 1 {
+			return errors.New("invalid expected GOMAXPROCS")
+		}
+	}
+	if runtime.GOMAXPROCS(0) != expectedProcs {
+		return fmt.Errorf("GOMAXPROCS must be %d", expectedProcs)
 	}
 	if e := affinity(); e != nil {
 		return e
 	}
-	fmt.Fprintln(os.Stderr, "AFFINITY initial: all application threads restricted to CPU 8")
+	fmt.Fprintln(os.Stderr, "AFFINITY initial: checked all application threads")
 	defer func() {
 		resultErr = errors.Join(resultErr, affinity())
 		fmt.Fprintln(os.Stderr, "AFFINITY final: checked all application threads")
@@ -557,17 +603,24 @@ func run() (resultErr error) {
 			return fmt.Errorf("warmup errors: %v", warm.ErrorSamples)
 		}
 	}
-	profiles, e := startProfiles(*profilePrefix)
+	profiles, e := startProfiles(*profilePrefix, *synchronizationProfiles)
 	if e != nil {
 		return e
 	}
-	measured, e := phase(workers, *scenario, *duration, *rate)
-	profileErr := profiles.stop()
-	e = errors.Join(e, profileErr)
-	if e != nil {
-		return e
+	measured, measurementErr := phase(workers, *scenario, *duration, *rate)
+	measurementErr = errors.Join(measurementErr, profiles.stop())
+	if measured == nil {
+		return measurementErr
 	}
 	result := map[string]any{"driver": driverName, "scenario": *scenario, "stream": *stream, "concurrency": *concurrency, "runtime": runtime.Version(), "metadata_refresh_ns": int64(*metadataRefresh), "gomaxprocs": runtime.GOMAXPROCS(0), "evidence": a.Evidence(), "measurement": measured.result()}
+	result["instrumentation"] = map[string]any{"cpu_profiling": *profilePrefix != "", "forced_gc": *profilePrefix != "", "heap_sample_rate": runtime.MemProfileRate}
+	if *synchronizationProfiles {
+		result["instrumentation"].(map[string]any)["block_profile_rate"] = 1
+		result["instrumentation"].(map[string]any)["mutex_profile_fraction"] = 1
+	}
+	if measurementErr != nil {
+		result["measurement_error"] = measurementErr.Error()
+	}
 	if *profilePrefix != "" {
 		result["profiles"] = map[string]any{"prefix": *profilePrefix, "scope": "measured phase including bounded drain; excludes setup, priming, warmup, and heap snapshots", "heap_sample_rate": runtime.MemProfileRate}
 	}
@@ -586,9 +639,9 @@ func run() (resultErr error) {
 		fmt.Println(string(b))
 	}
 	if measured.Errors > 0 {
-		return fmt.Errorf("measured errors: %v", measured.ErrorSamples)
+		return errors.Join(measurementErr, fmt.Errorf("measured errors: %v", measured.ErrorSamples))
 	}
-	return nil
+	return measurementErr
 }
 func main() {
 	if e := run(); e != nil {

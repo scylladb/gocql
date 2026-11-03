@@ -124,7 +124,13 @@ func (c Settings) BuildTypedRequest(req *model.AttemptRequest, stream int) (wire
 	if err := validateTypedValues(req.Values, req.ValueCount, proto); err != nil {
 		return wire.Chain{}, err
 	}
-	e := NewTypedEnvelope()
+	var e *TypedEnvelope
+	storage, _ := req.Framing.(*RequestFrameStorage)
+	if storage != nil {
+		e = &storage.envelope
+	} else {
+		e = NewTypedEnvelope()
+	}
 	Flags := c.Flags & frm.FlagBetaProtocol
 	if req.Trace {
 		Flags |= frm.FlagTracing
@@ -249,7 +255,11 @@ func (c Settings) BuildTypedRequest(req *model.AttemptRequest, stream int) (wire
 			return wire.Chain{}, ErrFrameTooBig
 		}
 		e.check(e.b.PatchUint32(bodyLength, uint32(size)))
-		frame, err = e.Freeze()
+		if storage != nil {
+			frame, err = storage.freeze()
+		} else {
+			frame, err = e.Freeze()
+		}
 	} else {
 		body, freezeErr := e.Freeze()
 		if freezeErr != nil {

@@ -15,7 +15,7 @@ import (
 	"github.com/scylladb/gocql/v2/internal/cqltype"
 )
 
-func testOwnedQuery(t *testing.T) *Query[[]byte, Unit] {
+func testOwnedQuery(t testing.TB) *Query[[]byte, Unit] {
 	t.Helper()
 	s, _ := attachmentSession()
 	typ, err := cqltype.ScalarType(cqltype.TypeBlob)
@@ -194,4 +194,186 @@ func TestQueryIdleRetentionAndBatchCapture(t *testing.T) {
 	if len(q.state.runtime.InternalExecutions) != 0 || len(q.state.runtime.queries) != 1 {
 		t.Fatal("per-operation registration")
 	}
+}
+
+func TestQueryWaitCompletesForItsCapturedGeneration(t *testing.T) {
+	q := testOwnedQuery(t)
+	if err := q.capture(context.Background(), []byte("first")); err != nil {
+		t.Fatal(err)
+	}
+	writer := q.state.owner.InternalWriterLease(q.bound.privateStorage.InternalRequest.InternalValues.Framed)
+	q.state.owner.InternalRelease()
+	waited := make(chan error, 1)
+	go func() { waited <- q.Wait(context.Background()) }()
+	deadline := time.Now().Add(time.Second)
+	for {
+		q.state.mu.Lock()
+		waiting := q.state.done != nil
+		q.state.mu.Unlock()
+		if waiting {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("waiter did not register")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	writer.Release()
+	if err := q.capture(context.Background(), []byte("second")); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-waited:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("old waiter joined the new generation")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
+	defer cancel()
+	if err := q.Wait(ctx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatal("new generation reused a completed notification", err)
+	}
+	writer.Release() // an old lease's repeated release must not drain the new input
+	if err := q.capture(context.Background(), []byte("overlap")); !errors.Is(err, ErrBusy) {
+		t.Fatal(err)
+	}
+	q.state.owner.InternalRelease()
+}
+
+func TestQuerySessionCloseRacesExecutionRegistration(t *testing.T) {
+	for range 30 {
+		q := testOwnedQuery(t)
+		if err := q.capture(context.Background(), []byte("captured")); err != nil {
+			t.Fatal(err)
+		}
+		start, closed := make(chan struct{}), make(chan struct{})
+		go func() { <-start; _ = q.state.runtime.Session.Close(); close(closed) }()
+		close(start)
+		_, cancel, request, err := InternalAdmitExecution(context.Background(), q.state.runtime.Session, &q.bound, Options{})
+		if err == nil {
+			cancel()
+			request.InternalLogical.InternalFinish(Result{}, nil)
+			request.InternalLogical.InternalReleaseInput()
+		} else if !errors.Is(err, ErrClosed) {
+			t.Fatal(err)
+		}
+		q.state.owner.InternalRelease()
+		select {
+		case <-closed:
+		case <-time.After(time.Second):
+			t.Fatal("session close did not join admitted capture")
+		}
+		if err := q.capture(context.Background(), []byte("late")); !errors.Is(err, ErrClosed) {
+			t.Fatal(err)
+		}
+	}
+}
+
+type queryRequestObserver struct{ request func() }
+
+func (o queryRequestObserver) ObserveRequest(RequestEvent) { o.request() }
+func (queryRequestObserver) ObserveAttempt(AttemptEvent)   {}
+
+func TestQueryRequestObserverCanCloseQuery(t *testing.T) {
+	q := testOwnedQuery(t)
+	if err := q.capture(context.Background(), []byte("observer")); err != nil {
+		t.Fatal(err)
+	}
+	_, cancel, request, err := InternalAdmitExecution(context.Background(), q.state.runtime.Session, &q.bound, Options{Observer: queryRequestObserver{request: q.Close}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cancel()
+	logical := request.InternalLogical
+	logical.installStop(func() { logical.finishAndRelease(Result{}, ErrClosed) })
+	q.state.owner.InternalRelease()
+	done := make(chan struct{})
+	go func() { logical.finishAndRelease(Result{}, nil); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("observer deadlocked while closing its query")
+	}
+	ctx, stop := context.WithTimeout(context.Background(), time.Second)
+	defer stop()
+	if err := q.Wait(ctx); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestQuerySessionCloseJoinsRequestObserver(t *testing.T) {
+	q := testOwnedQuery(t)
+	if err := q.capture(context.Background(), []byte("observer")); err != nil {
+		t.Fatal(err)
+	}
+	entered, release := make(chan struct{}), make(chan struct{})
+	_, cancel, request, err := InternalAdmitExecution(context.Background(), q.state.runtime.Session, &q.bound, Options{Observer: queryRequestObserver{request: func() { close(entered); <-release }}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cancel()
+	logical := request.InternalLogical
+	logical.installStop(func() { logical.finishAndRelease(Result{}, ErrClosed) })
+	q.state.owner.InternalRelease()
+	finished := make(chan struct{})
+	go func() { logical.finishAndRelease(Result{}, nil); close(finished) }()
+	<-entered
+	closed := make(chan struct{})
+	go func() { _ = q.state.runtime.Session.Close(); close(closed) }()
+	deadline := time.Now().Add(time.Second)
+	for {
+		q.state.mu.Lock()
+		stopping := q.state.closed
+		q.state.mu.Unlock()
+		if stopping {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("session did not stop query admission")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	select {
+	case <-closed:
+		t.Fatal("session close bypassed blocked request observer")
+	case <-time.After(time.Millisecond):
+	}
+	close(release)
+	for _, done := range []<-chan struct{}{finished, closed} {
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+			t.Fatal("observer did not drain")
+		}
+	}
+}
+
+func TestQueryGenerationAccessDelaysStorageRetirement(t *testing.T) {
+	q := testOwnedQuery(t)
+	if err := q.capture(context.Background(), []byte("pinned")); err != nil {
+		t.Fatal(err)
+	}
+	cursor := queryCursor{query: &q.state, generation: q.state.generation}
+	if !cursor.acquire() {
+		t.Fatal("could not pin generation")
+	}
+	q.state.owner.InternalRelease()
+	if err := q.capture(context.Background(), []byte("overlap")); !errors.Is(err, ErrBusy) {
+		t.Fatal("execution reused while cursor method remained active", err)
+	}
+	wait, cancel := context.WithTimeout(context.Background(), time.Millisecond)
+	defer cancel()
+	if err := q.Wait(wait); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatal(err)
+	}
+	cursor.release()
+	if err := q.capture(context.Background(), []byte("new")); err != nil {
+		t.Fatal(err)
+	}
+	if cursor.acquire() {
+		t.Fatal("old generation acquired reused storage")
+	}
+	q.state.owner.InternalRelease()
 }

@@ -30,7 +30,7 @@ import (
 )
 
 type RowStreamStorage[R any] struct {
-	cursor              queryCursor
+	state               PageState
 	pageBuffered        bool
 	bufferedPage        *responsePage
 	bufferedBody        *wire.Stream
@@ -47,6 +47,8 @@ type RowStreamStorage[R any] struct {
 	InternalCtx         context.Context
 	InternalCancel      context.CancelFunc
 	stop                func() bool
+	callbackOwner       *inputOwner
+	pendingFinish       *InternalLogicalExecution
 	InternalSession     *implCluster.Session
 	InternalRequest     *InternalExecutionRequest
 	limits              StreamLimits
@@ -65,4 +67,9 @@ type RowStreamStorage[R any] struct {
 	cleaned         bool
 }
 
-func RowStreamData[R any](v *RowStream[R]) *RowStreamStorage[R] { return &v.privateStorage }
+func RowStreamData[R any](v *RowStream[R]) *RowStreamStorage[R] {
+	if v.privateStorage.RowStreamStorage == nil {
+		v.privateStorage.RowStreamStorage = new(RowStreamStorage[R])
+	}
+	return v.privateStorage.RowStreamStorage
+}

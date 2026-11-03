@@ -12,11 +12,11 @@ import (
 )
 
 type RowsStorage[R any] struct {
-	cursor          queryCursor
 	prefetchJobs    chan InternalPrefetchJob
 	pendingRelease  func()
 	mu              sync.Mutex
 	plans           *InternalResultPlanCache[R]
+	results         *queryResultStorage[R]
 	InternalHistory pagingHistory
 	nextErr         error
 	rejectColumns   bool
@@ -36,4 +36,9 @@ type RowsStorage[R any] struct {
 	InternalRelease func()
 }
 
-func RowsData[R any](v *Rows[R]) *RowsStorage[R] { return &v.privateStorage }
+func RowsData[R any](v *Rows[R]) *RowsStorage[R] {
+	if v.privateStorage.RowsStorage == nil {
+		v.privateStorage.RowsStorage = new(RowsStorage[R])
+	}
+	return v.privateStorage.RowsStorage
+}

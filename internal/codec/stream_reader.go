@@ -506,6 +506,11 @@ func ReadStreamColumn[T any](r *StreamRowReader, plan StreamValuePlan[T], dst *T
 	if plan == nil || dst == nil {
 		return cqltype.TypeValidation("stream column", "nil plan or destination")
 	}
+	if r != nil && r.scope != nil && r.capture == nil && r.scope.BufferedCells() {
+		if buffered, ok := plan.(bufferedStreamPlan[T]); ok && buffered.bufferedCapable() {
+			return decodeBufferedColumn(r, buffered, dst)
+		}
+	}
 	return r.column(func(value *StreamValueReader) error { return plan.DecodeInto(value, dst) })
 }
 func (r *StreamRowReader) SkipColumn() error {

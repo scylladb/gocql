@@ -7,6 +7,7 @@ type BoundStorage[R any] struct {
 	InternalRequest InternalExecutionRequest
 	InternalRows    RowDecoder[R]
 	plans           *InternalResultPlanCache[R]
+	results         *queryResultStorage[R]
 }
 
 func BoundData[R any](v *Bound[R]) *BoundStorage[R] { return &v.privateStorage }

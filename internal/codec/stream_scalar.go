@@ -20,6 +20,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	cqltype "github.com/scylladb/gocql/v2/internal/cqltype"
+	"github.com/scylladb/gocql/v2/internal/wire"
 	"io"
 	"math"
 	"net/netip"
@@ -32,10 +33,12 @@ import (
 type streamScalarCodec[T any] struct {
 	kind             cqltype.Type
 	decode           func(*StreamValueReader) (T, error)
+	buffered         func(wire.Chain, *streamDecodeState) (T, error)
 	minimum, maximum int64
 }
 type streamScalarPlan[T any] struct {
 	decode           func(*StreamValueReader) (T, error)
+	buffered         func(wire.Chain, *streamDecodeState) (T, error)
 	typ              cqltype.DataType
 	minimum, maximum int64
 }
@@ -44,7 +47,7 @@ func (c streamScalarCodec[T]) Compile(t cqltype.DataType) (StreamValuePlan[T], e
 	if err := checkScalarType(t, c.kind, 0); err != nil {
 		return nil, err
 	}
-	return streamScalarPlan[T]{decode: c.decode, typ: t, minimum: c.minimum, maximum: c.maximum}, nil
+	return streamScalarPlan[T]{decode: c.decode, typ: t, minimum: c.minimum, maximum: c.maximum, buffered: c.buffered}, nil
 }
 func (p streamScalarPlan[T]) Reset(dst *T) {
 	if dst != nil {
@@ -77,7 +80,14 @@ func (p streamScalarPlan[T]) DecodeInto(r *StreamValueReader, dst *T) error {
 	return nil
 }
 func streamFixed[T any](kind cqltype.Type, size int64, convert func([]byte) (T, error)) StreamDecoder[T] {
-	return streamScalarCodec[T]{kind: kind, minimum: size, maximum: size, decode: func(r *StreamValueReader) (T, error) {
+	return streamScalarCodec[T]{kind: kind, minimum: size, maximum: size, buffered: func(body wire.Chain, shared *streamDecodeState) (T, error) {
+		bytes := shared.scalar[:int(size)]
+		if _, err := body.CopyTo(bytes); err != nil {
+			var zero T
+			return zero, err
+		}
+		return convert(bytes)
+	}, decode: func(r *StreamValueReader) (T, error) {
 		bytes := r.shared.scalar[:int(size)]
 		if err := r.readFull(bytes); err != nil {
 			var zero T
@@ -155,7 +165,7 @@ var (
 		}
 		return TimeOfDay(v), nil
 	})
-	StreamDuration StreamDecoder[cqltype.Duration] = streamScalarCodec[cqltype.Duration]{kind: cqltype.TypeDuration, minimum: 3, maximum: 27, decode: streamReadDuration}
+	StreamDuration StreamDecoder[cqltype.Duration] = streamScalarCodec[cqltype.Duration]{kind: cqltype.TypeDuration, minimum: 3, maximum: 27, decode: streamReadDuration, buffered: bufferedDuration}
 	StreamUUID                                     = streamFixed(cqltype.TypeUUID, 16, func(b []byte) (cqltype.UUID, error) { var v cqltype.UUID; copy(v[:], b); return v, nil })
 	StreamTimeUUID                                 = streamFixed(cqltype.TypeTimeUUID, 16, func(b []byte) (TimeUUID, error) {
 		var v TimeUUID
@@ -165,7 +175,18 @@ var (
 		}
 		return v, nil
 	})
-	StreamInet StreamDecoder[netip.Addr] = streamScalarCodec[netip.Addr]{kind: cqltype.TypeInet, minimum: 4, maximum: 16, decode: func(r *StreamValueReader) (netip.Addr, error) {
+	StreamInet StreamDecoder[netip.Addr] = streamScalarCodec[netip.Addr]{kind: cqltype.TypeInet, minimum: 4, maximum: 16, buffered: func(body wire.Chain, shared *streamDecodeState) (netip.Addr, error) {
+		n := body.Len()
+		if n != 4 && n != 16 {
+			return netip.Addr{}, cqltype.TypeValidation("inet", "requires 4 or 16 bytes")
+		}
+		bytes := shared.scalar[:int(n)]
+		if _, err := body.CopyTo(bytes); err != nil {
+			return netip.Addr{}, err
+		}
+		value, _ := netip.AddrFromSlice(bytes)
+		return value, nil
+	}, decode: func(r *StreamValueReader) (netip.Addr, error) {
 		n := r.Remaining()
 		if n != 4 && n != 16 {
 			return netip.Addr{}, cqltype.TypeValidation("inet", "requires 4 or 16 bytes")

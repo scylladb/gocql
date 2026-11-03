@@ -449,34 +449,59 @@ type InternalLogicalExecution struct {
 	request        *InternalExecutionRequest
 }
 
+func (l *InternalLogicalExecution) recordFinish(err error) {
+	rt := InternalRuntimeFor(l.session)
+	rt.inflight.Add(-1)
+	implCluster.InternalSessionRecordV2Latency(l.session, time.Since(l.started))
+	if err != nil {
+		rt.errors.Add(1)
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		rt.cancelled.Add(1)
+	}
+}
+
 func (l *InternalLogicalExecution) InternalFinish(result Result, err error) {
 	if l == nil {
 		return
 	}
+	if l.observer == nil {
+		l.once.Do(func() { l.recordFinish(err) })
+		return
+	}
+	l.finishObserved(result, err)
+}
+
+func (l *InternalLogicalExecution) finishObserved(result Result, err error) {
+	var owner *inputOwner
+	var event RequestEvent
 	l.once.Do(func() {
-		rt := InternalRuntimeFor(l.session)
-		rt.inflight.Add(-1)
-		implCluster.InternalSessionRecordV2Latency(l.session, time.Since(l.started))
-		if err != nil {
-			rt.errors.Add(1)
+		l.recordFinish(err)
+		// Hold input through the application callback even if shutdown releases
+		// the execution's own reference. The callback runs after Once unlocks.
+		owner = l.request.InternalOwner
+		owner.InternalRetain()
+		perfAdd(0, 1)
+		event = RequestEvent{ID: l.id, Statement: l.request.InternalStatement, Parameters: l.request.InternalValues.Columns, Routing: l.request.InternalRouting, Result: cloneResult(result), Err: err}
+		if l.request.InternalPrepared != nil {
+			event.Parameters = l.request.InternalPrepared.InternalParameters
 		}
-		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			rt.cancelled.Add(1)
-		}
-		if l.observer != nil {
-			perfAdd(0, 1)
-			event := RequestEvent{ID: l.id, Statement: l.request.InternalStatement, Parameters: l.request.InternalValues.Columns, Routing: l.request.InternalRouting, Result: cloneResult(result), Err: err}
-			if l.request.InternalPrepared != nil {
-				event.Parameters = l.request.InternalPrepared.InternalParameters
+		if l.request.batch != nil {
+			for _, entry := range l.request.batch.items {
+				event.BatchStatements = append(event.BatchStatements, entry.InternalStatement)
 			}
-			if l.request.batch != nil {
-				for _, entry := range l.request.batch.items {
-					event.BatchStatements = append(event.BatchStatements, entry.InternalStatement)
-				}
-			}
-			implCluster.InternalSessionObserveSafely(l.session, func() { l.observer.ObserveRequest(event) })
 		}
 	})
+	if owner == nil {
+		return
+	}
+	defer owner.InternalRelease()
+	implCluster.InternalSessionObserveSafely(l.session, func() { l.observer.ObserveRequest(event) })
+}
+
+func (l *InternalLogicalExecution) finishAndRelease(result Result, err error) {
+	l.InternalFinish(result, err)
+	l.InternalReleaseInput()
 }
 
 func InternalAdmitExecution[R any](ctx context.Context, s *implCluster.Session, b *Bound[R], options Options) (context.Context, context.CancelFunc, *InternalExecutionRequest, error) {
@@ -548,7 +573,11 @@ func InternalAdmitExecution[R any](ctx context.Context, s *implCluster.Session, 
 	} else {
 		logical = new(InternalLogicalExecution)
 	}
-	*logical = InternalLogicalExecution{lifetime: InternalExecutionLifetime{cancel: cancel, done: make(chan struct{})}, id: rt.requestID.Add(1), started: time.Now(), observer: observer, session: s, request: request}
+	var done chan struct{}
+	if request.query == nil {
+		done = make(chan struct{})
+	}
+	*logical = InternalLogicalExecution{lifetime: InternalExecutionLifetime{cancel: cancel, done: done}, id: rt.requestID.Add(1), started: time.Now(), observer: observer, session: s, request: request}
 	request.InternalLogical = logical
 	if err := InternalRuntimeFor(s).registerExecution(request.InternalLogical, request.InternalOwner); err != nil {
 		cancel()
@@ -570,8 +599,7 @@ func Run[R any](ctx context.Context, s *implCluster.Session, b *Bound[R], option
 	response, err := InternalRuntimeFor(s).executePage(runctx, request, StartPage())
 	if err != nil {
 		cancel()
-		request.InternalLogical.InternalFinish(InternalExecutionErrorResult(err), err)
-		request.InternalLogical.InternalReleaseInput()
+		request.InternalLogical.finishAndRelease(InternalExecutionErrorResult(err), err)
 		return nil, err
 	}
 	return newRowsFromResponse(runctx, cancel, s, b, request, response)
@@ -581,42 +609,45 @@ func newRowsFromResponse[R any](runctx context.Context, cancel context.CancelFun
 	if plans == nil {
 		plans = &InternalResultPlanCache[R]{}
 	}
-	page, err := InternalNewPageWithPlans(response, b.privateStorage.InternalRows, plans, nil)
+	page, err := newPageWithStorage(response, b.privateStorage.InternalRows, plans, nil, b.privateStorage.results, true)
 	if err != nil {
 		cancel()
-		request.InternalLogical.InternalFinish(response.Result, err)
-		request.InternalLogical.InternalReleaseInput()
+		request.InternalLogical.finishAndRelease(response.Result, err)
 		return nil, err
 	}
-	rows := func() *Rows[R] {
-		opaqueStorageValue := new(Rows[R])
-		opaqueStorageValue.privateStorage.cursor = executionCursor(request)
-		opaqueStorageValue.privateStorage.InternalCtx = runctx
-		opaqueStorageValue.privateStorage.cancel = cancel
-		opaqueStorageValue.privateStorage.session = s
-		opaqueStorageValue.privateStorage.InternalRequest = request
-		opaqueStorageValue.privateStorage.decoder = b.privateStorage.InternalRows
-		opaqueStorageValue.privateStorage.InternalPage = page
-		opaqueStorageValue.privateStorage.info = response.Result
-		opaqueStorageValue.privateStorage.plans = plans
-		opaqueStorageValue.privateStorage.InternalHistory = pagingHistory{InternalMaxCount: InternalRuntimeFor(s).InternalConfig.Limits.MaxPagingStates, InternalMaxBytes: InternalRuntimeFor(s).InternalConfig.Limits.MaxPagingStateBytes}
-		return opaqueStorageValue
-	}()
+	var rows *Rows[R]
+	if storage := b.privateStorage.results; storage != nil {
+		rows = new(Rows[R])
+		rows.privateStorage.RowsStorage = &storage.rows
+		rows.privateStorage.endpoint = new(rowsTerminal)
+		rows.privateStorage.results = storage
+	} else {
+		holder := new(struct {
+			handle Rows[R]
+			state  RowsStorage[R]
+		})
+		rows = &holder.handle
+		rows.privateStorage.RowsStorage = &holder.state
+		if request.query != nil {
+			rows.privateStorage.endpoint = new(rowsTerminal)
+		}
+	}
+	rows.privateStorage.cursor = executionCursor(request)
+	rows.privateStorage.InternalCtx = runctx
+	rows.privateStorage.cancel = cancel
+	rows.privateStorage.session = s
+	rows.privateStorage.InternalRequest = request
+	rows.privateStorage.decoder = b.privateStorage.InternalRows
+	rows.privateStorage.InternalPage = page
+	rows.privateStorage.info = response.Result
+	rows.privateStorage.plans = plans
+	rows.privateStorage.InternalHistory = pagingHistory{InternalMaxCount: InternalRuntimeFor(s).InternalConfig.Limits.MaxPagingStates, InternalMaxBytes: InternalRuntimeFor(s).InternalConfig.Limits.MaxPagingStateBytes}
 	rows.startPrefetch()
 	rows.privateStorage.InternalRelease = func() {
-		request.InternalLogical.InternalFinish(rows.privateStorage.info, rows.privateStorage.err)
-		request.InternalLogical.InternalReleaseInput()
+		request.InternalLogical.finishAndRelease(rows.privateStorage.info, rows.privateStorage.err)
 	}
-	request.InternalLogical.installStop(func() {
-		rows.privateStorage.mu.Lock()
-		if rows.privateStorage.future != nil {
-			rows.privateStorage.future.InternalClose()
-			rows.privateStorage.future = nil
-		}
-		rows.privateStorage.mu.Unlock()
-		request.InternalLogical.InternalFinish(rows.Info(), ErrClosed)
-		request.InternalLogical.InternalReleaseInput()
-	})
+	logical := request.InternalLogical
+	request.InternalLogical.installStop(func() { rows.stopExecution(logical) })
 	return rows, nil
 }
 func RunPage[R any](ctx context.Context, s *implCluster.Session, b *Bound[R], state PageState, options Options) (*Page[R], error) {
@@ -645,27 +676,24 @@ func InternalRunSinglePage[R any](ctx context.Context, s *implCluster.Session, b
 	response, err := InternalRuntimeFor(s).executePage(runctx, request, state)
 	if err != nil {
 		cancel()
-		request.InternalLogical.InternalFinish(InternalExecutionErrorResult(err), err)
-		request.InternalLogical.InternalReleaseInput()
+		request.InternalLogical.finishAndRelease(InternalExecutionErrorResult(err), err)
 		return nil, err
 	}
 	if unpaged && response.State.More() {
 		response.Owner.Release()
 		err = typeValidation("unpaged response", "server returned continuation")
 		cancel()
-		request.InternalLogical.InternalFinish(response.Result, err)
-		request.InternalLogical.InternalReleaseInput()
+		request.InternalLogical.finishAndRelease(response.Result, err)
 		return nil, err
 	}
 	plans := b.privateStorage.plans
 	if plans == nil {
 		plans = &InternalResultPlanCache[R]{}
 	}
-	page, err := InternalNewPageWithPlans(response, b.privateStorage.InternalRows, plans, nil)
+	page, err := newPageWithStorage(response, b.privateStorage.InternalRows, plans, nil, b.privateStorage.results, false)
 	if err != nil {
 		cancel()
-		request.InternalLogical.InternalFinish(response.Result, err)
-		request.InternalLogical.InternalReleaseInput()
+		request.InternalLogical.finishAndRelease(response.Result, err)
 		return nil, err
 	}
 	page.privateStorage.InternalCtx = runctx
@@ -674,13 +702,10 @@ func InternalRunSinglePage[R any](ctx context.Context, s *implCluster.Session, b
 	page.privateStorage.session = s
 	page.privateStorage.InternalRelease = func() {
 		cancel()
-		request.InternalLogical.InternalFinish(response.Result, page.privateStorage.err)
-		request.InternalLogical.InternalReleaseInput()
+		request.InternalLogical.finishAndRelease(response.Result, page.privateStorage.err)
 	}
-	request.InternalLogical.installStop(func() {
-		request.InternalLogical.InternalFinish(response.Result, ErrClosed)
-		request.InternalLogical.InternalReleaseInput()
-	})
+	logical := request.InternalLogical
+	request.InternalLogical.installStop(func() { page.stopExecution(logical) })
 	return page, nil
 }
 func Exec[R any](ctx context.Context, s *implCluster.Session, b *Bound[R], options Options) (Result, error) {
@@ -695,8 +720,7 @@ func Exec[R any](ctx context.Context, s *implCluster.Session, b *Bound[R], optio
 	if err != nil {
 		cancel()
 		result := InternalExecutionErrorResult(err)
-		request.InternalLogical.InternalFinish(result, err)
-		request.InternalLogical.InternalReleaseInput()
+		request.InternalLogical.finishAndRelease(result, err)
 		return result, err
 	}
 	// Acknowledgements have no row framing or continuation. Avoid constructing
@@ -705,8 +729,7 @@ func Exec[R any](ctx context.Context, s *implCluster.Session, b *Bound[R], optio
 		result := response.Result
 		response.Owner.Release()
 		cancel()
-		request.InternalLogical.InternalFinish(result, nil)
-		request.InternalLogical.InternalReleaseInput()
+		request.InternalLogical.finishAndRelease(result, nil)
 		return result, nil
 	}
 	// Unexpected row results retain full draining, framing validation and the
@@ -1013,6 +1036,9 @@ func (s *InternalSessionRuntime) executeTypedAttempt(ctx context.Context, conn *
 		return nil, typeValidation("now in seconds", "requires protocol v5")
 	}
 	wireRequest := &attemptRequest{TabletVersionBlock: request.tabletVersionBlock, Statement: request.InternalStatement, Values: request.InternalValues.Framed, ValueCount: len(request.InternalValues.Cells), Consistency: consistency, PageSize: int(request.InternalOptions.InternalProfile.PageSize), Keyspace: request.keyspace, Trace: opts.Trace, Payload: opts.CustomPayload}
+	if canExecuteDirect(request) && conn.InternalVersion == 4 && conn.InternalCompressor == nil {
+		wireRequest.Framing = &request.query.framing
+	}
 	if conn.InternalVersion < 5 {
 		wireRequest.Keyspace = ""
 	}

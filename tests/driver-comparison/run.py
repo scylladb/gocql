@@ -35,27 +35,38 @@ def sha(path): return hashlib.sha256(path.read_bytes()).hexdigest()
 def now():return datetime.datetime.now(datetime.timezone.utc).isoformat()
 def cv(values):return statistics.stdev(values)/statistics.mean(values) if statistics.mean(values) else math.inf
 
-def client(out,hosts,driver,mode,scenario='read',stream=False,**kw):
-    args=['taskset','-c','8','env','GOMAXPROCS=1',str(CACHE/driver),'-hosts',hosts,'-mode',mode,'-scenario',scenario,f'-stream={str(stream).lower()}']
+def client(out,hosts,driver,mode,scenario='read',stream=False,cpus='8',gomaxprocs=1,**kw):
+    args=['taskset','-c',cpus,'env',f'GOMAXPROCS={gomaxprocs}',f'GOCQL_BENCH_CPUS={cpus}',f'GOCQL_BENCH_GOMAXPROCS={gomaxprocs}',str(CACHE/driver),'-hosts',hosts,'-mode',mode,'-scenario',scenario,f'-stream={str(stream).lower()}']
     for k,v in kw.items():
         if isinstance(v,bool): args.append('-'+k+'='+str(v).lower())
         else: args += ['-'+k,str(v)]
     log=out.with_suffix(out.suffix+'.log')
     with log.open('w') as f:
         p=subprocess.Popen(args,stdout=f,stderr=subprocess.STDOUT)
-        start=time.monotonic();checks=0;tids=set();masks=set();error=None
+        start=time.monotonic();checks=0;tids=set();masks=set();error=None;resources=[]
         try:
             while p.poll() is None:
                 try: is_client=Path(f'/proc/{p.pid}/exe').resolve().name==driver
                 except FileNotFoundError: is_client=False
                 if not is_client:
                     time.sleep(.01);continue
+                if checks % 5 == 0:
+                    try:
+                        fields = {}
+                        for line in Path(f'/proc/{p.pid}/status').read_text().splitlines():
+                            name, _, value = line.partition(':')
+                            if name in ('VmRSS', 'VmHWM', 'VmSize', 'Threads'):
+                                fields[name] = value.strip()
+                        resources.append({'time': now(), **fields,
+                                          'file_descriptors': len(list(Path(f'/proc/{p.pid}/fd').iterdir()))})
+                    except FileNotFoundError:
+                        pass
                 for status in Path(f'/proc/{p.pid}/task').glob('*/status'):
                     try:
                         for line in status.read_text().splitlines():
                             if line.startswith('Cpus_allowed_list:'):
                                 mask=line.split(':',1)[1].strip();masks.add(mask);tids.add(status.parent.name)
-                                if mask!='8':error=f'{status}: {mask}'
+                                if mask!=cpus:error=f'{status}: {mask}'
                     except FileNotFoundError:pass
                 checks+=1
                 if error: p.terminate();raise RuntimeError(error)
@@ -66,7 +77,7 @@ def client(out,hosts,driver,mode,scenario='read',stream=False,**kw):
                 p.terminate()
                 try:p.wait(timeout=15)
                 except subprocess.TimeoutExpired:p.kill();p.wait()
-        write(out.with_suffix(out.suffix+'.process.json'),{'args':args,'pid':p.pid,'returncode':p.returncode,'elapsed':time.monotonic()-start,'checks':checks,'tids':sorted(tids),'masks':sorted(masks),'affinity_error':error})
+            write(out.with_suffix(out.suffix+'.process.json'),{'args':args,'pid':p.pid,'returncode':p.returncode,'elapsed':time.monotonic()-start,'checks':checks,'tids':sorted(tids),'masks':sorted(masks),'affinity_error':error,'resources':resources,'runtime_environment':{name:os.environ.get(name) for name in ('GODEBUG','GOGC','GOMEMLIMIT','GOEXPERIMENT')}})
     return p.returncode
 
 def getmetrics(node):

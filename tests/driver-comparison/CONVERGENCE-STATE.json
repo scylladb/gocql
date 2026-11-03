@@ -1,0 +1,394 @@
+{
+  "status": "parked at explicit user request; optimization and qualification remain incomplete",
+  "goal_achieved": false,
+  "converged": false,
+  "consecutive_complete_passes_without_improvement": 0,
+  "branch": "optimize-convergence-20261102",
+  "references": {
+    "master": "1ceaac8172bda26e8b8d701ac356982d33729b27",
+    "parked": "f363e371832e7d8260e2858fba867fe591f655a4",
+    "original-v2": "7e1ad6f718929342200c5b9bc126e5a5e7fc7d1c"
+  },
+  "retained_production_candidate": "f363e371832e7d8260e2858fba867fe591f655a4",
+  "retained_optimizations": 0,
+  "master_is_acceptance_threshold": false,
+  "policy": "CONVERGENCE.md",
+  "runner": "redesign_compare.py",
+  "completed": [
+    "New branch; parked refs, archives and datasets preserved",
+    "Measurement harness extended for unprofiled comparisons, separate diagnostics, frozen rates, balanced pairs, confidence intervals, outcomes and repeat policy",
+    "Explicit dedicated-host Scylla gate and configurable CPU topology",
+    "Exact parked-tree maximum measurements across five canonical workloads",
+    "A1 focused patch, allocation counters, compiler reports, before/after admission profiles, canonical screen and rejection receipt",
+    "Driver restored after screening rejection; benchmark fixture retained",
+    "Correctness/race/vet/compile checks and Python harness tests"
+  ],
+  "experiments": {
+    "A1": {
+      "decision": "rejected at local maximum-throughput screen",
+      "report": "results/convergence-admission-20261102/REPORT.md",
+      "receipt": "results/convergence-admission-20261102/decision.json",
+      "screen": "results/convergence-admission-screen-20261102",
+      "default_adopted": false
+    },
+    "A2": {
+      "status": "complete",
+      "directory": "results/convergence-a2-20261102T194630Z",
+      "default_adopted": false,
+      "decision": "rejected at maximum-throughput screening",
+      "receipt": "results/convergence-a2-20261102T194630Z/decision.json"
+    },
+    "B": {
+      "status": "Rejected after six valid pairs confirmed increased buffered-partition CPU/op.",
+      "frozen_manifest": ".codex-cache/driver-comparison/convergence-b-20261102T201200Z/manifest.json",
+      "screen": "results/convergence-b-screen-20261102T201200Z",
+      "profile": "results/convergence-b-profile-20261102T201200Z",
+      "confirmation": "results/convergence-b-confirm-20261102T215000Z",
+      "default_adopted": false,
+      "focused_allocations_op": 7,
+      "focused_bytes_op": 1136,
+      "emulator_maximum_confirmation_observations": 60,
+      "emulator_remaining": "Resume matched-rate and historical groups after local measurements; completed maxima retained without replacement.",
+      "corrected_scylla_screen": "results/convergence-arrival-correction-20261103T004400Z/b-screen",
+      "corrected_confirmation_queued": "results/convergence-arrival-correction-20261103T004400Z/b-confirm",
+      "initial_local_screen": "results/convergence-local-scylla-20261102T233500Z/b-screen",
+      "initial_local_screen_outcome": "Interrupted and preserved after finding false arrival-window-boundary rejection; maximum observations remain diagnostic evidence; corrected comparisons use fresh directories.",
+      "local_screen": "results/convergence-storage-calibration-20261103T012500Z/b-screen-long-baseline",
+      "local_screen_outcome": "Rejected screen; six-pair confirmation prioritized to resolve small throughput/tail signals and server variability.",
+      "local_confirmation": "results/convergence-storage-calibration-20261103T012500Z/b-confirm-resumed-throughput-risk",
+      "completed_local_group": {
+        "case": "paged-stream:w4:70",
+        "pairs": 6,
+        "errors": 0,
+        "p99_ratio": 0.972421905430876,
+        "p99_ci95": [
+          0.9184085474953874,
+          1.0215477210398036
+        ],
+        "allocations_ratio": 0.9667726694914368,
+        "cpu_ratio": 1.0058537698162906,
+        "decision": "Confirmed allocation benefit; CPU/p99 inconclusive; no adoption from a partial matrix."
+      },
+      "decision": "results/convergence-storage-calibration-20261103T012500Z/b-confirm-resumed-throughput-risk/decision.json"
+    },
+    "C": {
+      "status": "prototype tested; not adopted",
+      "directory": "results/convergence-c-20261102T213800Z"
+    },
+    "D": {
+      "status": "pointer and isolated value variants tested; not adopted",
+      "directory": "results/convergence-d-20261102T220000Z",
+      "value_directory": "results/convergence-d-value-20261102T231500Z",
+      "value_latest_manifest": ".codex-cache/driver-comparison/convergence-fixed-value-20261103T005400Z/manifest.json"
+    },
+    "E": {
+      "status": "scatter and isolated contiguous variants tested; not adopted",
+      "directory": "results/convergence-e-20261102T225000Z"
+    },
+    "F": {
+      "status": "buffered scalar and bounded immutable validation cache tested; not adopted",
+      "directory": "results/convergence-f-20261102T230000Z",
+      "correctness_update": "Buffered decoder errors poison the wire envelope; fragmented Inet, NaN and signed-zero coverage added; focused codec/wire race tests passed.",
+      "opaque_plan_policy": "Preserve one current opaque compiled plan, matching existing behavior; eight-shape cache stores only bounded builtin plans plus immutable validation.",
+      "latest_frozen_manifest": ".codex-cache/driver-comparison/convergence-fixed-f-20261103T005400Z/manifest.json"
+    },
+    "G": {
+      "status": "span-list writer prototype tested; not adopted",
+      "directory": "results/convergence-g-20261102T233500Z",
+      "latest_frozen_manifest": ".codex-cache/driver-comparison/convergence-fixed-g-20261103T005400Z/manifest.json",
+      "scratch_experiment": {
+        "source": ".codex-cache/driver-comparison/convergence-stream-scratch-source-20261103T010000Z",
+        "directory": "results/convergence-stream-scratch-20261103T010000Z",
+        "adopted": false,
+        "status": "Focused/full unit race and vet passed; 50 ownership repetitions passed; 25 allocations/partition removed diagnostically; 30-minute mixed-memory test passed; not adopted.",
+        "memory_30m": {
+          "passed": true,
+          "operations": 498784,
+          "report": "results/convergence-stream-scratch-20261103T010000Z/mixed-memory-summary.json"
+        }
+      },
+      "void_response": {
+        "directory": "results/convergence-void-response-20261103T031000Z",
+        "manifest": "/extra/scylladb/gocql/.codex-cache/driver-comparison/convergence-void-response-20261103T033000Z/manifest.json",
+        "adopted": false,
+        "write_fixture_allocations": 20,
+        "write_fixture_bytes": 1344,
+        "live_correctness": {
+          "v4": "passed",
+          "v5": "passed",
+          "directory": "results/convergence-void-response-20261103T031000Z"
+        },
+        "canonical_write_screen": "18 allocs/op and 1314 bytes/op; about 5.3% CPU/op reduction relative to preceding parameter-scratch prototype; throughput inconclusive; not adopted"
+      }
+    },
+    "A1-revisit": {
+      "source": ".codex-cache/driver-comparison/convergence-admission-revisit-source-20261103T014900Z",
+      "directory": "results/convergence-admission-revisit-20261103T014900Z",
+      "adopted": false,
+      "diagnostic": "One fewer allocation, 704 bytes/op saved on top of scratch prototype; execution races passed; canonical confirmation pending"
+    },
+    "A2-revisit": {
+      "directory": "results/convergence-param-scratch-20261103T025800Z",
+      "adopted": false,
+      "status": "Focused races passed; write fixture removes four allocations/320 bytes per operation; no adoption"
+    },
+    "F-independent-scalars": {
+      "directory": "results/convergence-scalar-isolated-20261103T042100Z",
+      "source": "/extra/scylladb/gocql/.codex-cache/driver-comparison/convergence-scalar-isolated-source-20261103T042100Z",
+      "manifest": "/extra/scylladb/gocql/.codex-cache/driver-comparison/convergence-scalar-isolated-20261103T042200Z/manifest.json",
+      "status": "Rejected at screening, including candidate-only delivery failure; no default adoption.",
+      "adopted": false,
+      "queued_screen_supervisor": 3751146,
+      "queue_policy": "Starts only after B ends in a confirmed local regression; no concurrent backend load. Otherwise awaits retention ordering decision.",
+      "decision": "results/convergence-scalar-isolated-20261103T042100Z/screen/decision.json",
+      "default_adopted": false
+    },
+    "C-independent": {
+      "source": "/extra/scylladb/gocql/.codex-cache/driver-comparison/convergence-cancel-isolated-source-20261103T104400Z",
+      "directory": "results/convergence-cancel-isolated-20261103T104400Z",
+      "status": "16 read maximum observations preserved; reference-side critical disk write rejection blocked the screen. No adoption.",
+      "adopted": false
+    },
+    "E-independent": {
+      "directory": "results/convergence-frame-isolated-20261103T104900Z",
+      "status": "Parked during maximum screen after explicit user request; completed observations and interrupted attempt preserved.",
+      "adopted": false,
+      "manifest": "/extra/scylladb/gocql/.codex-cache/driver-comparison/convergence-frame-isolated-20261103T105300Z/manifest.json",
+      "profile": "results/convergence-frame-isolated-20261103T104900Z/profile",
+      "screen": "results/convergence-frame-isolated-20261103T104900Z/screen"
+    }
+  },
+  "invalid_baselines": [
+    "results/convergence-master-baseline-20261102",
+    "results/convergence-master-baseline-isolated-20261102"
+  ],
+  "frozen_matched_rates": "results/convergence-master-baseline-20261102T194630Z/frozen-rates.json",
+  "emulator_noise": {
+    "master_point_throughput_cv": 0.1079874236558713,
+    "stable_limit": 0.05,
+    "qualification": "New 15-observation master baseline healthy; matched rates frozen without changing earlier failures",
+    "screen_pairs": 2,
+    "resolution_note": "Workload-specific CIs retained; not an isolated-host noise-floor estimate."
+  },
+  "real_qualification": {
+    "qualified": false,
+    "prerequisite": "Local testing authorized by user; retain compiler/image/RF3/shard/memory/connection controls and all failed historical rate observations.",
+    "historical_v5": "Historical Scylla image limitation remains; compatible Cassandra 5 live v5 now passed. Final retained driver must rerun.",
+    "dedicated_host_required": false,
+    "local_test_directory": "results/convergence-storage-calibration-20261103T012500Z",
+    "client_cpus": "8",
+    "client_gomaxprocs": 1,
+    "network_delay_one_way_us": 200,
+    "local_receipt_script": "local_cluster_receipt.py",
+    "dedicated_host_claim": false,
+    "cluster_running": false,
+    "delay_verified": true,
+    "dataset_snapshots": true,
+    "live_client_audit": "results/convergence-local-scylla-20261102T233500Z/client-one-vcpu-live-audit.json",
+    "first_original_write_maximum": 57920.73333333333,
+    "first_historical_control": "capacity-only failure preserved as blocked; target remains 52503.01/s",
+    "master_baseline": "results/convergence-local-scylla-20261102T233500Z/master-baseline",
+    "master_baseline_healthy": true,
+    "local_receipt": "results/convergence-storage-calibration-20261103T012500Z/receipt/qualification.json",
+    "write_screen_caveat": "Both candidate and reference write maxima slowed while compaction and pending flush bytes grew. Preserve every observation; prioritize write confirmation and record per-tenant I/O.",
+    "corrected_original_controls": "results/convergence-storage-calibration-20261103T012500Z/corrected-original-control-verification.json",
+    "previous_backend_performance": "Blocked by server timeout and high replica I/O pressure; all old results retained.",
+    "io_recalibration_directory": "tests/driver-comparison/results/convergence-storage-calibration-20261103T012500Z",
+    "new_backend_requires_new_rate_freeze": true,
+    "v4_live_correctness": true,
+    "v4_live_log": "results/convergence-arrival-correction-20261103T004400Z/live-b-v4-after-drain.log",
+    "compatible_v5_live_correctness": true,
+    "v5_live_log": "results/convergence-storage-calibration-20261103T012500Z/live-b-v5.log",
+    "new_io_master_baseline": "All 15 observations in the 120-second master baseline passed; new backend rates frozen. The failed 30-second baseline remains preserved.",
+    "master_120s_baseline": "results/convergence-storage-calibration-20261103T012500Z/master-baseline-120s",
+    "master_120s_completed_healthy_cases": [
+      "write",
+      "point-buffered",
+      "point-stream",
+      "paged-buffered",
+      "paged-stream"
+    ],
+    "cluster_paused": true
+  },
+  "remaining_implementation": [
+    "Complete measured retention/rejection decisions for B-G and independent scratch/admission/parameter/VOID variants; prototypes are not adopted",
+    "Measure contiguous/scatter framing, remaining receive/cache costs, and worker/multiprocessor scaling against the latest retained source",
+    "Reprofile after retained changes and complete two full passes without reproducible improvement"
+  ],
+  "remaining_qualification": [
+    "Finish six-pair canonical emulator and authorized local Scylla matrices, preserving fixed matched and historical rates; repeat a complete inconclusive confirmation once",
+    "Separate worker sweep 1,4,16,64,256,1024 and multiprocessor diagnostics",
+    "Final cumulative comparisons against master, original v2, and parked reference",
+    "Complete normalized CPU/op, syscall/batch/queue and synchronization diagnostics",
+    "Repeat 30-minute mixed memory and live v4/v5 correctness on final retained source",
+    "Final default/unit race/vet/integration-debug compilation and both adapter/Python checks",
+    "Two consecutive complete profile passes without reproducible improvement"
+  ],
+  "checks": {
+    "default-tests.log": {
+      "path": "results/convergence-admission-20261102/default-tests.log",
+      "sha256": "512381484a5a6505a7b1cb21d28523c8241dc08a4ce79e628aef357297b5c320",
+      "passed": true
+    },
+    "unit-race.log": {
+      "path": "results/convergence-admission-20261102/unit-race.log",
+      "sha256": "c6d9abcde257e6bb38c694b05a2e559370c942b1d86f9a127752519789b303d7",
+      "passed": true
+    },
+    "vet.log": {
+      "path": "results/convergence-admission-20261102/vet.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "passed": true
+    },
+    "race-query-50.log": {
+      "path": "results/convergence-admission-20261102/race-query-50.log",
+      "sha256": "d46718bd8d5218f7ce9e0fd9913ce46e5fa546e960ad212dc010a44f3dba2c51",
+      "passed": true
+    },
+    "integration-debug-compile.log": {
+      "path": "results/convergence-admission-20261102/integration-debug-compile.log",
+      "sha256": "e3f36ebc7a6bcfd4fed33f180bdb7b13690ba692fa6b2ead9b7be492fec28673",
+      "passed": true
+    },
+    "harness-v2-race.log": {
+      "path": "results/convergence-admission-20261102/harness-v2-race.log",
+      "sha256": "5972adc541d7e7f45a249e4a10a0d93ed206a9566e00c8ba3816baadf3ed4bc4",
+      "passed": true
+    },
+    "harness-old-race.log": {
+      "path": "results/convergence-admission-20261102/harness-old-race.log",
+      "sha256": "5972adc541d7e7f45a249e4a10a0d93ed206a9566e00c8ba3816baadf3ed4bc4",
+      "passed": true
+    },
+    "harness-vet-v2.log": {
+      "path": "results/convergence-admission-20261102/harness-vet-v2.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "passed": true
+    },
+    "harness-vet-old.log": {
+      "path": "results/convergence-admission-20261102/harness-vet-old.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "passed": true
+    },
+    "python-tests-final.log": {
+      "path": "results/convergence-admission-20261102/python-tests-final.log",
+      "sha256": "dd30814f404c31d8c9baf2457d355653eebc5c9882c198623cc24fdb68aa242b",
+      "passed": true,
+      "tests": 38
+    },
+    "restored-default.log": {
+      "path": "results/convergence-admission-20261102/restored-default.log",
+      "sha256": "d9637d151133b0102f070d9c789573dc0a962689af387504c361f4183f3d53fb",
+      "passed": true
+    },
+    "restored-default-tests.log": {
+      "path": "results/convergence-admission-20261102/restored-default-tests.log",
+      "sha256": "163304ac6329c9f1c0597bd88751e3afcc7fb6c9ddfa143e5b5d5849ca73e4e9",
+      "passed": true
+    },
+    "restored-unit-race.log": {
+      "path": "results/convergence-admission-20261102/restored-unit-race.log",
+      "sha256": "66898c423331afefd90c78496148bcd3dc0785deac8b583b1e53837c2ba4daea",
+      "passed": true
+    },
+    "restored-vet.log": {
+      "path": "results/convergence-admission-20261102/restored-vet.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "passed": true
+    },
+    "harness-smoke.log": {
+      "path": "results/convergence-admission-20261102/harness-smoke.log",
+      "sha256": "6feaa1a783348507c48cca2669428df6030b222982d01aaae5870cf8f3c5e2fd",
+      "passed": true
+    },
+    "python-local-diagnostics": {
+      "path": "results/convergence-local-scylla-20261102T233500Z/harness-tests-syscalls.log",
+      "passed": true,
+      "tests": 45
+    }
+  },
+  "performance_accepted": false,
+  "published": false,
+  "updated": "2026-11-03T11:38:35.048838+00:00",
+  "default_production_matches_parked": false,
+  "reference_audit": "results/convergence-admission-20261102/pinned-reference-audit.json",
+  "source_hashes": "results/convergence-admission-20261102/final-code-hashes.json",
+  "shutdown": "results/convergence-admission-20261102/shutdown.json",
+  "active_candidate": "B ownership prototype in canonical local confirmation; all later prototypes remain experimental; retained source is parked f363e37",
+  "user_decisions": [
+    {
+      "decision": "Allow adoption from valid confirmed comparisons; report overloaded-reference latency cases as blocked without lowering rates.",
+      "implementation": "--allow-reference-overload; raw failed observations retained, blocked metrics are non-inferential, candidate-only failures prevent adoption."
+    },
+    {
+      "decision": "Test locally; use existing 3-node CPU-isolated/network-delayed cluster script; limit client to one vCPU.",
+      "implementation": "provision.py resume --output NEW --network-delay; CPUs 0-1/4-5/6-7, client taskset 8 and GOMAXPROCS=1; verified existing 200us delay helper."
+    }
+  ],
+  "memory_baseline": {
+    "status": "passed 30 minutes",
+    "samples": "results/convergence-b-20261102T201200Z/memory-baseline-30m.jsonl",
+    "log": "results/convergence-b-20261102T201200Z/memory-baseline-30m.log",
+    "operations": 501062,
+    "cancellations": 25433,
+    "oversize_evictions": 7433,
+    "samples_count": 357,
+    "final_candidate_test_required": true
+  },
+  "active_emulator_pid": 167949,
+  "boot_id": "fc506419-7680-41dc-8a3d-91200cb2767a",
+  "active_jobs": [],
+  "local_cluster": {
+    "supervisor_pid": 1276435,
+    "directory": "results/convergence-local-scylla-20261102T233500Z",
+    "original_datasets_preserved": true
+  },
+  "local_cluster_jobs": {
+    "state": "parked; do not signal historical PID entries without checking identity",
+    "current_backend": "results/convergence-storage-calibration-20261103T012500Z/provision/cluster.json",
+    "emulator": "PID 167949 suspended with SIGSTOP; preserve until explicitly resuming emulator work."
+  },
+  "harness_resume": "--resume-from preserves completed windows and failed observations, archives never-completed attempts, and checks measurement harness/binary/rate/backend identity.",
+  "prototype_memory_30m": {
+    "passed": true,
+    "report": "results/convergence-g-20261102T233500Z/mixed-memory-prototype-summary.json",
+    "operations": 501888,
+    "final_candidate_qualification_remaining": true
+  },
+  "local_scylla_rates": "results/convergence-storage-calibration-20261103T012500Z/master-baseline-120s/frozen-rates.json",
+  "arrival_harness_correction": {
+    "directory": "results/convergence-arrival-correction-20261103T004400Z",
+    "race_repetitions": 50,
+    "python_tests": 46,
+    "late_arrivals_use_existing_bounded_drain": true,
+    "queue_capacity_unchanged": true,
+    "rates_unchanged": true,
+    "source_references_unchanged": true,
+    "old_observations_preserved": true
+  },
+  "direct_latest_master_screen": "results/convergence-storage-calibration-20261103T012500Z/latest-vs-master-screen",
+  "checkpoint_counts": {
+    "optimization_packages_prototyped": 7,
+    "initial_experiments_with_final_decision": 2,
+    "retained_optimizations": 0,
+    "consecutive_complete_passes_without_improvement": 0,
+    "note": "Prototype completion is not a retention decision or convergence pass.",
+    "experiments_with_final_decision": 4
+  },
+  "interim_cost_report": "results/convergence-storage-calibration-20261103T012500Z/INTERIM-COSTS-20261103T042800Z.md",
+  "disk_recovery": "results/convergence-disk-recovery-20261103T111700Z/recovery.json",
+  "disk_recovery_note": "Free space recovered before cache cleanup command; cleanup did not account for the recovery. Unchanged parked reference then completed 30 seconds at 61824.17 writes/s, zero errors/timeouts/rejections. Frozen rates were not recalculated.",
+  "parking": {
+    "requested": "park all the work",
+    "directory": "/extra/scylladb/gocql-parks/convergence-20261103T113413Z",
+    "checkpoint_branch": "park-driver-convergence-20261103T113413Z",
+    "original_branch": "optimize-convergence-20261102",
+    "original_branch_commit": "f363e371832e7d8260e2858fba867fe591f655a4",
+    "archive": "/extra/scylladb/gocql-parks/convergence-20261103T113413Z/changes-and-evidence.tar.zst",
+    "verification": "/extra/scylladb/gocql-parks/convergence-20261103T113413Z/archive-verification.json",
+    "git_receipt": "/extra/scylladb/gocql-parks/convergence-20261103T113413Z/git-receipt.json",
+    "snapshot_tag": "convergence-park-20261103T113413Z",
+    "cluster_state": "Three benchmark Scylla containers paused after flushed snapshots; compatible Cassandra v5 container remains paused; emulator PID 167949 remains SIGSTOP suspended to preserve memory dataset.",
+    "restart_requires_explicit_user_request": true
+  }
+}

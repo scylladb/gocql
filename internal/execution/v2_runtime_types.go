@@ -31,6 +31,15 @@ func (o *InternalInputOwner) InternalAdmit() error {
 	return nil
 }
 func (o *InternalInputOwner) InternalRetain() { o.mu.Lock(); o.InternalRefs++; o.mu.Unlock() }
+func (o *InternalInputOwner) retainIfLive() bool {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.InternalRefs == 0 {
+		return false
+	}
+	o.InternalRefs++
+	return true
+}
 func (o *InternalInputOwner) InternalRelease() {
 	o.mu.Lock()
 	defer o.mu.Unlock()
@@ -46,7 +55,9 @@ func (o *InternalInputOwner) InternalRelease() {
 			o.InternalOnDrain()
 			o.InternalOnDrain = nil
 		}
-		close(o.done)
+		if o.done != nil {
+			close(o.done)
+		}
 	}
 }
 func (o *InternalInputOwner) InternalClose() {
@@ -61,17 +72,27 @@ func (o *InternalInputOwner) InternalClose() {
 			o.InternalOnDrain()
 			o.InternalOnDrain = nil
 		}
-		close(o.done)
+		if o.done != nil {
+			close(o.done)
+		}
 	}
 }
 func (o *InternalInputOwner) InternalWait(ctx context.Context) error {
 	o.mu.Lock()
 	closed := o.InternalClosed
-	done := o.done
-	o.mu.Unlock()
 	if !closed {
+		o.mu.Unlock()
 		return typeValidation("binding", "Wait requires Close first")
 	}
+	if o.InternalRefs == 0 {
+		o.mu.Unlock()
+		return nil
+	}
+	if o.done == nil {
+		o.done = make(chan struct{})
+	}
+	done := o.done
+	o.mu.Unlock()
 	select {
 	case <-done:
 		return nil

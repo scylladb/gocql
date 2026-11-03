@@ -12,10 +12,63 @@ import (
 	"github.com/scylladb/gocql/v2/internal/wire"
 )
 
+type streamPlanEntry[R any] struct {
+	validation *codec.StreamValidationCache
+	plan       StreamRowPlan[R]
+}
 type streamPlanCache[R any] struct {
-	mu      sync.Mutex
-	columns Columns
-	plan    StreamRowPlan[R]
+	mu                  sync.Mutex
+	entries             [8]streamPlanEntry[R]
+	next, retainedBytes int
+	opaqueValidation    *codec.StreamValidationCache
+	opaquePlan          StreamRowPlan[R]
+}
+
+func (c *streamPlanCache[R]) find(columns Columns, limits wire.StreamLimits) (*codec.StreamValidationCache, StreamRowPlan[R]) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for _, entry := range c.entries {
+		if entry.validation.Matches(columns, limits) {
+			if entry.plan == nil && c.opaqueValidation == entry.validation {
+				return entry.validation, c.opaquePlan
+			}
+			return entry.validation, entry.plan
+		}
+	}
+	return nil, nil
+}
+func (c *streamPlanCache[R]) put(validation *codec.StreamValidationCache, plan StreamRowPlan[R]) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	// Preserve the original single-current-plan behavior for custom codecs.
+	// Arbitrary application plan storage must not multiply across eight shapes.
+	c.opaqueValidation, c.opaquePlan = nil, nil
+	if validation == nil {
+		return
+	}
+	storedPlan := plan
+	if !codec.CacheableStreamRowPlan(plan) {
+		storedPlan = nil
+		c.opaqueValidation, c.opaquePlan = validation, plan
+	}
+	for i := range c.entries {
+		if c.entries[i].validation == validation {
+			c.entries[i].plan = storedPlan
+			return
+		}
+	}
+	for {
+		slot := c.next % len(c.entries)
+		old := c.entries[slot]
+		c.retainedBytes -= old.validation.RetainedBytes()
+		c.entries[slot] = streamPlanEntry[R]{}
+		c.next++
+		if c.retainedBytes+validation.RetainedBytes() <= codec.StreamValidationCacheMaxBytes {
+			c.entries[slot] = streamPlanEntry[R]{validation: validation, plan: storedPlan}
+			c.retainedBytes += validation.RetainedBytes()
+			return
+		}
+	}
 }
 
 // StreamQuery reuses owned parameters and an immutable streaming decoder plan.
@@ -25,6 +78,7 @@ type StreamQuery[P, R any] struct {
 	decoder StreamRowDecoder[R]
 	options StreamOptions
 	plans   streamPlanCache[R]
+	state   RowStreamStorage[R]
 }
 
 func NewStreamQuery[P, B, R any](prepared *Prepared[P, B], decoder StreamRowDecoder[R], options StreamOptions) (*StreamQuery[P, R], error) {
@@ -46,7 +100,9 @@ func NewStreamQuery[P, B, R any](prepared *Prepared[P, B], decoder StreamRowDeco
 		return nil, err
 	}
 	options.Options = q.options
-	return &StreamQuery[P, R]{query: q, decoder: decoder, options: options}, nil
+	result := &StreamQuery[P, R]{query: q, decoder: decoder, options: options}
+	q.state.retireExtra = func() { result.state = RowStreamStorage[R]{} }
+	return result, nil
 }
 
 // NewUnpreparedStreamQuery uses the same owned input and receive-mode contract
@@ -69,7 +125,9 @@ func NewUnpreparedStreamQuery[P, B, R any](session *implCluster.Session, stateme
 		return nil, err
 	}
 	options.Options = q.options
-	return &StreamQuery[P, R]{query: q, decoder: decoder, options: options}, nil
+	result := &StreamQuery[P, R]{query: q, decoder: decoder, options: options}
+	q.state.retireExtra = func() { result.state = RowStreamStorage[R]{} }
+	return result, nil
 }
 
 func (q *StreamQuery[P, R]) Run(ctx context.Context, value P) (*RowStream[R], error) {
@@ -80,7 +138,7 @@ func (q *StreamQuery[P, R]) Run(ctx context.Context, value P) (*RowStream[R], er
 		return nil, err
 	}
 	defer q.query.state.owner.InternalRelease()
-	return runStreamWithCache(ctx, q.query.state.runtime.Session, &q.query.bound, q.decoder, q.options, &q.plans)
+	return runStreamWithCache(ctx, q.query.state.runtime.Session, &q.query.bound, q.decoder, q.options, &q.plans, &q.state)
 }
 func (q *StreamQuery[P, R]) Close() {
 	if q != nil {
@@ -96,7 +154,7 @@ func (q *StreamQuery[P, R]) Wait(ctx context.Context) error {
 
 func (s *RowStream[R]) loadBufferedPage() error {
 	p := &s.privateStorage
-	response, err := InternalRuntimeFor(p.InternalSession).executePage(p.InternalCtx, p.InternalRequest, s.state)
+	response, err := InternalRuntimeFor(p.InternalSession).executePage(p.InternalCtx, p.InternalRequest, s.privateStorage.state)
 	if err != nil {
 		return err
 	}
@@ -122,22 +180,23 @@ func (s *RowStream[R]) loadBufferedPage() error {
 	if err != nil {
 		return err
 	}
-	reader, err := codec.NewStreamRowReaderReusingValidation(response.Columns, body, previous)
+	cache := p.bufferedPlans
+	var validation *codec.StreamValidationCache
+	var plan StreamRowPlan[R]
+	if cache != nil {
+		validation, plan = cache.find(response.Columns, body.Limits())
+	}
+	var reader *codec.StreamRowReader
+	if validation != nil {
+		reader, err = codec.NewStreamRowReaderUsingValidation(response.Columns, body, validation)
+	} else {
+		reader, err = codec.NewStreamRowReaderReusingValidation(response.Columns, body, previous)
+	}
 	if err != nil {
 		return err
 	}
 	p.bufferedBody, p.bufferedReader = body, reader
-	cache := p.bufferedPlans
-	if cache != nil {
-		cache.mu.Lock()
-		defer cache.mu.Unlock()
-	}
-	var plan StreamRowPlan[R]
-	if cache != nil && cache.plan != nil && cache.columns.Equal(response.Columns) {
-		plan = cache.plan
-	} else if p.plan != nil && p.columns.Equal(response.Columns) {
-		plan = p.plan
-	} else {
+	if plan == nil {
 		plan, err = p.InternalDecoder.Compile(response.Columns)
 		if err != nil {
 			return err
@@ -146,7 +205,10 @@ func (s *RowStream[R]) loadBufferedPage() error {
 			return typeValidation("stream plan", "decoder returned nil plan")
 		}
 		if cache != nil {
-			cache.columns, cache.plan = response.Columns, plan
+			if validation == nil {
+				validation = codec.CaptureStreamValidation(reader)
+			}
+			cache.put(validation, plan)
 		}
 	}
 	p.plan = plan
@@ -209,7 +271,7 @@ func (s *RowStream[R]) nextBuffered(dst *R) bool {
 		if err := p.InternalHistory.InternalAdd(next); err != nil {
 			return fail(err)
 		}
-		s.state = next
+		s.privateStorage.state = next
 		if err := s.loadBufferedPage(); err != nil {
 			return fail(err)
 		}

@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -250,4 +251,283 @@ func TestQueryOwnedRowsPreserveDestinationOnCompletion(t *testing.T) {
 		t.Fatal(err)
 	}
 	<-served
+}
+
+type queryCompletionObserver struct{ notify func() }
+
+func (o queryCompletionObserver) ObserveRequest(RequestEvent) { o.notify() }
+func (queryCompletionObserver) ObserveAttempt(AttemptEvent)   {}
+
+func TestStreamQueryRequestObserverCanCloseCursor(t *testing.T) {
+	s, conns, peers := runtimeTestSession(t, 1)
+	var cursor *RowStream[[]byte]
+	observer := queryCompletionObserver{notify: func() {
+		if err := cursor.Close(); err != nil {
+			t.Error(err)
+		}
+	}}
+	q := codecTestMust(NewUnpreparedStreamQuery(s, Statement[Unit, Bytes]{Kind: OrdinaryStatement, CQL: "SELECT value FROM ks.tbl", Params: NoParams, Rows: OneColumn(BlobCodec)}, NewColumns(), StreamOneColumn(StreamBlob), StreamOptions{Options: Options{Observer: observer}}))
+	defer q.Close()
+	go func() {
+		stream := typedTestReadRequest(t, conns[0], peers[0])
+		_, err := peers[0].Write(typedTestResponse(t, 4, stream, runtimeRowsBody(nil, "value")))
+		if err != nil {
+			t.Error(err)
+		}
+	}()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	cursor = codecTestMust(q.Run(ctx, Unit{}))
+	done := make(chan error, 1)
+	go func() {
+		dst := make([]byte, 0, 16)
+		for cursor.NextInto(&dst) {
+		}
+		done <- cursor.Err()
+	}()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("observer deadlocked closing its cursor")
+	}
+	if err := q.Wait(ctx); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestQueryDecoderCanCloseItsQuery(t *testing.T) {
+	s, conns, peers := runtimeTestSession(t, 1)
+	type output struct{ Value []byte }
+	var q *Query[Unit, output]
+	decoder := RowInto(func(*output) { q.Close() }, Column("value", OwnedBlobCodec, func(dst *output) *[]byte { return &dst.Value }))
+	q = codecTestMust(NewUnpreparedQuery(s, Statement[Unit, output]{Kind: OrdinaryStatement, CQL: "SELECT value FROM ks.tbl", Params: NoParams, Rows: decoder}, NewColumns(), Options{}))
+	defer q.Close()
+	go func() {
+		stream := typedTestReadRequest(t, conns[0], peers[0])
+		_, err := peers[0].Write(typedTestResponse(t, 4, stream, runtimeRowsBody(nil, "value")))
+		if err != nil {
+			t.Error(err)
+		}
+	}()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	rows := codecTestMust(q.Run(ctx, Unit{}))
+	done := make(chan struct{})
+	go func() { var dst output; _ = rows.NextInto(&dst); _ = rows.Close(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("decoder deadlocked closing its query")
+	}
+	if err := q.Wait(ctx); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestStreamQueryCallerDeadlineDrainsWithoutAdvancing(t *testing.T) {
+	s, conns, peers := runtimeTestSession(t, 1)
+	q := codecTestMust(NewUnpreparedStreamQuery(s, Statement[Unit, Bytes]{Kind: OrdinaryStatement, CQL: "SELECT value FROM ks.tbl", Params: NoParams, Rows: OneColumn(BlobCodec)}, NewColumns(), StreamOneColumn(StreamBlob), StreamOptions{}))
+	defer q.Close()
+	go func() {
+		stream := typedTestReadRequest(t, conns[0], peers[0])
+		_, err := peers[0].Write(typedTestResponse(t, 4, stream, runtimeRowsBody(nil, "value")))
+		if err != nil {
+			t.Error(err)
+		}
+	}()
+	caller, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	cursor := codecTestMust(q.Run(caller, Unit{}))
+	<-caller.Done()
+	joined, stop := context.WithTimeout(context.Background(), time.Second)
+	defer stop()
+	if err := q.Wait(joined); err != nil {
+		t.Fatal("idle cursor did not drain on caller deadline", err)
+	}
+	if !errors.Is(cursor.Err(), context.DeadlineExceeded) {
+		t.Fatal("caller deadline cause changed", cursor.Err())
+	}
+}
+
+func TestStreamQueryExplicitCloseWithoutDeadlineDrains(t *testing.T) {
+	s, conns, peers := runtimeTestSession(t, 1)
+	q := codecTestMust(NewUnpreparedStreamQuery(s, Statement[Unit, Bytes]{Kind: OrdinaryStatement, CQL: "SELECT value FROM ks.tbl", Params: NoParams, Rows: OneColumn(BlobCodec)}, NewColumns(), StreamOneColumn(StreamBlob), StreamOptions{Options: Options{Timeout: Option[time.Duration]{Set: true, Value: 0}}}))
+	go func() {
+		stream := typedTestReadRequest(t, conns[0], peers[0])
+		_, err := peers[0].Write(typedTestResponse(t, 4, stream, runtimeRowsBody(nil, "value")))
+		if err != nil {
+			t.Error(err)
+		}
+	}()
+	cursor := codecTestMust(q.Run(context.Background(), Unit{}))
+	q.Close()
+	joined, stop := context.WithTimeout(context.Background(), time.Second)
+	defer stop()
+	if err := q.Wait(joined); err != nil {
+		t.Fatal("explicit close without callback did not drain", err)
+	}
+	if !errors.Is(cursor.Err(), ErrClosed) {
+		t.Fatal(cursor.Err())
+	}
+}
+
+func TestQueryCopiedRowsHandleCannotTouchReuse(t *testing.T) {
+	s, conns, peers := runtimeTestSession(t, 1)
+	q := codecTestMust(NewUnpreparedQuery(s, Statement[Unit, Bytes]{Kind: OrdinaryStatement, CQL: "SELECT value FROM ks.tbl", Params: NoParams, Rows: OneColumn(BlobCodec)}, NewColumns(), Options{}))
+	defer q.Close()
+	go func() {
+		for _, value := range []string{"old", "new"} {
+			stream := typedTestReadRequest(t, conns[0], peers[0])
+			if _, err := peers[0].Write(typedTestResponse(t, 4, stream, runtimeRowsBody(nil, value))); err != nil {
+				t.Error(err)
+				return
+			}
+		}
+	}()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	old := codecTestMust(q.Run(ctx, Unit{}))
+	copied := *old
+	if !old.Next() {
+		t.Fatal(old.Err())
+	}
+	value := old.Row()
+	lease := codecTestMust(old.Retain())
+	defer lease.Close()
+	if old.Next() {
+		t.Fatal("unexpected row")
+	}
+	if err := q.Wait(ctx); err != nil {
+		t.Fatal(err)
+	}
+	current := codecTestMust(q.Run(ctx, Unit{}))
+	defer current.Close()
+	if copied.Next() || copied.Close() != nil || copied.Err() != nil {
+		t.Fatal("copied old rows changed newer execution")
+	}
+	if _, err := copied.Retain(); !errors.Is(err, ErrNoRows) {
+		t.Fatal(err)
+	}
+	if !current.Next() || string(current.Row().OwnedBytes()) != "new" {
+		t.Fatal(current.Err())
+	}
+	if string(value.OwnedBytes()) != "old" {
+		t.Fatal("retained page changed")
+	}
+	if current.Next() {
+		t.Fatal("unexpected row")
+	}
+}
+
+func TestQueryDeliveredPageSurvivesCloseUntilAdvance(t *testing.T) {
+	for _, manual := range []bool{false, true} {
+		t.Run(fmt.Sprint(manual), func(t *testing.T) {
+			s, conns, peers := runtimeTestSession(t, 1)
+			q := codecTestMust(NewUnpreparedQuery(s, Statement[Unit, Bytes]{Kind: OrdinaryStatement, CQL: "SELECT value FROM ks.tbl", Params: NoParams, Rows: OneColumn(BlobCodec)}, NewColumns(), Options{}))
+			defer q.Close()
+			go func() {
+				stream := typedTestReadRequest(t, conns[0], peers[0])
+				if _, err := peers[0].Write(typedTestResponse(t, 4, stream, runtimeRowsBody(nil, "delivered"))); err != nil {
+					t.Error(err)
+				}
+			}()
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			var value Bytes
+			if manual {
+				page := codecTestMust(q.RunPage(ctx, Unit{}, StartPage()))
+				defer page.Close()
+				if !page.NextInto(&value) {
+					t.Fatal(page.Err())
+				}
+				before := value
+				if err := s.Close(); err != nil {
+					t.Fatal(err)
+				}
+				if string(before.OwnedBytes()) != "delivered" {
+					t.Fatal("shutdown recycled delivered page")
+				}
+				if page.NextInto(&value) || value.Len() != 0 || !errors.Is(page.Err(), ErrClosed) {
+					t.Fatal(page.Err())
+				}
+			} else {
+				rows := codecTestMust(q.Run(ctx, Unit{}))
+				defer rows.Close()
+				if !rows.NextInto(&value) {
+					t.Fatal(rows.Err())
+				}
+				before := value
+				if err := s.Close(); err != nil {
+					t.Fatal(err)
+				}
+				if string(before.OwnedBytes()) != "delivered" {
+					t.Fatal("shutdown recycled delivered row")
+				}
+				if rows.NextInto(&value) || value.Len() != 0 || !errors.Is(rows.Err(), ErrClosed) {
+					t.Fatal(rows.Err())
+				}
+			}
+		})
+	}
+}
+
+func TestQueryCopiedStreamHandleCannotTouchReuse(t *testing.T) {
+	s, conns, peers := runtimeTestSession(t, 1)
+	q := codecTestMust(NewUnpreparedStreamQuery(s, Statement[Unit, Bytes]{Kind: OrdinaryStatement, CQL: "SELECT value FROM ks.tbl", Params: NoParams, Rows: OneColumn(BlobCodec)}, NewColumns(), StreamOneColumn(StreamBlob), StreamOptions{}))
+	defer q.Close()
+	go func() {
+		for _, value := range []string{"old", "new"} {
+			stream := typedTestReadRequest(t, conns[0], peers[0])
+			if _, err := peers[0].Write(typedTestResponse(t, 4, stream, runtimeRowsBody(nil, value))); err != nil {
+				t.Error(err)
+				return
+			}
+		}
+	}()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	old := codecTestMust(q.Run(ctx, Unit{}))
+	copied := *old
+	oldValue := make([]byte, 0, 16)
+	if !old.NextInto(&oldValue) || string(oldValue) != "old" || old.NextInto(&oldValue) {
+		t.Fatal(old.Err())
+	}
+	if err := q.Wait(ctx); err != nil {
+		t.Fatal(err)
+	}
+	before := copied.Info()
+	current := codecTestMust(q.Run(ctx, Unit{}))
+	defer current.Close()
+	value := make([]byte, 0, 16)
+	if copied.NextInto(&value) || copied.Close() != nil || copied.Err() != nil {
+		t.Fatal("copied old stream changed newer execution")
+	}
+	if copied.Info().DeliveredRows != before.DeliveredRows {
+		t.Fatal("old terminal result changed")
+	}
+	if !current.NextInto(&value) || string(value) != "new" || current.NextInto(&value) {
+		t.Fatal(current.Err())
+	}
+	if string(oldValue) != "old" {
+		t.Fatal("owned output changed across reuse")
+	}
+}
+
+func TestZeroCursorHandlesAreExhausted(t *testing.T) {
+	var rows Rows[[]byte]
+	var page Page[[]byte]
+	var stream RowStream[[]byte]
+	value := []byte("owned")
+	if rows.Next() || rows.NextInto(&value) || rows.Close() != nil || rows.Err() != nil {
+		t.Fatal("zero rows")
+	}
+	if page.Next() || page.NextInto(&value) || page.Close() != nil || page.Err() != nil || page.State().More() {
+		t.Fatal("zero page")
+	}
+	if stream.NextInto(&value) || stream.Close() != nil || stream.Err() != nil {
+		t.Fatal("zero stream")
+	}
 }

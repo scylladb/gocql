@@ -46,6 +46,14 @@ func TestWindowAndDrain(t *testing.T) {
 	if s.Latency.TotalCount() != s.Completed {
 		t.Fatal("histogram omitted operations")
 	}
+	end, err := time.Parse(time.RFC3339Nano, s.End)
+	if err != nil {
+		t.Fatal(err)
+	}
+	drained, err := time.Parse(time.RFC3339Nano, s.DrainEnd)
+	if err != nil || drained.Before(end) {
+		t.Fatal("diagnostic syscall window omitted the drain", drained, end, err)
+	}
 }
 func TestBoundedScheduledQueue(t *testing.T) {
 	oldQueueSize := *queueSize
@@ -61,5 +69,21 @@ func TestBoundedScheduledQueue(t *testing.T) {
 	}
 	if s.Latency.ValueAtQuantile(90) <= s.Dispatch.ValueAtQuantile(90) {
 		t.Fatal("scheduled latency omitted queueing")
+	}
+}
+
+func TestScheduledWindowBoundaryDrainsEveryArrival(t *testing.T) {
+	initialize()
+	s, err := phaseWithSleep([]worker{fakeWorker{}}, "read", 20*time.Millisecond, 100,
+		func(wait time.Duration) { time.Sleep(wait + 30*time.Millisecond) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Offered != 2 || s.Admitted != 2 || s.Completed != 2 || s.Rejected != 0 ||
+		s.QueueRejected != 0 || s.ArrivalDeadlineRejected != 0 || s.LateArrivals == 0 || s.Drained == 0 {
+		t.Fatalf("timer overshoot was counted as a capacity rejection: %+v", s)
+	}
+	if s.InWindow >= s.Completed || s.Schedule.TotalCount() != s.Offered {
+		t.Fatal("late work inflated window throughput or lost its schedule latency")
 	}
 }

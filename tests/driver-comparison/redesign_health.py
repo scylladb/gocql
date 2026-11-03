@@ -8,6 +8,7 @@ and let analysis derive deltas using monotonic_ns rather than nominal periods.
 import argparse
 import concurrent.futures
 import datetime
+import gzip
 import json
 from pathlib import Path
 import signal
@@ -72,7 +73,8 @@ def main():
     stop = threading.Event()
     for sig in (signal.SIGTERM, signal.SIGINT):
         signal.signal(sig, lambda *_: stop.set())
-    with args.output.open('x') as output, concurrent.futures.ThreadPoolExecutor(max_workers=len(nodes)) as executor:
+    output = gzip.open(args.output, 'xt') if args.output.suffix == '.gz' else args.output.open('x')
+    with output, concurrent.futures.ThreadPoolExecutor(max_workers=len(nodes)) as executor:
         deadline = time.monotonic()
         for _ in range(args.seconds):
             started = time.monotonic()

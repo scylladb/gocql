@@ -29,6 +29,8 @@ type EncodedValues struct {
 // attemptRequest contains only immutable protocol inputs. The transport retains
 // lease until every accepted writer has stopped accessing its spans.
 type AttemptRequest struct {
+	Framing RequestFraming
+
 	TabletVersionBlock             byte
 	Statement                      string
 	PreparedID, ResultMetadataID   []byte
@@ -57,4 +59,13 @@ type TypedBatchItem struct {
 	PreparedID []byte
 	Values     wire.Chain
 	ValueCount int
+}
+
+// RequestFraming is reserved for ordinary attempt framing. Its contents are
+// reusable only after the accepted submission writer calls Release.
+type RequestFraming interface {
+	TryAcquire() bool
+	Release()
+	Trim(int)
+	RetainedBytes() int
 }

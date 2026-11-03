@@ -11,7 +11,9 @@ import (
 	"github.com/scylladb/gocql/v2/internal/binding"
 	implCluster "github.com/scylladb/gocql/v2/internal/cluster"
 	"github.com/scylladb/gocql/v2/internal/cqltype"
+	"github.com/scylladb/gocql/v2/internal/protocol"
 	"github.com/scylladb/gocql/v2/internal/routing"
+	"github.com/scylladb/gocql/v2/internal/wire"
 )
 
 // ErrBusy indicates that a query still owns an active execution, transport
@@ -22,14 +24,20 @@ type queryState struct {
 	request       InternalExecutionRequest
 	inlineLogical InternalLogicalExecution
 	routing       routing.InternalLazyRoutingPlan
+	framing       protocol.RequestFrameStorage
 	mu            sync.Mutex
+	inlineOwner   inputOwner
 	owner         *inputOwner
 	runtime       *InternalSessionRuntime
 	logical       *InternalLogicalExecution
 	busy, closed  bool
+	drained       bool
+	closedStorage bool
+	accesses      int
 	generation    uint64
 	done          chan struct{}
 	retire        func()
+	retireExtra   func()
 }
 
 type queryCursor struct {
@@ -54,6 +62,55 @@ func (c queryCursor) current() bool {
 	return c.query.generation == c.generation
 }
 
+// An access pins decoding storage through the entire method, including its
+// deferred callbacks. Validation and acquisition share the generation lock.
+func (c queryCursor) acquire() bool {
+	if c.query == nil {
+		return true
+	}
+	s := c.query
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.generation != c.generation || (!s.busy || s.drained) && !s.closedStorage {
+		return false
+	}
+	s.accesses++
+	return true
+}
+func (c queryCursor) acquireAdvance() (bool, bool) {
+	if c.query == nil {
+		return true, false
+	}
+	s := c.query
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.generation != c.generation || (!s.busy || s.drained) && !s.closedStorage {
+		return false, false
+	}
+	s.accesses++
+	return true, s.closed
+}
+func (c queryCursor) release() {
+	if c.query == nil {
+		return
+	}
+	s := c.query
+	s.mu.Lock()
+	if s.generation != c.generation || s.accesses <= 0 {
+		s.mu.Unlock()
+		panic("gocql: unbalanced cursor generation access")
+	}
+	s.accesses--
+	closed := false
+	if s.accesses == 0 && s.drained {
+		closed = s.retireLocked()
+	}
+	s.mu.Unlock()
+	if closed {
+		s.unregister()
+	}
+}
+
 // Query owns reusable parameter storage and allows one active execution.
 // Prepared statements remain shareable; a Query must not be copied.
 type Query[P, R any] struct {
@@ -64,6 +121,7 @@ type Query[P, R any] struct {
 	columns  Columns
 	buffer   binding.ParameterBuffer
 	options  Options
+	results  queryResultStorage[R]
 }
 
 func newQueryState(s *implCluster.Session, state *queryState, retire func()) error {
@@ -77,10 +135,8 @@ func newQueryState(s *implCluster.Session, state *queryState, retire func()) err
 		return ErrClosed
 	}
 	state.runtime = InternalRuntimeFor(s)
-	state.owner = newInputOwner()
+	state.owner = &state.inlineOwner
 	state.retire = retire
-	state.done = make(chan struct{})
-	close(state.done)
 	state.owner.onIdle = state.idle
 	state.runtime.InternalMu.Lock()
 	if state.runtime.queries == nil {
@@ -102,6 +158,7 @@ func NewQuery[P, R any](p *Prepared[P, R], options Options) (*Query[P, R], error
 		return nil, err
 	}
 	q := &Query[P, R]{prepared: p, options: options}
+	q.bound.privateStorage.results = &q.results
 	q.bound.privateStorage.InternalRows = p.privateStorage.InternalRows
 	q.bound.privateStorage.plans = p.privateStorage.InternalPlans
 	if err := newQueryState(p.privateStorage.InternalState.InternalSession, &q.state, q.retire); err != nil {
@@ -125,6 +182,7 @@ func NewUnpreparedQuery[P, R any](s *implCluster.Session, statement Statement[P,
 		return nil, err
 	}
 	q := &Query[P, R]{params: plan, columns: columns, options: options}
+	q.bound.privateStorage.results = &q.results
 	q.bound.privateStorage.InternalRows = statement.Rows
 	q.bound.privateStorage.plans = &InternalResultPlanCache[R]{}
 	q.bound.privateStorage.InternalRequest = InternalExecutionRequest{InternalStatement: statement.CQL, InternalRouting: RoutingInfo{Kind: statement.Kind, Conditional: statement.Kind != OrdinaryStatement}}
@@ -140,17 +198,31 @@ func (s *queryState) idle() {
 		s.mu.Unlock()
 		return
 	}
+	s.drained = true
+	if s.accesses != 0 {
+		s.mu.Unlock()
+		return
+	}
+	closed := s.retireLocked()
+	s.mu.Unlock()
+	if closed {
+		s.unregister()
+	}
+}
+func (s *queryState) retireLocked() bool {
 	s.retire()
 	s.logical = nil
 	s.busy = false
-	close(s.done)
-	closed := s.closed
-	s.mu.Unlock()
-	if closed {
-		s.runtime.InternalMu.Lock()
-		delete(s.runtime.queries, s)
-		s.runtime.InternalMu.Unlock()
+	if s.done != nil {
+		close(s.done)
+		s.done = nil
 	}
+	return s.closed
+}
+func (s *queryState) unregister() {
+	s.runtime.InternalMu.Lock()
+	delete(s.runtime.queries, s)
+	s.runtime.InternalMu.Unlock()
 }
 
 func (s *queryState) begin(ctx context.Context) error {
@@ -173,8 +245,9 @@ func (s *queryState) begin(ctx context.Context) error {
 		return ErrBusy
 	}
 	s.busy = true
+	s.drained = false
 	s.generation++
-	s.done = make(chan struct{})
+	s.done = nil // allocated only when a waiter must join this generation
 	s.mu.Unlock()
 	// Never acquire owner.mu while holding state.mu: the final release calls idle.
 	if err := s.owner.InternalAdmit(); err != nil {
@@ -228,18 +301,46 @@ func (q *Query[P, R]) capture(ctx context.Context, value P) error {
 	return nil
 }
 
+func idleExecutionCancel() {}
+
 func (q *Query[P, R]) retire() {
 	q.bound.privateStorage.InternalRequest.InternalValues = encodedValues{}
-	if q.state.request.InternalLogical == &q.state.inlineLogical {
-		lifetime := &q.state.inlineLogical.lifetime
+	if logical := q.state.request.InternalLogical; logical != nil {
+		lifetime := &logical.lifetime
 		lifetime.mu.Lock()
 		lifetime.stop = nil
-		lifetime.cancel = func() {}
+		lifetime.cancel = idleExecutionCancel
 		lifetime.mu.Unlock()
 	}
 	q.state.request = InternalExecutionRequest{}
 	q.state.routing = routing.InternalLazyRoutingPlan{}
 	q.buffer.Retire()
+	q.state.framing.Trim(max(0, (64<<10)-q.buffer.RetainedBytes()))
+	if q.state.retireExtra != nil {
+		q.state.retireExtra()
+	}
+	q.state.closedStorage = q.state.closed && q.results.page.valid && !q.results.page.closed && q.results.page.InternalResponse != nil
+	if q.state.closedStorage {
+		// Input drain does not revoke a delivered borrowed page. A permanently
+		// closed query cannot reuse it; the cursor releases it on advance/Close.
+		if q.results.page.destination != nil {
+			q.results.page.current = *q.results.page.destination
+		}
+		q.results.page.destination = nil
+		q.results.page.InternalCtx = context.Background()
+		q.results.page.cancel = idleExecutionCancel
+		q.results.page.InternalRelease, q.results.page.pendingRelease = nil, nil
+		q.results.page.reader = RowReader{}
+		q.results.page.InternalCursor = nil
+		q.results.pageCursor = wire.Cursor{}
+		q.results.rows.InternalCtx = context.Background()
+		q.results.rows.cancel = idleExecutionCancel
+		q.results.rows.InternalRequest = nil
+		q.results.rows.InternalRelease, q.results.rows.pendingRelease = nil, nil
+		q.results.rows.future = nil
+	} else {
+		q.results = queryResultStorage[R]{}
+	}
 }
 
 func (q *Query[P, R]) Exec(ctx context.Context, value P) (Result, error) {
@@ -298,8 +399,13 @@ func (q *Query[P, R]) BatchEntry(value P) (BatchItem, error) {
 
 func (s *queryState) close() {
 	l := s.stop()
-	if l != nil {
-		l.shutdown()
+	if l != nil && s.owner.retainIfLive() {
+		// Close cancels immediately; Wait joins teardown. A codec or observer
+		// can close its query without waiting for its own active execution.
+		go func() {
+			defer s.owner.InternalRelease()
+			l.shutdown()
+		}()
 	}
 }
 func (s *queryState) stop() *InternalLogicalExecution {
@@ -334,6 +440,13 @@ func (s *queryState) wait(ctx context.Context) error {
 		return typeValidation("query", "uninitialized query")
 	}
 	s.mu.Lock()
+	if !s.busy {
+		s.mu.Unlock()
+		return nil
+	}
+	if s.done == nil {
+		s.done = make(chan struct{})
+	}
 	done := s.done
 	s.mu.Unlock()
 	select {

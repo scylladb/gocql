@@ -52,14 +52,13 @@ type StreamInfo struct {
 // RowStream writes only during NextInto. Incremental mode owns a pool slot.
 // Output belongs to the caller and remains valid after Close.
 type RowStream[R any] struct {
-	state          PageState
-	privateStorage RowStreamStorage[R]
+	privateStorage streamHandleStorage[R]
 }
 
 func RunStream[B, R any](ctx context.Context, session *implCluster.Session, bound *Bound[B], decoder StreamRowDecoder[R], options StreamOptions) (*RowStream[R], error) {
-	return runStreamWithCache(ctx, session, bound, decoder, options, nil)
+	return runStreamWithCache(ctx, session, bound, decoder, options, nil, nil)
 }
-func runStreamWithCache[B, R any](ctx context.Context, session *implCluster.Session, bound *Bound[B], decoder StreamRowDecoder[R], options StreamOptions, plans *streamPlanCache[R]) (*RowStream[R], error) {
+func runStreamWithCache[B, R any](ctx context.Context, session *implCluster.Session, bound *Bound[B], decoder StreamRowDecoder[R], options StreamOptions, plans *streamPlanCache[R], storage *RowStreamStorage[R]) (*RowStream[R], error) {
 	if decoder == nil {
 		return nil, typeValidation("stream decoder", "nil decoder")
 	}
@@ -76,39 +75,59 @@ func runStreamWithCache[B, R any](ctx context.Context, session *implCluster.Sess
 		return nil, err
 	}
 	request.InternalOptions.InternalProfile.Speculation = nil
-	cursor := func() *RowStream[R] {
-		opaqueStorageValue := new(RowStream[R])
-		opaqueStorageValue.privateStorage.cursor = executionCursor(request)
-		opaqueStorageValue.privateStorage.InternalCtx = runctx
-		opaqueStorageValue.privateStorage.InternalCancel = cancel
-		opaqueStorageValue.privateStorage.InternalSession = session
-		opaqueStorageValue.privateStorage.InternalRequest = request
-		opaqueStorageValue.privateStorage.limits = limits
-		opaqueStorageValue.privateStorage.InternalDecoder = decoder
-		opaqueStorageValue.state = StartPage()
-		opaqueStorageValue.privateStorage.InternalHistory = pagingHistory{InternalMaxCount: InternalRuntimeFor(session).InternalConfig.Limits.MaxPagingStates, InternalMaxBytes: InternalRuntimeFor(session).InternalConfig.Limits.MaxPagingStateBytes}
-		opaqueStorageValue.privateStorage.pageBuffered = !options.Incremental
-		opaqueStorageValue.privateStorage.bufferedPlans = plans
-		return opaqueStorageValue
-		// Construction owns active until headers/metadata have selected a checked plan.
-	}()
+	var cursor *RowStream[R]
+	if storage != nil {
+		cursor = new(RowStream[R])
+		cursor.privateStorage.RowStreamStorage = storage
+		cursor.privateStorage.endpoint = new(streamTerminal)
+	} else {
+		holder := new(struct {
+			handle RowStream[R]
+			state  RowStreamStorage[R]
+		})
+		cursor = &holder.handle
+		cursor.privateStorage.RowStreamStorage = &holder.state
+	}
+	cursor.privateStorage.cursor = executionCursor(request)
+	cursor.privateStorage.InternalCtx = runctx
+	cursor.privateStorage.InternalCancel = cancel
+	cursor.privateStorage.InternalSession = session
+	cursor.privateStorage.InternalRequest = request
+	cursor.privateStorage.limits = limits
+	cursor.privateStorage.InternalDecoder = decoder
+	cursor.privateStorage.state = StartPage()
+	cursor.privateStorage.InternalHistory = pagingHistory{InternalMaxCount: InternalRuntimeFor(session).InternalConfig.Limits.MaxPagingStates, InternalMaxBytes: InternalRuntimeFor(session).InternalConfig.Limits.MaxPagingStateBytes}
+	cursor.privateStorage.pageBuffered = !options.Incremental
+	cursor.privateStorage.bufferedPlans = plans
 	cursor.privateStorage.InternalActive.Lock()
 	err = InternalRowStreamLoadPage(cursor)
-	if err == nil {
-		cursor.privateStorage.stop = context.AfterFunc(runctx, func() {
+	if hook := streamCancellationHook(ctx, runctx); err == nil && hook != nil {
+		owner := request.InternalOwner
+		owner.InternalRetain()
+		cursor.privateStorage.callbackOwner = owner
+		cursor.privateStorage.stop = context.AfterFunc(hook, func() {
+			defer owner.InternalRelease()
+			// Parent callback order is unspecified. Let standard propagation set
+			// the execution cause before Close calls its explicit CancelFunc.
+			if hook != runctx && runctx.Err() == nil {
+				<-runctx.Done()
+			}
 			cause := runctx.Err()
+			if cause == nil {
+				cause = hook.Err()
+			}
 			if session.Closed() {
 				cause = ErrClosed
 			}
 			InternalRowStreamCloseWithError(cursor, cause)
 		})
 	}
-	cursor.privateStorage.InternalActive.Unlock()
+	cursor.unlockActive()
 	if err != nil {
 		InternalRowStreamFail(cursor, err)
 		cursor.privateStorage.InternalActive.Lock()
 		InternalRowStreamCleanup(cursor, false)
-		cursor.privateStorage.InternalActive.Unlock()
+		cursor.unlockActive()
 		return nil, &ExecutionError{Err: err, Result: cursor.Info().Result}
 	}
 	request.InternalLogical.installStop(func() { InternalRowStreamCloseWithError(cursor, ErrClosed) })
@@ -141,6 +160,11 @@ func InternalRowStreamFail[R any](s *RowStream[R], err error) {
 }
 
 func (s *RowStream[R]) Err() error {
+	if !s.acquireStorage() {
+		_, err, _ := s.terminalInfo()
+		return err
+	}
+	defer s.privateStorage.cursor.release()
 	if s == nil {
 		return nil
 	}
@@ -149,6 +173,11 @@ func (s *RowStream[R]) Err() error {
 	return s.privateStorage.err
 }
 func (s *RowStream[R]) Info() StreamInfo {
+	if !s.acquireStorage() {
+		info, _, _ := s.terminalInfo()
+		return info
+	}
+	defer s.privateStorage.cursor.release()
 	if s == nil {
 		return StreamInfo{}
 	}
@@ -159,6 +188,11 @@ func (s *RowStream[R]) Info() StreamInfo {
 	return info
 }
 func (s *RowStream[R]) Columns() Columns {
+	if !s.acquireStorage() {
+		_, _, columns := s.terminalInfo()
+		return columns
+	}
+	defer s.privateStorage.cursor.release()
 	if s == nil {
 		return Columns{}
 	}
@@ -170,12 +204,14 @@ func (s *RowStream[R]) Close() error {
 	if s == nil {
 		return nil
 	}
-	if !s.privateStorage.cursor.current() {
-		return s.Err()
-	}
 	return InternalRowStreamCloseWithError(s, nil)
 }
 func InternalRowStreamCloseWithError[R any](s *RowStream[R], err error) error {
+	if !s.acquireStorage() {
+		_, terminalErr, _ := s.terminalInfo()
+		return terminalErr
+	}
+	defer s.privateStorage.cursor.release()
 	s.privateStorage.mu.Lock()
 	if s.privateStorage.closeDone == nil {
 		s.privateStorage.closeDone = make(chan struct{})
@@ -192,24 +228,26 @@ func InternalRowStreamCloseWithError[R any](s *RowStream[R], err error) error {
 	}
 	s.privateStorage.terminal = true
 	s.privateStorage.mu.Unlock()
-	defer close(done)
-
 	// Publish termination before cancellation so our own cancellation callback
-	// cannot turn successful explicit Close into a context error. Every caller
-	// joins the same completion, including callback and session shutdown paths.
+	// cannot turn successful explicit Close into a context error. Close joins
+	// active decoding; Query.Wait additionally joins request observers.
 	s.privateStorage.InternalCancel()
 	s.privateStorage.InternalActive.Lock()
 	InternalRowStreamCleanup(s, false)
-	s.privateStorage.InternalActive.Unlock()
+	// Observers can close their own cursor, so publish completed decoding before
+	// invoking them, outside the active gate. The input owner still pins them.
+	close(done)
+	s.unlockActive()
 	return s.Err()
 }
 
-// active is held; no driver mutex is held while calling application code.
+// active is held; application notification is deferred until unlockActive.
 func InternalRowStreamCleanup[R any](s *RowStream[R], reusable bool) {
 	if s.privateStorage.cleaned {
 		return
 	}
 	s.privateStorage.cleaned = true
+	s.snapshotTerminal()
 	if s.privateStorage.bufferedPage != nil {
 		s.privateStorage.bufferedPage.Owner.Release()
 		s.privateStorage.bufferedPage = nil
@@ -217,7 +255,11 @@ func InternalRowStreamCleanup[R any](s *RowStream[R], reusable bool) {
 		s.privateStorage.bufferedReader = nil
 	}
 	if s.privateStorage.stop != nil {
-		s.privateStorage.stop()
+		if s.privateStorage.stop() {
+			s.privateStorage.callbackOwner.InternalRelease()
+		}
+		s.privateStorage.stop = nil
+		s.privateStorage.callbackOwner = nil
 	}
 	if s.privateStorage.InternalReservation != nil {
 		if err := s.privateStorage.InternalReservation.InternalClose(reusable); err != nil {
@@ -239,14 +281,28 @@ func InternalRowStreamCleanup[R any](s *RowStream[R], reusable bool) {
 	}
 	s.privateStorage.InternalHistory.InternalClear()
 	s.privateStorage.InternalCancel()
-	s.privateStorage.InternalRequest.InternalLogical.InternalFinish(s.Info().Result, s.Err())
-	s.privateStorage.InternalRequest.InternalLogical.InternalReleaseInput()
+	s.privateStorage.pendingFinish = s.privateStorage.InternalRequest.InternalLogical
+}
+
+func (s *RowStream[R]) unlockActive() {
+	logical := s.privateStorage.pendingFinish
+	s.privateStorage.pendingFinish = nil
+	var result Result
+	var err error
+	if logical != nil {
+		result, err = s.Info().Result, s.Err()
+	}
+	s.privateStorage.InternalActive.Unlock()
+	if logical != nil {
+		logical.finishAndRelease(result, err)
+	}
 }
 func (s *RowStream[R]) NextInto(dst *R) bool {
-	if s == nil {
+	if !s.acquireStorage() {
 		return false
 	}
-	if !s.privateStorage.cursor.current() {
+	defer s.privateStorage.cursor.release()
+	if s == nil {
 		return false
 	}
 	s.privateStorage.mu.Lock()
@@ -269,7 +325,7 @@ func (s *RowStream[R]) NextInto(dst *R) bool {
 	}
 	defer s.privateStorage.advancing.Store(false)
 	s.privateStorage.InternalActive.Lock()
-	defer s.privateStorage.InternalActive.Unlock()
+	defer s.unlockActive()
 	s.privateStorage.mu.Lock()
 	terminal := s.privateStorage.terminal
 	s.privateStorage.mu.Unlock()
@@ -338,7 +394,7 @@ func (s *RowStream[R]) NextInto(dst *R) bool {
 			InternalRowStreamCleanup(s, false)
 			return false
 		}
-		s.state = next
+		s.privateStorage.state = next
 		if s.privateStorage.pageCancel != nil {
 			s.privateStorage.pageCancel()
 			s.privateStorage.pageCancel = nil
@@ -455,8 +511,8 @@ func (s *RowStream[R]) wireRequest(consistency Consistency) (*attemptRequest, er
 	if conn.InternalVersion < 5 {
 		w.Keyspace = ""
 	}
-	if s.state.More() {
-		w.PagingState = model.PageToken(s.state)
+	if s.privateStorage.state.More() {
+		w.PagingState = model.PageToken(s.privateStorage.state)
 	}
 	if r.InternalOptions.InternalProfile.SerialConsistency.Set {
 		w.SerialConsistency = r.InternalOptions.InternalProfile.SerialConsistency.Value
@@ -510,7 +566,7 @@ func InternalRowStreamLoadPage[R any](s *RowStream[R]) error {
 			// Reconcile before submitting a continuation page. This prepares
 			// and validates the same canonical input, then sends the next page
 			// state; it never replays a page that has exposed caller output.
-			if s.Info().OutputStarted && !s.state.More() {
+			if s.Info().OutputStarted && !s.privateStorage.state.More() {
 				return &SchemaChangedError{Statement: request.InternalStatement, Previous: request.InternalValues.Columns, Current: request.InternalPrepared.InternalParameters}
 			}
 			conn := s.privateStorage.InternalReservation.InternalConn

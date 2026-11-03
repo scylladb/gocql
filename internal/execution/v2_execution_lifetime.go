@@ -74,6 +74,18 @@ func (l *InternalLogicalExecution) cancelExecution() {
 	cancel()
 }
 func (s *InternalSessionRuntime) registerExecution(l *InternalLogicalExecution, parent *inputOwner) error {
+	if query := l.request.query; query != nil {
+		// Query registration already pins the session lifetime. Its one owner
+		// counts capture, logical execution, accepted writers and callbacks, so
+		// the generation cannot retire before all of them release their refs.
+		query.mu.Lock()
+		defer query.mu.Unlock()
+		if query.closed {
+			return ErrClosed
+		}
+		query.logical = l
+		return nil
+	}
 	implCluster.SessionData(s.Session).InternalSessionStateMu.RLock()
 	defer implCluster.SessionData(s.Session).InternalSessionStateMu.RUnlock()
 	if implCluster.SessionData(s.Session).InternalIsClosing || implCluster.SessionData(s.Session).InternalIsClosed {
@@ -85,28 +97,15 @@ func (s *InternalSessionRuntime) registerExecution(l *InternalLogicalExecution, 
 	if rt.InternalExecutions == nil {
 		rt.InternalExecutions = make(map[*InternalLogicalExecution]struct{})
 	}
-	if query := l.request.query; query != nil {
-		query.mu.Lock()
-		if query.closed {
-			query.mu.Unlock()
-			return ErrClosed
-		}
-		query.logical = l
-		query.mu.Unlock()
-	} else {
-		rt.InternalExecutions[l] = struct{}{}
-	}
+	rt.InternalExecutions[l] = struct{}{}
 	owner := newInputOwner()
 	owner.InternalRefs = 1
 	owner.InternalClosed = true
-	queryOwned := l.request.query != nil
 	done := l.lifetime.done
 	owner.InternalOnDrain = func() {
-		if !queryOwned {
-			rt.InternalMu.Lock()
-			delete(rt.InternalExecutions, l)
-			rt.InternalMu.Unlock()
-		}
+		rt.InternalMu.Lock()
+		delete(rt.InternalExecutions, l)
+		rt.InternalMu.Unlock()
 		close(done)
 		// Parent release can admit the next query generation. Nothing after
 		// this point may dereference the preceding execution's reusable request.

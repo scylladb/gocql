@@ -43,7 +43,27 @@ func InternalWriteSpanBuffers(w io.Writer, spans net.Buffers) (int64, error) {
 	return total, nil
 }
 
+// InternalSpanListWriter consumes an already collected submission batch without
+// constructing another immutable index over the same spans.
+type InternalSpanListWriter interface {
+	InternalWriteSpanList(context.Context, []wire.Span, int64) (int64, error)
+}
+
 func (w *InternalDeadlineContextWriter) InternalWriteSpans(ctx context.Context, chain wire.Chain) (int64, error) {
+	return w.writePreparedSpanBuffers(ctx, chain.Len(), func(spans net.Buffers) net.Buffers {
+		_ = chain.Each(func(span wire.Span) error { spans = append(spans, span.Bytes()); return nil })
+		return spans
+	})
+}
+func (w *InternalDeadlineContextWriter) InternalWriteSpanList(ctx context.Context, list []wire.Span, total int64) (int64, error) {
+	return w.writePreparedSpanBuffers(ctx, total, func(spans net.Buffers) net.Buffers {
+		for _, span := range list {
+			spans = append(spans, span.Bytes())
+		}
+		return spans
+	})
+}
+func (w *InternalDeadlineContextWriter) writePreparedSpanBuffers(ctx context.Context, total int64, prepare func(net.Buffers) net.Buffers) (int64, error) {
 	if err := ctx.Err(); err != nil {
 		return 0, err
 	}
@@ -73,9 +93,9 @@ func (w *InternalDeadlineContextWriter) InternalWriteSpans(ctx context.Context, 
 			w.spanScratch = nil
 		}
 	}()
-	_ = chain.Each(func(s wire.Span) error { spans = append(spans, s.Bytes()); return nil })
+	spans = prepare(spans)
 	n, err := InternalWriteSpanBuffers(w.InternalW, spans)
-	if err == nil && n != chain.Len() {
+	if err == nil && n != total {
 		err = io.ErrShortWrite
 	}
 	return n, err

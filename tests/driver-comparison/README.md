@@ -1,12 +1,11 @@
 # One client vCPU driver comparison
 
-The reusable-query redesign has a separate [implementation and measurement
-report](REDESIGN.md). Its new result directories preserve all parked evidence
-below. The redesign has not met the 10% master target.
-
-**Parked at user request.** Read [the committed checkpoint](PARKED-CHECKPOINT.json)
-for the archive, retained prototypes, validation blocker, and restore instructions.
-Do not restart optimization or benchmark loads without an explicit request.
+**Parked at the user's request.** Read [the current resume checkpoint](REDESIGN-RESUME.md)
+and [convergence state](CONVERGENCE-STATE.json). All benchmark jobs and monitors
+are stopped. The benchmark containers are paused with flushed snapshots; source,
+variants, datasets and results are preserved. No optimization has been adopted
+and convergence remains incomplete. Restart only after an explicit user request.
+The material below describes earlier, preserved experiments.
 
 The current v2 optimization roadmap starts at `7e1ad6f`. Its independent
 prototypes, measurements, decisions, and validation prerequisites are tracked
