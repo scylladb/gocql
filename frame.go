@@ -32,6 +32,7 @@ import (
 	"io"
 	"math"
 	"net"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -713,10 +714,7 @@ func (f *framer) writeHeader(flags byte, op frm.Op, stream int) {
 }
 
 func (f *framer) setLength(length int) {
-	f.buf[5] = byte(length >> 24)
-	f.buf[6] = byte(length >> 16)
-	f.buf[7] = byte(length >> 8)
-	f.buf[8] = byte(length)
+	binary.BigEndian.PutUint32(f.buf[5:9], uint32(length))
 }
 
 func (f *framer) finish() error {
@@ -1501,6 +1499,18 @@ func putBatchQueryValues(stmts []batchStatment) {
 	}
 }
 
+// valuesSize sums the encoded size of already-marshalled values, for pre-growing the frame buffer.
+func valuesSize(vals []queryValues, withName bool) int {
+	size := 0
+	for i := range vals {
+		size += 4 + len(vals[i].value)
+		if withName {
+			size += 2 + len(vals[i].name)
+		}
+	}
+	return size
+}
+
 type queryParams struct {
 	nowInSeconds          *int
 	keyspace              string
@@ -1613,6 +1623,8 @@ func (f *framer) writeQueryParams(opts *queryParams) error {
 
 	if n := len(opts.values); n > 0 {
 		f.writeShort(uint16(n))
+
+		f.buf = slices.Grow(f.buf, valuesSize(opts.values, names))
 
 		for i := 0; i < n; i++ {
 			if names {
@@ -1819,6 +1831,14 @@ func (f *framer) writeBatchFrame(streamID int, w *writeBatchFrame, customPayload
 
 	var flags uint32
 
+	// Capacity hint only: named values were rejected above, header/flag bytes just append.
+	need := 0
+	for i := 0; i < n; i++ {
+		b := &w.statements[i]
+		need += 1 + 4 + len(b.statement) + len(b.preparedID) + 2 + valuesSize(b.values, false)
+	}
+	f.buf = slices.Grow(f.buf, need)
+
 	for i := 0; i < n; i++ {
 		b := &w.statements[i]
 		if len(b.preparedID) == 0 {
@@ -1833,7 +1853,7 @@ func (f *framer) writeBatchFrame(streamID int, w *writeBatchFrame, customPayload
 
 		f.writeShort(uint16(len(b.values)))
 		for j := range b.values {
-			col := b.values[j]
+			col := &b.values[j]
 			if col.isUnset {
 				f.writeUnset()
 			} else {
