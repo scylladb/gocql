@@ -327,6 +327,8 @@ func (q *queryExecutor) do(ctx context.Context, qry ExecutableQuery, metrics *qu
 			retry = RetryType(255) // Don't enforce retry and get it from retry policy
 		}
 
+		potentiallyExecuted = potentiallyExecuted || isPotentiallyExecutedServerError(iter.err)
+
 		var qErr *QueryError
 		if errors.As(iter.err, &qErr) {
 			potentiallyExecuted = potentiallyExecuted || qErr.PotentiallyExecuted()
@@ -397,6 +399,18 @@ func (q *queryExecutor) do(ctx context.Context, qry ExecutableQuery, metrics *qu
 		return &Iter{err: lastErr}, qry.GetConsistency()
 	}
 	return &Iter{err: ErrNoConnections}, qry.GetConsistency()
+}
+
+// isPotentiallyExecutedServerError reports whether err is a server response
+// sent after the coordinator had started the write, meaning some replicas may
+// have applied it: WRITE_TIMEOUT, WRITE_FAILURE or CAS_WRITE_UNKNOWN.
+func isPotentiallyExecutedServerError(err error) bool {
+	var (
+		writeTimeout    *RequestErrWriteTimeout
+		writeFailure    *RequestErrWriteFailure
+		casWriteUnknown *RequestErrCASWriteUnknown
+	)
+	return errors.As(err, &writeTimeout) || errors.As(err, &writeFailure) || errors.As(err, &casWriteUnknown)
 }
 
 func (q *queryExecutor) run(ctx context.Context, qry, releaseQry ExecutableQuery, metrics *queryMetrics,
