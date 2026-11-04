@@ -432,7 +432,7 @@ func (c *controlConn) reconnect() error {
 	err := c.attemptReconnect()
 	if err != nil {
 		err = fmt.Errorf("gocql: unable to reconnect control connection: %w\n", err)
-		c.session.logger.Printf(err.Error())
+		c.session.logger.Printf("%s", err.Error())
 		return err
 	}
 

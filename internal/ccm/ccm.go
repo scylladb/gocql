@@ -190,7 +190,7 @@ func Status() (map[string]Host, error) {
 				}
 			}
 		default:
-			return nil, fmt.Errorf("unexpected state: %q", state)
+			return nil, fmt.Errorf("unexpected state: %d", state)
 		}
 	}
 
