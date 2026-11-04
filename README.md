@@ -172,6 +172,15 @@ if localDC != "" {
 // c.NumConns = 4
 ```
 
+When ScyllaDB advertises `TABLETS_ROUTING_V2_EXPERIMENTAL`, the driver negotiates
+V2 tablet routing automatically and `TokenAwareHostPolicy` prefers the known
+leader for writes and strongly consistent reads in keyspaces created with
+`consistency = 'global'`. Reads at `ONE` or `LOCAL_ONE` retain normal replica
+routing. A leader in another datacenter can take precedence over local replicas
+unless the fallback policy disables DC failover or excludes that host. Older
+servers continue to use V1 tablet routing when available. Batch leader routing
+is not yet supported.
+
 ### 5.1 Advanced shard awareness (shard-aware port)
 
 Advanced shard awareness lets the driver choose a connection's source port so that Scylla assigns it to a desired shard. It uses the shard-aware native transport port.

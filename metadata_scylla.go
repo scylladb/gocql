@@ -33,7 +33,9 @@ type KeyspaceMetadata struct {
 	Name              string
 	StrategyClass     string
 	CreateStmts       string
-	DurableWrites     bool
+	// ConsistencyMode is ScyllaDB's keyspace consistency option ("global" or empty/eventual).
+	ConsistencyMode string
+	DurableWrites   bool
 }
 
 // Clone returns a shallow copy of the keyspace metadata with
@@ -43,6 +45,7 @@ func (ks *KeyspaceMetadata) Clone() *KeyspaceMetadata {
 	cloned := &KeyspaceMetadata{
 		Name:            ks.Name,
 		DurableWrites:   ks.DurableWrites,
+		ConsistencyMode: ks.ConsistencyMode,
 		StrategyClass:   ks.StrategyClass,
 		StrategyOptions: maps.Clone(ks.StrategyOptions),
 		Tables:          maps.Clone(ks.Tables),
@@ -828,6 +831,12 @@ func (s *metadataDescriber) refreshKeyspaceSchema(keyspaceName string) error {
 
 	compileMetadata(keyspace, tables, columns, functions, aggregates, types, indexes, views, createStmts)
 
+	if old, ok := s.metadata.keyspaceMetadata.getKeyspace(keyspaceName); ok && old != nil && old.ConsistencyMode != keyspace.ConsistencyMode {
+		// A V1 or eventual replica ordering must not become a leader hint after
+		// a consistency-mode change. Forget it before publishing the new mode.
+		s.RemoveTabletsWithKeyspace(keyspaceName)
+		s.metadata.tabletsMetadata.Flush()
+	}
 	s.metadata.keyspaceMetadata.set(keyspaceName, keyspace)
 
 	return nil
@@ -1161,7 +1170,33 @@ func getKeyspaceMetadata(session *Session, keyspaceName string) (*KeyspaceMetada
 		keyspace.StrategyOptions[k] = v
 	}
 
+	// Consult the current control connection: a reconnect may upgrade or
+	// downgrade negotiated extensions during a rolling cluster upgrade.
+	if control := session.control.getConn(); control != nil {
+		if conn, ok := control.conn.(*Conn); ok && conn.isTabletsRoutingV2() {
+			mode, err := getKeyspaceConsistencyMode(session, keyspaceName)
+			if err != nil {
+				return nil, err
+			}
+			keyspace.ConsistencyMode = mode
+		}
+	}
 	return keyspace, nil
+}
+
+func getKeyspaceConsistencyMode(session *Session, keyspaceName string) (string, error) {
+	iter := session.control.querySystem(`SELECT consistency FROM system_schema.scylla_keyspaces WHERE keyspace_name = ?`, keyspaceName)
+	var mode string
+	iter.Scan(&mode)
+	if err := iter.Close(); err != nil && err != ErrNotFound {
+		var requestErr interface{ GetCode() int }
+		// Cassandra and older ScyllaDB may not have this extension table.
+		if errors.As(err, &requestErr) && requestErr.GetCode() == ErrCodeInvalid {
+			return "", nil
+		}
+		return "", fmt.Errorf("error querying keyspace consistency: %w", err)
+	}
+	return mode, nil
 }
 
 // query for table metadata in the system_schema.tables, and system_schema.scylla_tables

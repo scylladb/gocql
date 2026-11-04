@@ -45,6 +45,7 @@ type framerConfig struct {
 	proto                 byte
 	flags                 byte
 	tabletsRoutingV1      bool
+	tabletsRoutingV2      bool
 	scyllaUseMetadataID   bool
 }
 
@@ -109,8 +110,14 @@ func (cf *connFramers) initCache(c *Conn) {
 			c.logger.Printf("gocql: failed to cast CQL protocol extension %s to %T", scyllaUseMetadataID, scyllaUseMetadataIDExt{})
 		}
 	}
+	cfg.tabletsRoutingV2 = findCQLProtoExtByName(c.cqlProtoExts, tabletsRoutingV2) != nil
 	cf.defaults = cfg
-	c.setTabletSupported(cfg.tabletsRoutingV1)
+	c.setTabletSupported(cfg.tabletsRoutingV1 || cfg.tabletsRoutingV2)
+	if cfg.tabletsRoutingV2 {
+		atomic.StoreInt32(&c.tabletsRoutingV2, 1)
+	} else {
+		atomic.StoreInt32(&c.tabletsRoutingV2, 0)
+	}
 	cf.initPool(c)
 }
 
@@ -223,6 +230,7 @@ func (fp *framerPool) init(defaults framerConfig, release func(*framer)) {
 				flagLWT:               defaults.flagLWT,
 				rateLimitingErrorCode: defaults.rateLimitingErrorCode,
 				tabletsRoutingV1:      defaults.tabletsRoutingV1,
+				tabletsRoutingV2:      defaults.tabletsRoutingV2,
 				scyllaUseMetadataID:   defaults.scyllaUseMetadataID,
 			}
 			f.release = func() { release(f) }
