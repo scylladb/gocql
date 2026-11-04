@@ -149,9 +149,14 @@ type ClusterConfig struct {
 	// set to a non-zero value, embedded ports in host strings are ignored for
 	// the purpose of peer discovery.
 	Hosts []string
-	// The time to wait for frames before flushing the frames connection to Cassandra.
-	// Can help reduce syscall overhead by making less calls to write. Set to 0 to
-	// disable.
+	// The maximum time to wait for more frames before flushing a connection's
+	// buffered writes. Set to 0 to disable.
+	//
+	// The window actually used scales with the connection's own RTT and is
+	// capped by this value. Because the Go runtime floors a sub-millisecond
+	// timer deadline to roughly 1ms when all Ps are parked, a small window
+	// mainly affects how often a connection waits at all (the coalescer only
+	// arms a window when the previous flush was recent), not the wait's length.
 	//
 	// (default: 200 microseconds)
 	WriteCoalesceWaitTime time.Duration
