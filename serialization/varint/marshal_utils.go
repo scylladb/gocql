@@ -12,19 +12,16 @@ const (
 	maxInt16 = 1<<15 - 1
 	maxInt24 = 1<<23 - 1
 	maxInt32 = 1<<31 - 1
-	maxInt40 = 1<<39 - 1
-	maxInt48 = 1<<47 - 1
-	maxInt56 = 1<<55 - 1
 	maxInt64 = 1<<63 - 1
 
 	minInt8  = -1 << 7
 	minInt16 = -1 << 15
 	minInt24 = -1 << 23
 	minInt32 = -1 << 31
-	minInt40 = -1 << 39
-	minInt48 = -1 << 47
-	minInt56 = -1 << 55
 )
+
+// maxInt40, maxInt48, maxInt56, minInt40, minInt48, minInt56 are defined
+// in architecture-specific files to avoid overflow on 32-bit architectures
 
 func EncBigInt(v big.Int) ([]byte, error) {
 	return encBigInt(v), nil
