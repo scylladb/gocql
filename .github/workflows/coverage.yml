@@ -1,20 +1,18 @@
 name: Code coverage
 
+# Coverage is deliberately not run per pull request. Its integration half runs
+# the same ScyllaDB suite the main workflow already runs (twice) on every pull
+# request, and re-running it only to attach a cover profile was the most
+# expensive duplication in CI. The report and the Codecov baseline are produced
+# on pushes to master and on demand via workflow_dispatch. The Codecov statuses
+# in codecov.yml are informational, so nothing gates a merge on a per-PR number;
+# if this workflow is a required branch-protection check, it must be removed
+# from that list, because a check that no longer runs on pull requests would
+# stay pending and block them.
 on:
   push:
     branches:
       - master
-    paths-ignore:
-      - "**.md"
-      - "docs/**"
-      - .github/workflows/docs-*
-      - .github/workflows/bench-tests.yml
-      - .github/workflows/extended-ci-longevity-large-partitions-with-network-nemesis-1h-test.yml
-  pull_request:
-    # labeled/unlabeled included so removing disable-coverage-tests
-    # re-triggers a run instead of leaving coverage skipped until the next
-    # push or reopen.
-    types: [opened, synchronize, reopened, labeled, unlabeled]
     paths-ignore:
       - "**.md"
       - "docs/**"
@@ -29,7 +27,6 @@ permissions:
 jobs:
   coverage:
     name: Measure code coverage
-    if: "!contains(github.event.pull_request.labels.*.name, 'disable-coverage-tests')"
     runs-on: ubuntu-latest
     env:
       SCYLLA_VERSION: LATEST
@@ -42,16 +39,44 @@ jobs:
         with:
           python-version: '3.11'
 
+      # Same four-way cache split as the main workflow's ScyllaDB integration
+      # job: one combined entry keyed on the Makefile discarded pip, CCM, the JDK
+      # and the PKI together on any edit, and never cached the CCM install stamps
+      # (so CCM was reinstalled from git every run). restore-keys fall back to the
+      # previous revision. This job only runs on amd64, so arch stays in the keys
+      # only to stay shaped like the main workflow's entries.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: /home/runner/.cache/pip
+          key: pip-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Makefile') }}
+          restore-keys: |
+            pip-${{ runner.os }}-${{ runner.arch }}-
+
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: |
-            /home/runner/.cache/pip
             /home/runner/.local
-            /home/runner/.sdkman
+            /home/runner/.ccm/ccm-type
+            /home/runner/.ccm/ccm-version
+          key: ccm-install-scylla-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Makefile') }}
+          restore-keys: |
+            ccm-install-scylla-${{ runner.os }}-${{ runner.arch }}-
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: /home/runner/.sdkman
+          key: sdkman-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Makefile') }}
+          restore-keys: |
+            sdkman-${{ runner.os }}-${{ runner.arch }}-
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: |
             testdata/pki
             bin/
-          # CCM, pip and java versions are in Makefile
-          key: pr-check-${{ runner.os }}-${{ hashFiles('Makefile') }}
+          key: tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Makefile') }}
+          restore-keys: |
+            tools-${{ runner.os }}-${{ runner.arch }}-
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
@@ -68,13 +93,16 @@ jobs:
         id: scylla-version
         run: make resolve-scylla-version
 
+      # runner.arch is in this key to match the main workflow's ScyllaDB image
+      # entry: without it, coverage and the integration lane each downloaded the
+      # same multi-gigabyte image into a different cache.
       - name: Pull CCM image from the cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         if: steps.scylla-version.outputs.value != 'NOT-FOUND'
         id: ccm-cache
         with:
           path: ~/.ccm/repository
-          key: ccm-scylla-${{ runner.os }}-${{ steps.scylla-version.outputs.value }}
+          key: ccm-scylla-${{ runner.os }}-${{ runner.arch }}-${{ steps.scylla-version.outputs.value }}
 
       - name: Download ScyllaDB (${{ steps.scylla-version.outputs.value }}) image
         if: steps.ccm-cache.outputs.cache-hit != 'true' && steps.scylla-version.outputs.value != 'NOT-FOUND'
@@ -85,7 +113,7 @@ jobs:
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ~/.ccm/repository
-          key: ccm-scylla-${{ runner.os }}-${{ steps.scylla-version.outputs.value }}
+          key: ccm-scylla-${{ runner.os }}-${{ runner.arch }}-${{ steps.scylla-version.outputs.value }}
 
       - name: Run integration suite with coverage
         if: steps.scylla-version.outputs.value != 'NOT-FOUND'
@@ -118,12 +146,9 @@ jobs:
       # about how the report is presented live in codecov.yml at the repo root.
       #
       # fail_ci_if_error is on only when CODECOV_TOKEN is actually available.
-      # Without it -- pull requests from forks, and Dependabot pull requests,
-      # which get Dependabot secrets rather than Actions secrets even from a
-      # branch in this repository -- `token` comes through empty and the upload
-      # falls back to Codecov's tokenless path for public repositories. That
-      # path is best-effort, and a hiccup in it must not be what turns such a
-      # pull request red.
+      # Without it the `token` comes through empty and the upload falls back to
+      # Codecov's tokenless path for public repositories. That path is
+      # best-effort, and a hiccup in it must not be what turns the run red.
       #
       # Unlike the artifact above, these upload only from a run that both
       # succeeded and actually measured everything. A partial profile is not

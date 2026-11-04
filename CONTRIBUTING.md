@@ -146,15 +146,16 @@ This prints a per-package percentage and writes `coverage-root.html`/`coverage-l
 
 CI runs the same targets in `.github/workflows/coverage.yml` and uploads the resulting
 `coverage-root.out`/`coverage-lz4.out` profiles to [Codecov](https://codecov.io/gh/scylladb/gocql),
-one upload per Go module under the `root` and `lz4` flags. Codecov then comments the delta on the
-pull request and reports it as a check. Both of its statuses are `informational` in `codecov.yml`,
-so a drop annotates the pull request but never blocks merging it -- the integration lanes need a
-live ScyllaDB cluster, and a lane that fails to start one moves the number for reasons unrelated to
-the diff. The workflow is still skippable: add the `disable-coverage-tests` label to a pull request
-and no run, and so no upload, happens. Codecov then has no report for that commit at all -- the
-`carryforward` flags in `codecov.yml` do not apply, since carryforward only fills in flags missing
-from a commit that uploaded *something* -- and comparisons against it simply walk back to the
-nearest ancestor that does have a report.
+one upload per Go module under the `root` and `lz4` flags. Coverage is deliberately not run per pull
+request: its integration half duplicates the ScyllaDB suite the main workflow already runs on every
+pull request, so the report and the Codecov baseline are produced on pushes to master (and on demand
+via `workflow_dispatch`), and a pull request is compared against that baseline rather than a per-PR
+upload. Both of Codecov's statuses are `informational` in `codecov.yml`, so a drop annotates but
+never blocks merging -- the integration lanes need a live ScyllaDB cluster, and a lane that fails to
+start one moves the number for reasons unrelated to the diff. Commits that upload nothing (a
+docs-only push, for instance) get no report at all -- the `carryforward` flags in `codecov.yml` do
+not apply, since carryforward only fills in flags missing from a commit that uploaded *something*
+-- and comparisons against them simply walk back to the nearest ancestor that has a report.
 
 ### Sign Off Procedure
 
