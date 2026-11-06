@@ -151,6 +151,12 @@ func (q *queryExecutor) executeQuery(qry ExecutableQuery, metrics *queryMetrics)
 		}
 		return iter, nil
 	}
+	// speculate drives the extra attempts from a time.Ticker, which panics on
+	// a non-positive interval. Check before anything is launched so a bad
+	// policy fails this query instead of crashing the process.
+	if delay := sp.Delay(); delay <= 0 {
+		return nil, fmt.Errorf("speculative execution delay must be positive, got %v", delay)
+	}
 	executionQry := queryForSpeculativeExecution(qry, metrics)
 	executionAttempts := new(atomic.Int64)
 	// Runner borrows can be released immediately after publishing a result.
