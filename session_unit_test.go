@@ -4749,3 +4749,40 @@ func TestQueryExecutorRejectsNonPositiveSpeculativeDelay(t *testing.T) {
 		})
 	}
 }
+
+// changingDelayPolicy returns a positive delay on the first Delay call and a
+// non-positive one afterwards.
+type changingDelayPolicy struct {
+	calls atomic.Int32
+}
+
+func (p *changingDelayPolicy) Attempts() int { return 1 }
+
+func (p *changingDelayPolicy) Delay() time.Duration {
+	if p.calls.Add(1) == 1 {
+		return time.Millisecond
+	}
+	return 0
+}
+
+func TestQueryExecutorReadsSpeculativeDelayOnce(t *testing.T) {
+	host := (&HostInfo{hostId: UUID{12}}).setState(NodeUp)
+	executor := newTestQueryExecutor(host)
+	policy := &changingDelayPolicy{}
+	qry := &executorTestQuery{
+		ctx:        context.Background(),
+		rt:         &SimpleRetryPolicy{},
+		spec:       policy,
+		idempotent: true,
+	}
+	qry.executeFunc = func(context.Context, *Conn) *Iter {
+		return &Iter{}
+	}
+
+	if _, err := executor.executeQuery(qry, newQueryMetrics()); err != nil {
+		t.Fatalf("executeQuery returned an error: %v", err)
+	}
+	if got := policy.calls.Load(); got != 1 {
+		t.Fatalf("Delay called %d times, want 1", got)
+	}
+}
