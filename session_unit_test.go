@@ -4718,3 +4718,71 @@ func TestNewSessionInitialPolicyNoAttempts(t *testing.T) {
 		})
 	}
 }
+
+func TestQueryExecutorRejectsNonPositiveSpeculativeDelay(t *testing.T) {
+	for _, delay := range []time.Duration{0, -time.Millisecond} {
+		t.Run(delay.String(), func(t *testing.T) {
+			host := (&HostInfo{hostId: UUID{12}}).setState(NodeUp)
+			executor := newTestQueryExecutor(host)
+			var calls atomic.Int32
+			qry := &executorTestQuery{
+				ctx:        context.Background(),
+				rt:         &SimpleRetryPolicy{},
+				spec:       &SimpleSpeculativeExecution{NumAttempts: 1, TimeoutDelay: delay},
+				idempotent: true,
+			}
+			qry.executeFunc = func(context.Context, *Conn) *Iter {
+				calls.Add(1)
+				return &Iter{}
+			}
+
+			_, err := executor.executeQuery(qry, newQueryMetrics())
+			if err == nil {
+				t.Fatal("executeQuery succeeded, want an error for a non-positive speculative delay")
+			}
+			if got := calls.Load(); got != 0 {
+				t.Fatalf("attempts = %d, want 0: nothing should run with an invalid policy", got)
+			}
+			if b, r := qry.borrowed.Load(), qry.released.Load(); b != r {
+				t.Fatalf("execution borrows = %d, releases = %d, want them equal", b, r)
+			}
+		})
+	}
+}
+
+// changingDelayPolicy returns a positive delay on the first Delay call and a
+// non-positive one afterwards.
+type changingDelayPolicy struct {
+	calls atomic.Int32
+}
+
+func (p *changingDelayPolicy) Attempts() int { return 1 }
+
+func (p *changingDelayPolicy) Delay() time.Duration {
+	if p.calls.Add(1) == 1 {
+		return time.Millisecond
+	}
+	return 0
+}
+
+func TestQueryExecutorReadsSpeculativeDelayOnce(t *testing.T) {
+	host := (&HostInfo{hostId: UUID{12}}).setState(NodeUp)
+	executor := newTestQueryExecutor(host)
+	policy := &changingDelayPolicy{}
+	qry := &executorTestQuery{
+		ctx:        context.Background(),
+		rt:         &SimpleRetryPolicy{},
+		spec:       policy,
+		idempotent: true,
+	}
+	qry.executeFunc = func(context.Context, *Conn) *Iter {
+		return &Iter{}
+	}
+
+	if _, err := executor.executeQuery(qry, newQueryMetrics()); err != nil {
+		t.Fatalf("executeQuery returned an error: %v", err)
+	}
+	if got := policy.calls.Load(); got != 1 {
+		t.Fatalf("Delay called %d times, want 1", got)
+	}
+}
