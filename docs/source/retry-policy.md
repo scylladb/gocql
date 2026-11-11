@@ -44,11 +44,11 @@ execution can be downgraded after a preparation or binding failure.
 The idempotence check in built-in retry policies suppresses a retry only when
 the returned `*gocql.QueryError` has `PotentiallyExecuted() == true`. The driver
 sets this flag for ambiguous client-side failures, such as a request timeout or
-transport error after sending the request, but not for server error responses.
-In particular, `SimpleRetryPolicy` and `ExponentialBackoffRetryPolicy` can retry
-a server `WRITE_TIMEOUT` even when the operation is not marked idempotent,
-although some mutations may already have been applied. Use a custom policy that
-rethrows such errors when repeating a non-idempotent write would be unsafe.
+transport error after sending the request, and for the server errors
+`WRITE_TIMEOUT`, `WRITE_FAILURE` and `CAS_WRITE_UNKNOWN`, after which some
+mutations may already have been applied. Built-in policies therefore rethrow
+these errors for operations that are not marked idempotent. Other server error
+responses do not set the flag.
 
 Mark an operation idempotent only when repeating it is safe:
 
