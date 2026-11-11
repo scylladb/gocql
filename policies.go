@@ -983,15 +983,26 @@ func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 	}
 
 	var replicas []*HostInfo
+	var leader *HostInfo
+	var excludedLeader *HostInfo
 
 	if session := qry.GetSession(); session != nil && session.tabletsRoutingV1 && isInt64Token {
-		tabletReplicas := session.findTabletReplicasUnsafeForToken(qry.Keyspace(), qry.Table(), int64(tokenCasted))
-		if len(tabletReplicas) != 0 {
+		tablet, hasTablet := session.findTabletForToken(qry.Keyspace(), qry.Table(), int64(tokenCasted))
+		tabletReplicas := tablet.ReplicasUnsafe()
+		if hasTablet && len(tabletReplicas) != 0 {
 			// Presized to the known upper bound.
 			replicas = make([]*HostInfo, 0, len(tabletReplicas))
 			hosts := t.hosts.get()
+			if _, versioned := tablet.Version(); versioned && session.prefersTabletLeader(qry) {
+				candidate := hosts.hostByID(UUID(tabletReplicas[0].HostUUIDValue()))
+				if t.tabletLeaderAllowed(qry, candidate) {
+					leader = candidate
+				} else {
+					excludedLeader = candidate
+				}
+			}
 			for _, replica := range tabletReplicas {
-				if host := hosts.hostByID(UUID(replica.HostUUIDValue())); host != nil {
+				if host := hosts.hostByID(UUID(replica.HostUUIDValue())); host != nil && host != excludedLeader {
 					replicas = append(replicas, host)
 				}
 			}
@@ -1060,9 +1071,25 @@ func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 
 	var used hostSet
 	return func() SelectedHost {
+		// A global tablet's leader may be outside the local DC. Try it before
+		// the ordinary locality/health ordering, then keep the usual fallbacks.
+		if leader != nil {
+			h := leader
+			leader = nil
+			if h.IsUp() {
+				used.add(h)
+				if token == nil {
+					return int64SelectedHost{info: h, tokenCasted: tokenCasted}
+				}
+				return selectedHost{info: h, token: token}
+			}
+		}
 		for i < len(replicas) {
 			h := replicas[i]
 			i++
+			if h == excludedLeader || used.contains(h) {
+				continue
+			}
 
 			var tier uint
 			if tiererOk {
@@ -1116,7 +1143,7 @@ func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 
 		// filter the token aware selected hosts from the fallback hosts
 		for fallbackHost := fallbackIter(); fallbackHost != nil; fallbackHost = fallbackIter() {
-			if !used.contains(fallbackHost.Info()) {
+			if fallbackHost.Info() != excludedLeader && !used.contains(fallbackHost.Info()) {
 				used.add(fallbackHost.Info())
 				return fallbackHost
 			}

@@ -4,7 +4,9 @@
 package tablets
 
 import (
+	"bytes"
 	"encoding/binary"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -171,4 +173,57 @@ func TestParseHostUUIDRejects(t *testing.T) {
 		}
 	}()
 	MustParseHostUUID("not a uuid")
+}
+
+func TestParseHintV2Version(t *testing.T) {
+	for _, version := range []uint64{0, 1, 1 << 63, ^uint64(0)} {
+		t.Run(fmt.Sprintf("%x", version), func(t *testing.T) {
+			data := append(hintPayload(-100, 200, hintReplica(hintHost1, 7)), hintBigInt(int64(version))...)
+			tablet, err := ParseHintV2(data, "CaseKS", "CaseTable")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got, known := tablet.Version(); !known || got != version {
+				t.Fatalf("version: %x, %v; want %x", got, known, version)
+			}
+			cache := NewCowTabletList()
+			defer cache.Close()
+			cache.AddTablet(tablet)
+			cache.Flush()
+			entry, ok := cache.FindTabletForToken("CaseKS", "CaseTable", 1)
+			if !ok {
+				t.Fatal("tablet not cached")
+			}
+			if got, known := entry.Version(); !known || got != version {
+				t.Fatalf("entry version: %x, %v", got, known)
+			}
+			if got, known := cache.Get()[0].Version(); !known || got != version {
+				t.Fatalf("snapshot version: %x, %v", got, known)
+			}
+			cache.AddTablet(mustParseV1(t, hintPayload(-100, 200, hintReplica(hintHost2, 2))))
+			cache.Flush()
+			entry, _ = cache.FindTabletForToken("CaseKS", "CaseTable", 1)
+			if _, known := entry.Version(); known {
+				t.Fatal("V1 update kept stale V2 version/leader ordering")
+			}
+		})
+	}
+}
+
+func mustParseV1(t *testing.T, data []byte) TabletInfo {
+	t.Helper()
+	tablet, err := ParseHint(data, "CaseKS", "CaseTable")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return tablet
+}
+
+func TestParseHintV2RejectsMissingVersion(t *testing.T) {
+	base := hintPayload(-100, 200, hintReplica(hintHost1, 7))
+	for _, data := range [][]byte{base, append(bytes.Clone(base), hintBigInt(1)[:10]...), append(bytes.Clone(base), hintBytes(nil)...), append(bytes.Clone(base), hintBytes([]byte{1})...)} {
+		if _, err := ParseHintV2(data, "ks", "t"); err == nil {
+			t.Fatalf("accepted invalid V2 hint: %x", data)
+		}
+	}
 }
