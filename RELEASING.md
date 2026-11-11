@@ -82,9 +82,10 @@ git tag --verify v1.20.0
 
 Repeat for `lz4/v1.20.0`. Object type must be `tag`; resolved commit must match requested SHA; signature must identify committed fingerprint.
 
-After both GitHub Releases are published and verified, the shared docs workflow
-builds and deploys the new version to GitHub Pages. Its `publish: false` call
-checks the candidate before publication; its `publish: true` call runs afterward.
+Before publication, the read-only docs builder checks the candidate with
+`package-pages: false`. After both GitHub Releases are published and verified,
+the separate docs publishing workflow builds the complete Pages artifact and
+deploys the new version to GitHub Pages.
 The Pages build selects published root releases for the version menu and points `/stable` at the highest stable
 version. The pre-publication docs gate builds the candidate source; the Pages
 build runs only after the release tag and GitHub Release exist. A failed Pages

@@ -102,7 +102,7 @@ jobs:
     uses: ./.github/workflows/docs.yml
     with:
       target: ${{ needs.preflight.outputs.resolved_sha }}
-      publish: false
+      package-pages: false
 
   publication-gate:
     name: Final publication gate
@@ -189,11 +189,10 @@ jobs:
     name: Publish released docs
     if: inputs.mode == 'publish'
     needs: [preflight, publish]
-    uses: ./.github/workflows/docs.yml
+    uses: ./.github/workflows/docs-publish.yml
     permissions:
       contents: read
       pages: write
       id-token: write
     with:
       target: ${{ needs.preflight.outputs.root_tag }}
-      publish: true
