@@ -1,0 +1,30 @@
+# Copyright (C) 2026 ScyllaDB
+name: Docs / Build and publish
+
+on:
+  workflow_call:
+    inputs:
+      target:
+        description: all, master, or a published root release tag.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    uses: ./.github/workflows/docs.yml
+    with:
+      target: ${{ inputs.target }}
+      package-pages: true
+
+  # This workflow is only called by trusted publishing jobs. Read-only PR
+  # validation calls docs.yml directly and cannot request deployment tokens.
+  deploy:
+    needs: build
+    uses: ./.github/workflows/docs-deploy.yml
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
