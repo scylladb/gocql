@@ -6,6 +6,7 @@ on:
     paths:
       - 'docs/**'
       - '.github/workflows/docs.yml'
+      - '.github/workflows/docs-publish.yml'
       - '.github/workflows/docs-deploy.yml'
       - '.github/workflows/docs-pages.yml'
   workflow_dispatch:
@@ -53,15 +54,10 @@ jobs:
 
   publish:
     needs: select-target
-    uses: ./.github/workflows/docs.yml
-    with:
-      target: ${{ needs.select-target.outputs.target }}
-      publish: true
-
-  deploy:
-    needs: publish
-    uses: ./.github/workflows/docs-deploy.yml
+    uses: ./.github/workflows/docs-publish.yml
     permissions:
       contents: read
       pages: write
       id-token: write
+    with:
+      target: ${{ needs.select-target.outputs.target }}

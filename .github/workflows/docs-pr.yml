@@ -24,4 +24,4 @@ jobs:
     uses: ./.github/workflows/docs.yml
     with:
       target: ${{ github.sha }}
-      publish: false
+      package-pages: false
