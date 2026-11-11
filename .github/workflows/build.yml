@@ -46,8 +46,6 @@ jobs:
     permissions:
       contents: read
     strategy:
-      # The caller selects one or both architectures; every entry uses the
-      # same checkout, lint, build, and unit-test steps.
       matrix:
         arch: ${{ fromJSON(needs.matrix.outputs.arch) }}
       fail-fast: false
@@ -56,28 +54,16 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ inputs.target_commit }}
-          # make check's check-lz4-pin compares go.mod's lz4 require against the
-          # newest lz4/v* tag, so the tags have to be present. fetch-depth: 0 rather
-          # than fetch-tags on top of the default depth-1 fetch: it makes the tag set
-          # unconditional instead of dependent on which tags a shallow fetch chose to
-          # bring along. check-lz4-pin no longer skips when it finds none, so getting
-          # this wrong is now a failure rather than a silent pass.
-          fetch-depth: 0
 
-      # runner.arch keeps cached binaries and relocatables separate across
-      # architectures; runner.os is "Linux" on both.
+      # Only test-unit's .prepare-pki needs a cache here; CCM, JDK and bin/ belong
+      # to the integration jobs. Linting lives in lint.yml.
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        if: matrix.arch == 'amd64'
         with:
-          path: |
-            /home/runner/.cache/pip
-            /home/runner/.local
-            /home/runner/.ccm/scylla-repository
-            /home/runner/.ccm/repository
-            /home/runner/.sdkman
-            testdata/pki
-            bin/
-          # CCM, scylla, cassandra and java versions are in Makefile
-          key: pr-check-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Makefile') }}
+          path: testdata/pki
+          key: pki-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Makefile') }}
+          restore-keys: |
+            pki-${{ runner.os }}-${{ runner.arch }}-
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
@@ -87,10 +73,16 @@ jobs:
             tests/bench/go.sum
             go.sum
 
-      - name: Run linters
-        run: make check
-
       - name: Run unit tests
+        if: matrix.arch == 'amd64'
         run: make test-unit
 
-      - run: sudo sh -c "echo 2097152 >> /proc/sys/fs/aio-max-nr"
+      # arm64 exists for the lz4 module's per-arch decode assembly, so it only
+      # builds (go test never compiles the `all`-tagged files) and tests lz4.
+      - name: Build
+        if: matrix.arch == 'arm64'
+        run: make build
+
+      - name: Run lz4 unit tests
+        if: matrix.arch == 'arm64'
+        run: make test-lz4
