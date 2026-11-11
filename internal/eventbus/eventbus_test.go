@@ -298,9 +298,6 @@ func TestSubscribeWithContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	sub := eb.SubscribeWithContext(ctx, "test", 10, nil)
-	if err != nil {
-		t.Fatalf("SubscribeWithContext failed: %v", err)
-	}
 
 	// Send an event
 	eb.PublishEvent(42)
@@ -338,9 +335,6 @@ func TestChannelClosedOnStop(t *testing.T) {
 	}
 
 	sub := eb.Subscribe("test", 10, nil)
-	if err != nil {
-		t.Fatalf("Subscribe failed: %v", err)
-	}
 
 	err = eb.Stop()
 	if err != nil {
