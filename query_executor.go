@@ -97,9 +97,9 @@ func (q *queryExecutor) attemptQuery(ctx context.Context, qry ExecutableQuery, m
 }
 
 func (q *queryExecutor) speculate(ctx context.Context, qry, releaseQry ExecutableQuery, sp SpeculativeExecutionPolicy,
-	metrics *queryMetrics, executionAttempts *atomic.Int64, hostIter NextHost,
+	delay time.Duration, metrics *queryMetrics, executionAttempts *atomic.Int64, hostIter NextHost,
 	results chan queryExecutionResult) queryExecutionResult {
-	ticker := time.NewTicker(sp.Delay())
+	ticker := time.NewTicker(delay)
 	defer ticker.Stop()
 
 	for i := 0; i < sp.Attempts(); i++ {
@@ -151,6 +151,14 @@ func (q *queryExecutor) executeQuery(qry ExecutableQuery, metrics *queryMetrics)
 		}
 		return iter, nil
 	}
+	// speculate drives the extra attempts from a time.Ticker, which panics on
+	// a non-positive interval. Check before anything is launched so a bad
+	// policy fails this query instead of crashing the process. The checked
+	// value is passed to speculate so Delay is only read once.
+	delay := sp.Delay()
+	if delay <= 0 {
+		return nil, fmt.Errorf("speculative execution delay must be positive, got %v", delay)
+	}
 	executionQry := queryForSpeculativeExecution(qry, metrics)
 	executionAttempts := new(atomic.Int64)
 	// Runner borrows can be released immediately after publishing a result.
@@ -181,7 +189,7 @@ func (q *queryExecutor) executeQuery(qry ExecutableQuery, metrics *queryMetrics)
 	// The speculative executions are launched _in addition_ to the main
 	// execution, on a timer. So Speculation{2} would make 3 executions running
 	// in total.
-	if result := q.speculate(ctx, executionQry, qry, sp, metrics, executionAttempts, hostIter, results); result.iter != nil {
+	if result := q.speculate(ctx, executionQry, qry, sp, delay, metrics, executionAttempts, hostIter, results); result.iter != nil {
 		if result.consistency != qry.GetConsistency() {
 			qry.SetConsistency(result.consistency)
 		}
