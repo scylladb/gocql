@@ -11,7 +11,7 @@ SCYLLA_VERSION ?= LATEST
 
 HOST_ARCH := $(shell uname -m)
 
-GOLANGCI_VERSION = 2.5.0
+GOLANGCI_VERSION = 2.10.0
 GET_VERSION_VERSION = 0.4.5
 GET_VERSION_BIN = $(MAKEFILE_PATH)/bin/get-version
 # get-version publishes one release archive per architecture, and every

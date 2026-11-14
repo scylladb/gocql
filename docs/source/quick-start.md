@@ -2,7 +2,7 @@
 
 ## Supported Go versions
 
-The module's `go.mod` declares Go 1.25 as its minimum version. CI builds and
+The module's `go.mod` declares Go 1.26 as its minimum version. CI builds and
 tests with that version.
 
 ## Install
