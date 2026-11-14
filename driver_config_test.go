@@ -70,8 +70,11 @@ func TestDriverConfigReporterStartupOptions(t *testing.T) {
 	if got := report.Connection.Connect.TimeoutMs; got == nil || *got != cfg.ConnectTimeout.Milliseconds() {
 		t.Errorf("connect.timeout-ms = %v, want %d", got, cfg.ConnectTimeout.Milliseconds())
 	}
-	if got, want := report.Query.Defaults.Consistency, "QUORUM"; got != want {
+	if got, want := report.Query.Defaults.Consistency, "LOCAL_QUORUM"; got != want {
 		t.Errorf("query.defaults.consistency = %q, want %q", got, want)
+	}
+	if got, want := report.Query.Defaults.SerialConsistency, "LOCAL_SERIAL"; got != want {
+		t.Errorf("query.defaults.serial-consistency = %q, want %q", got, want)
 	}
 	if report.ControlPlane.Schema.Agreement.TimeoutMs != cfg.MaxWaitSchemaAgreement.Milliseconds() {
 		t.Errorf("control-plane.schema.agreement.timeout-ms = %d, want %d",

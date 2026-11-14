@@ -211,6 +211,32 @@ func TestCloudCluster(t *testing.T) {
 		},
 	}
 
+	for _, tc := range []struct {
+		name         string
+		parameters   *Parameters
+		cons, serial ConsistencyString
+	}{
+		{name: "default consistency parameters", cons: DefaultLocalQuorumConsistency, serial: DefaultLocalSerialConsistency},
+		{name: "empty consistency parameters", parameters: &Parameters{}, cons: DefaultLocalQuorumConsistency, serial: DefaultLocalSerialConsistency},
+		{name: "regular consistency override", parameters: &Parameters{DefaultConsistency: DefaultOneConsistency}, cons: DefaultOneConsistency, serial: DefaultLocalSerialConsistency},
+		{name: "serial consistency override", parameters: &Parameters{DefaultSerialConsistency: DefaultSerialConsistency}, cons: DefaultLocalQuorumConsistency, serial: DefaultSerialConsistency},
+		{name: "both consistency overrides", parameters: &Parameters{DefaultConsistency: DefaultQuorumConsistency, DefaultSerialConsistency: DefaultSerialConsistency}, cons: DefaultQuorumConsistency, serial: DefaultSerialConsistency},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cc := singleDCConfig()
+			cc.Parameters = tc.parameters
+			_, path := writeCloudConnectionConfigToTemp(t, cc)
+			defer os.RemoveAll(path)
+			cluster, err := NewCloudCluster(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cluster.Consistency.String() != string(tc.cons) || cluster.SerialConsistency.String() != string(tc.serial) {
+				t.Fatalf("consistency = %v/%v, want %v/%v", cluster.Consistency, cluster.SerialConsistency, tc.cons, tc.serial)
+			}
+		})
+	}
+
 	for i := range ts {
 		test := ts[i]
 		t.Run(test.name, func(t *testing.T) {

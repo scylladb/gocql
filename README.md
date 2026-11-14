@@ -156,21 +156,25 @@ __When working with a Scylla cluster, `PoolConfig.NumConns` option has no effect
 ```go
 c := gocql.NewCluster(hosts...)
 
-// Enable token aware host selection policy, if using multi-dc cluster set a local DC.
+// NewCluster defaults to LocalQuorum and LocalSerial in the coordinator's DC.
+// In a multi-DC cluster, use the same localDC for clients that need shared
+// local read/write quorums or local LWT ordering, and keep coordinators there.
 fallback := gocql.RoundRobinHostPolicy()
 if localDC != "" {
-	fallback = gocql.DCAwareRoundRobinPolicy(localDC)
+	fallback = gocql.DCAwareRoundRobinPolicy(localDC, gocql.HostPolicyOptionDisableDCFailover)
 }
 c.PoolConfig.HostSelectionPolicy = gocql.TokenAwareHostPolicy(fallback)
-
-// If using multi-dc cluster use the "local" consistency levels.
-if localDC != "" {
-	c.Consistency = gocql.LocalQuorum
-}
 
 // When working with a Scylla cluster the driver always opens one connection per shard, so `NumConns` is ignored.
 // c.NumConns = 4
 ```
+
+The default host selection policy does not choose a local DC automatically.
+An empty `localDC` leaves the example datacenter-unaware. Disabling DC failover
+keeps local quorums and LWT serial ordering in the configured datacenter, at the
+cost of cross-datacenter failover availability. See [Load balancing](docs/source/load-balancing.md)
+for routing and failover details, and [Consistency defaults](docs/source/statements/index.md#consistency-defaults)
+for explicit cross-datacenter consistency settings.
 
 ### 5.1 Advanced shard awareness (shard-aware port)
 

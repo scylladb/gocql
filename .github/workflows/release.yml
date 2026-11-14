@@ -192,8 +192,16 @@ jobs:
     uses: ./.github/workflows/docs.yml
     permissions:
       contents: read
-      pages: write
-      id-token: write
     with:
       target: ${{ needs.preflight.outputs.root_tag }}
       publish: true
+
+  deploy-docs:
+    name: Deploy released docs
+    if: inputs.mode == 'publish'
+    needs: publish-docs
+    uses: ./.github/workflows/docs-deploy.yml
+    permissions:
+      contents: read
+      pages: write
+      id-token: write

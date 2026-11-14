@@ -48,6 +48,29 @@ if err := scanner.Err(); err != nil {
 }
 ```
 
+## Consistency defaults
+
+`NewCluster` defaults ordinary reads, writes and batches to `LOCAL_QUORUM`.
+Conditional statements additionally use `LOCAL_SERIAL` for their serial phase.
+These defaults also apply to automatically prepared statements.
+
+"Local" means the coordinator's datacenter. The default host selection policy is
+`TokenAwareHostPolicy(RoundRobinHostPolicy())`, which is not datacenter-aware;
+the consistency defaults do not select a local datacenter automatically.
+In a multi-datacenter cluster, configure a datacenter-aware policy with the same
+datacenter for all clients whose reads and writes must share a local quorum.
+Reads and writes coordinated in different datacenters can use disjoint local
+quorums, so a read need not see a preceding write from another datacenter.
+See [Load balancing](../load-balancing.md) for configuration, including how to
+disable cross-datacenter failover when that shared quorum is required.
+
+This changes the previous defaults of `QUORUM` and an omitted serial consistency
+(which lets the server use `SERIAL`). Applications that need the previous
+cross-datacenter behavior can set `ClusterConfig.Consistency = gocql.Quorum` and
+`ClusterConfig.SerialConsistency = gocql.Serial` before creating a session.
+Query and batch consistency setters continue to override the session defaults,
+and explicit ScyllaDB Cloud bundle parameters continue to override cluster defaults.
+
 ## Prepared statements
 
 The driver automatically prepares DML statements and caches prepared metadata.

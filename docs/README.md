@@ -2,7 +2,7 @@
 
 # Documentation workflows
 
-[Docs / Build and publish](../.github/workflows/docs.yml) is the shared workflow for checking and publishing documentation. Set `publish: false` to build without deploying and `publish: true` to deploy the Pages site after the build passes.
+[Docs / Build](../.github/workflows/docs.yml) is the shared read-only workflow for checking documentation and preparing the Pages artifact. Set `publish: false` to validate without uploading a deployment artifact and `publish: true` to build the complete site and upload its deployment artifact. Separate deployment jobs in [Docs / Publish](../.github/workflows/docs-pages.yml) and [Release](../.github/workflows/release.yml) deploy that artifact after their builds pass; only those deployment jobs receive Pages and OIDC write permissions. The release deployment runs only in publish mode, after the release and its documentation build succeed. PR builds require only read access to repository contents.
 
 | `target` | Check (`publish: false`) | Publish (`publish: true`) |
 | --- | --- | --- |
