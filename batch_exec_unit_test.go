@@ -23,10 +23,11 @@ type receivedBatchStmt struct {
 }
 
 type receivedBatch struct {
-	typ        BatchType
-	stmts      []receivedBatchStmt
-	cons       Consistency
-	serialCons Consistency
+	typ           BatchType
+	stmts         []receivedBatchStmt
+	cons          Consistency
+	serialCons    Consistency
+	hasSerialCons bool
 }
 
 // readBatchRequest decodes a BATCH body written by framer.writeBatchFrame. It
@@ -50,7 +51,8 @@ func readBatchRequest(f *framer) receivedBatch {
 	}
 	b.cons = f.readConsistency()
 	flags := uint32(f.readByte())
-	if flags&frm.FlagWithSerialConsistency != 0 {
+	b.hasSerialCons = flags&frm.FlagWithSerialConsistency != 0
+	if b.hasSerialCons {
 		b.serialCons = f.readConsistency()
 	}
 	return b

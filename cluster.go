@@ -258,10 +258,10 @@ type ClusterConfig struct {
 	// Default: 11 Seconds
 	ReadTimeout time.Duration
 	// Consistency for the serial part of queries, values can be either SERIAL or LOCAL_SERIAL.
-	// Default: unset
+	// Default: LOCAL_SERIAL
 	SerialConsistency Consistency
 	// Default consistency level.
-	// Default: Quorum
+	// Default: LOCAL_QUORUM
 	Consistency Consistency
 	// Configure events the driver will register for
 	Events struct {
@@ -452,7 +452,8 @@ func NewCluster(hosts ...string) *ClusterConfig {
 		WriteTimeout:                  11 * time.Second,
 		MaxExcessShardConnectionsRate: 2,
 		NumConns:                      2,
-		Consistency:                   Quorum,
+		Consistency:                   LocalQuorum,
+		SerialConsistency:             LocalSerial,
 		MaxPreparedStmts:              defaultMaxPreparedStmts,
 		MaxRoutingKeyInfo:             1000,
 		PageSize:                      5000,

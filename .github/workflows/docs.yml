@@ -1,5 +1,5 @@
 # Copyright (C) 2026 ScyllaDB
-name: Docs / Build and publish
+name: Docs / Build
 
 on:
   workflow_call:
@@ -9,7 +9,7 @@ on:
         required: true
         type: string
       publish:
-        description: Deploy the complete Pages site after a successful build.
+        description: Build the complete Pages site and upload its deployment artifact.
         required: true
         type: boolean
 
@@ -107,19 +107,3 @@ jobs:
           name: github-pages
           path: ${{ runner.temp }}/artifact.tar
           retention-days: 1
-
-  deploy:
-    if: ${{ inputs.publish }}
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5

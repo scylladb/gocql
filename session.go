@@ -583,9 +583,8 @@ func (s *Session) reconnectDownedHosts(intv time.Duration) {
 	}
 }
 
-// SetConsistency sets the default consistency level for this session. This
-// setting can also be changed on a per-query basis and the default value
-// is Quorum.
+// SetConsistency sets the default consistency level for this session. NewCluster
+// defaults it to LocalQuorum. Each query can override the session setting.
 func (s *Session) SetConsistency(cons Consistency) {
 	s.mu.Lock()
 	s.cons = cons
@@ -2389,9 +2388,10 @@ func (q *Query) Bind(v ...any) *Query {
 
 // SerialConsistency sets the consistency level for the
 // serial phase of conditional updates. That consistency can only be
-// either SERIAL or LOCAL_SERIAL and if not present, it defaults to
-// SERIAL. This option will be ignored for anything else that a
-// conditional update/insert.
+// either SERIAL or LOCAL_SERIAL. Queries inherit ClusterConfig.SerialConsistency,
+// which NewCluster defaults to LOCAL_SERIAL. If that field is explicitly zero,
+// the server default (SERIAL) applies. This option is ignored for statements
+// other than conditional updates/inserts.
 func (q *Query) SerialConsistency(cons Consistency) *Query {
 	if !cons.IsSerial() {
 		panic("Serial consistency can only be SERIAL or LOCAL_SERIAL got " + cons.String())
@@ -3583,9 +3583,10 @@ func (b *Batch) Size() int {
 
 // SerialConsistency sets the consistency level for the
 // serial phase of conditional updates. That consistency can only be
-// either SERIAL or LOCAL_SERIAL and if not present, it defaults to
-// SERIAL. This option will be ignored for anything else that a
-// conditional update/insert.
+// either SERIAL or LOCAL_SERIAL. Batches inherit ClusterConfig.SerialConsistency,
+// which NewCluster defaults to LOCAL_SERIAL. If that field is explicitly zero,
+// the server default (SERIAL) applies. This option is ignored for statements
+// other than conditional updates/inserts.
 //
 // Only available for protocol 3 and above
 func (b *Batch) SerialConsistency(cons Consistency) *Batch {
