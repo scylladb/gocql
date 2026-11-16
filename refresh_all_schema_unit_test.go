@@ -97,6 +97,110 @@ func TestRefreshAllSchemaTableDropped(t *testing.T) {
 	requireTablets(t, s, map[string]bool{"ks1.t1": false, "ks1.t2": true, "ks2.t3": true})
 }
 
+// An invalidated table that still exists keeps its tablets.
+func TestRefreshAllSchemaInvalidatedTableKept(t *testing.T) {
+	t.Parallel()
+
+	s, _ := refreshAllSchemaSession(t)
+	s.metadataDescriber.invalidateTableSchema("ks1", "t1")
+
+	refreshAllSchemaNow(t, s)
+	requireTablets(t, s, map[string]bool{"ks1.t1": true, "ks1.t2": true, "ks2.t3": true})
+}
+
+// An invalidated live view keeps its tablets, whether it is in Views or is an
+// index backing view (omitted from Views, matched through Indexes).
+func TestRefreshAllSchemaInvalidatedViewKept(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct{ view, index string }{{"mv1", ""}, {"idx_index", "idx"}} {
+		t.Run(tc.view, func(t *testing.T) {
+			t.Parallel()
+
+			s, ctrl := refreshAllSchemaSession(t)
+			meta := func(col string) resultMetadata {
+				return resultMetadata{
+					columns:        []ColumnInfo{{Name: col, TypeInfo: typeVarchar}},
+					actualColCount: 1,
+					colCount:       1,
+				}
+			}
+			ctrl.iterFor = func(stmt string) *Iter {
+				switch {
+				case strings.HasPrefix(stmt, "SELECT * FROM system_schema.views WHERE keyspace_name = ?"):
+					m := meta("view_name")
+					return makeIter(m, marshalRow(m, []any{tc.view}))
+				case tc.index != "" && strings.HasPrefix(stmt, "SELECT * FROM system_schema.indexes WHERE keyspace_name = ?"):
+					m := meta("index_name")
+					return makeIter(m, marshalRow(m, []any{tc.index}))
+				}
+				return nil
+			}
+			addTestTablets(t, s, "ks1", tc.view)
+			s.metadataDescriber.invalidateTableSchema("ks1", tc.view)
+
+			refreshAllSchemaNow(t, s)
+			if !hasTablets(s, "ks1", tc.view) {
+				t.Errorf("ks1.%s lost its tablets", tc.view)
+			}
+		})
+	}
+}
+
+// A table invalidated by a TABLE UPDATED event leaves ks.Tables but must still
+// lose its tablets if it is dropped before the next refresh.
+func TestRefreshAllSchemaInvalidatedTableDropped(t *testing.T) {
+	t.Parallel()
+
+	s, ctrl := refreshAllSchemaSession(t)
+	s.metadataDescriber.invalidateTableSchema("ks1", "t1")
+	ctrl.knownKeyspaces["ks1"] = ctrl.knownKeyspaces["ks1"][1:] // t1 is gone
+
+	refreshAllSchemaNow(t, s)
+	requireTablets(t, s, map[string]bool{"ks1.t1": false, "ks1.t2": true, "ks2.t3": true})
+}
+
+// A lookup that finds an invalidated table dropped clears its marker, so it
+// must drop the tablets itself or a missed DROPPED event leaks them.
+func TestGetTableInvalidatedTableDropped(t *testing.T) {
+	t.Parallel()
+
+	s, ctrl := refreshAllSchemaSession(t)
+	s.metadataDescriber.invalidateTableSchema("ks1", "t1")
+	ctrl.knownKeyspaces["ks1"] = ctrl.knownKeyspaces["ks1"][1:] // t1 is gone
+
+	if _, err := s.metadataDescriber.GetTable("ks1", "t1"); err == nil {
+		t.Fatal("GetTable of a dropped table succeeded")
+	}
+	refreshAllSchemaNow(t, s)
+	requireTablets(t, s, map[string]bool{"ks1.t1": false, "ks1.t2": true, "ks2.t3": true})
+}
+
+// An index named like a dropped table must not keep that table's tablets: only
+// "<index>_index" is an index backing view.
+func TestRefreshAllSchemaInvalidatedTableDroppedIndexNameClash(t *testing.T) {
+	t.Parallel()
+
+	s, ctrl := refreshAllSchemaSession(t)
+	ctrl.iterFor = func(stmt string) *Iter {
+		if strings.HasPrefix(stmt, "SELECT * FROM system_schema.indexes WHERE keyspace_name = ?") {
+			m := resultMetadata{
+				columns:        []ColumnInfo{{Name: "index_name", TypeInfo: typeVarchar}},
+				actualColCount: 1,
+				colCount:       1,
+			}
+			return makeIter(m, marshalRow(m, []any{"t1"}))
+		}
+		return nil
+	}
+	s.metadataDescriber.invalidateTableSchema("ks1", "t1")
+	ctrl.knownKeyspaces["ks1"] = ctrl.knownKeyspaces["ks1"][1:] // t1 is gone
+
+	refreshAllSchemaNow(t, s)
+	requireTablets(t, s, map[string]bool{"ks1.t1": false, "ks1.t2": true, "ks2.t3": true})
+}
+
+// ALTER TABLE moves no tablets, so a changed table keeps them.
 func TestRefreshAllSchemaTableChanged(t *testing.T) {
 	t.Parallel()
 
@@ -105,7 +209,7 @@ func TestRefreshAllSchemaTableChanged(t *testing.T) {
 		columnInfo{name: "added", kind: "regular"})
 
 	refreshAllSchemaNow(t, s)
-	requireTablets(t, s, map[string]bool{"ks1.t1": true, "ks1.t2": false, "ks2.t3": true})
+	requireTablets(t, s, map[string]bool{"ks1.t1": true, "ks1.t2": true, "ks2.t3": true})
 }
 
 // A replication change moves every tablet of the keyspace, so all of its

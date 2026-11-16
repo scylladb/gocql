@@ -531,14 +531,14 @@ func TestHandleSchemaEvent(t *testing.T) {
 				wantTablets:    -1,
 			},
 			{
-				name:           "table/UPDATED invalidates table and removes tablets",
+				name:           "table/UPDATED invalidates table and keeps tablets",
 				keyspaces:      map[string][]string{"test_ks": {"tbl_a", "tbl_b"}},
 				tablets:        [][2]string{{"test_ks", "tbl_a"}},
 				event:          &frm.SchemaChangeTable{Change: "UPDATED", Keyspace: "test_ks", Object: "tbl_a"},
 				wantKsPresent:  []string{"test_ks"},
 				wantTblGone:    [][2]string{{"test_ks", "tbl_a"}},
 				wantTblPresent: [][2]string{{"test_ks", "tbl_b"}},
-				wantTablets:    0,
+				wantTablets:    2,
 			},
 			{
 				name:        "table/DROPPED removes tablets",

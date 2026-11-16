@@ -248,6 +248,18 @@ type IndexMetadata struct {
 	ClusteringColumns []*ColumnMetadata
 }
 
+// hasRelation reports whether name is a table, a view, or an index's backing view.
+// Mirrors compileMetadata, which omits index backing views from Views.
+func (ks *KeyspaceMetadata) hasRelation(name string) bool {
+	_, isTable := ks.Tables[name]
+	_, isView := ks.Views[name]
+	isIndex := false
+	if base, ok := strings.CutSuffix(name, "_index"); ok {
+		_, isIndex = ks.Indexes[base]
+	}
+	return isTable || isView || isIndex
+}
+
 func (t *TableMetadata) Equals(other *TableMetadata) bool {
 	if t == nil || other == nil {
 		return t == other
@@ -744,8 +756,13 @@ func (s *metadataDescriber) refreshAllSchema() error {
 			continue
 		}
 
-		for tableName, tableMetadata := range metadata.Tables {
-			if updatedTableMetadata, ok := updatedMetadata.Tables[tableName]; !ok || !tableMetadata.Equals(updatedTableMetadata) {
+		for tableName := range metadata.Tables {
+			if _, ok := updatedMetadata.Tables[tableName]; !ok {
+				s.RemoveTabletsWithTable(keyspaceName, tableName)
+			}
+		}
+		for tableName := range metadata.tablesInvalidated {
+			if !updatedMetadata.hasRelation(tableName) {
 				s.RemoveTabletsWithTable(keyspaceName, tableName)
 			}
 		}
@@ -862,9 +879,12 @@ func (s *metadataDescriber) refreshTableSchema(keyspaceName, tableName string) e
 
 	// Atomically clone-and-swap the keyspace metadata to avoid data races
 	// with concurrent readers.
+	dropped := false
 	applied := s.metadata.keyspaceMetadata.updateKeyspace(keyspaceName, func(ks *KeyspaceMetadata) {
 		if len(tables) == 0 {
 			ks.removeTable(tableName)
+			// removeTable clears the marker refreshAllSchema would use to drop these tablets.
+			dropped = !ks.hasRelation(tableName)
 		} else {
 			compileTableMetadata(ks, tables, columns, indexes, views)
 			if ks.tablesInvalidated != nil {
@@ -876,6 +896,9 @@ func (s *metadataDescriber) refreshTableSchema(keyspaceName, tableName string) e
 		// Keyspace was removed between the initial check and the update.
 		// Fall back to a full keyspace refresh to recover.
 		return s.deduplicatedRefreshKeyspace(keyspaceName)
+	}
+	if dropped {
+		s.RemoveTabletsWithTable(keyspaceName, tableName)
 	}
 	return nil
 }
