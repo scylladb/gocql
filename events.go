@@ -146,8 +146,9 @@ func (s *Session) handleSchemaEvent(frames []frame) {
 	for _, frame := range frames {
 		switch f := frame.(type) {
 		case *frm.SchemaChangeKeyspace:
+			prev, _ := s.metadataDescriber.metadata.keyspaceMetadata.getKeyspace(f.Keyspace)
 			s.metadataDescriber.invalidateKeyspaceSchema(f.Keyspace)
-			s.handleKeyspaceChange(f.Keyspace, f.Change)
+			s.handleKeyspaceChange(f.Keyspace, f.Change, prev)
 		case *frm.SchemaChangeTable:
 			s.metadataDescriber.invalidateTableSchema(f.Keyspace, f.Object)
 			s.handleTableChange(f.Keyspace, f.Object, f.Change)
@@ -161,16 +162,25 @@ func (s *Session) handleSchemaEvent(frames []frame) {
 	}
 }
 
-func (s *Session) handleKeyspaceChange(keyspace, change string) {
+func (s *Session) handleKeyspaceChange(keyspace, change string, prev *KeyspaceMetadata) {
 	s.control.awaitSchemaAgreement()
-	if change == "DROPPED" || change == "UPDATED" {
+	if change == "DROPPED" {
 		s.metadataDescriber.RemoveTabletsWithKeyspace(keyspace)
 	}
 	s.policy.KeyspaceChanged(KeyspaceUpdateEvent{Keyspace: keyspace, Change: change})
+	if change == "UPDATED" {
+		// Drop only on a replication change: tablets-routing-v1 never reports replicas added to a still-valid set.
+		// cur is cached only if the policy refetched it; otherwise drop, as before.
+		cur, ok := s.metadataDescriber.metadata.keyspaceMetadata.getKeyspace(keyspace)
+		if prev == nil || !ok || prev.StrategyClass != cur.StrategyClass || !compareInterfaceMaps(prev.StrategyOptions, cur.StrategyOptions) {
+			s.metadataDescriber.RemoveTabletsWithKeyspace(keyspace)
+		}
+	}
 }
 
 func (s *Session) handleTableChange(keyspace, table, change string) {
-	if change == "DROPPED" || change == "UPDATED" {
+	// Not on ALTER: it moves no tablets itself; later splits/migrations aren't tied to this event.
+	if change == "DROPPED" {
 		s.metadataDescriber.RemoveTabletsWithTable(keyspace, table)
 	}
 }

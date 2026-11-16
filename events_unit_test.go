@@ -531,14 +531,14 @@ func TestHandleSchemaEvent(t *testing.T) {
 				wantTablets:    -1,
 			},
 			{
-				name:           "table/UPDATED invalidates table and removes tablets",
+				name:           "table/UPDATED invalidates table and keeps tablets",
 				keyspaces:      map[string][]string{"test_ks": {"tbl_a", "tbl_b"}},
 				tablets:        [][2]string{{"test_ks", "tbl_a"}},
 				event:          &frm.SchemaChangeTable{Change: "UPDATED", Keyspace: "test_ks", Object: "tbl_a"},
 				wantKsPresent:  []string{"test_ks"},
 				wantTblGone:    [][2]string{{"test_ks", "tbl_a"}},
 				wantTblPresent: [][2]string{{"test_ks", "tbl_b"}},
-				wantTablets:    0,
+				wantTablets:    2,
 			},
 			{
 				name:        "table/DROPPED removes tablets",
@@ -1660,4 +1660,81 @@ func TestConcurrentSchemaRefreshErrorHandling(t *testing.T) {
 			}
 		}
 	})
+}
+
+func TestHandleKeyspaceChangeTabletsOnReplicationChange(t *testing.T) {
+	t.Parallel()
+	rf := func(n string) *KeyspaceMetadata {
+		return &KeyspaceMetadata{Name: "ks", StrategyOptions: map[string]any{"class": "NetworkTopologyStrategy", "dc1": n}}
+	}
+	tests := []struct {
+		name        string
+		prev, cur   *KeyspaceMetadata
+		wantTablets int
+	}{
+		{name: "replication unchanged keeps tablets", prev: rf("3"), cur: rf("3"), wantTablets: 2},
+		{name: "replication changed removes tablets", prev: rf("3"), cur: rf("5"), wantTablets: 0},
+		{name: "previous metadata unknown removes tablets", prev: nil, cur: rf("3"), wantTablets: 0},
+		{name: "not refetched removes tablets", prev: rf("3"), cur: nil, wantTablets: 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			s := newSchemaEventTestSessionWithMock(&schemaDataMock{knownKeyspaces: map[string][]tableInfo{}})
+			defer s.Close()
+			addTestTablets(t, s, "ks", "tbl")
+			if tt.cur != nil {
+				// Simulates the policy refetching the keyspace inside KeyspaceChanged.
+				s.metadataDescriber.metadata.keyspaceMetadata.set("ks", tt.cur)
+			}
+			s.handleKeyspaceChange("ks", "UPDATED", tt.prev)
+			s.metadataDescriber.metadata.tabletsMetadata.Flush()
+			if got := len(s.metadataDescriber.metadata.tabletsMetadata.Get()); got != tt.wantTablets {
+				t.Fatalf("tablets: got %d, want %d", got, tt.wantTablets)
+			}
+		})
+	}
+}
+
+// refetchingPolicy refetches keyspace metadata in KeyspaceChanged, like tokenAwareHostPolicy.
+type refetchingPolicy struct {
+	roundRobinHostPolicy
+	s *Session
+}
+
+func (p *refetchingPolicy) KeyspaceChanged(e KeyspaceUpdateEvent) {
+	_, _ = p.s.metadataDescriber.GetKeyspace(e.Keyspace)
+}
+
+func TestHandleSchemaEventKeyspaceUpdatedTablets(t *testing.T) {
+	t.Parallel()
+	// makeKeyspaceRow serves SimpleStrategy with replication_factor 1.
+	tests := []struct {
+		name        string
+		prevRF      string
+		wantTablets int
+	}{
+		{name: "replication unchanged keeps tablets", prevRF: "1", wantTablets: 2},
+		{name: "replication changed removes tablets", prevRF: "3", wantTablets: 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			ctrl := &schemaDataMock{knownKeyspaces: map[string][]tableInfo{"ks": nil}}
+			s := newSchemaEventTestSessionWithMock(ctrl)
+			defer s.Close()
+			s.policy = &refetchingPolicy{s: s}
+			s.metadataDescriber.metadata.keyspaceMetadata.set("ks", &KeyspaceMetadata{
+				Name:            "ks",
+				StrategyClass:   "org.apache.cassandra.locator.SimpleStrategy",
+				StrategyOptions: map[string]any{"replication_factor": tt.prevRF},
+			})
+			addTestTablets(t, s, "ks", "tbl")
+			s.handleSchemaEvent([]frame{&frm.SchemaChangeKeyspace{Change: "UPDATED", Keyspace: "ks"}})
+			s.metadataDescriber.metadata.tabletsMetadata.Flush()
+			if got := len(s.metadataDescriber.metadata.tabletsMetadata.Get()); got != tt.wantTablets {
+				t.Fatalf("tablets: got %d, want %d", got, tt.wantTablets)
+			}
+		})
+	}
 }
