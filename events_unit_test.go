@@ -673,28 +673,24 @@ func TestHandleSchemaEvent(t *testing.T) {
 	t.Run("callbacks", func(t *testing.T) {
 		t.Parallel()
 		tests := []struct {
-			name                string
-			populateTables      []string
-			event               frame
-			wantSchemaAgreement int
-			wantKsChanged       []KeyspaceUpdateEvent
+			name           string
+			populateTables []string
+			event          frame
+			wantKsChanged  []KeyspaceUpdateEvent
 		}{
 			{
-				name:                "keyspace event calls schema agreement and policy",
-				event:               &frm.SchemaChangeKeyspace{Change: "UPDATED", Keyspace: "test_ks"},
-				wantSchemaAgreement: 1,
-				wantKsChanged:       []KeyspaceUpdateEvent{{Keyspace: "test_ks", Change: "UPDATED"}},
+				name:          "keyspace event: no schema agreement, calls policy",
+				event:         &frm.SchemaChangeKeyspace{Change: "UPDATED", Keyspace: "test_ks"},
+				wantKsChanged: []KeyspaceUpdateEvent{{Keyspace: "test_ks", Change: "UPDATED"}},
 			},
 			{
-				name:                "table event: no schema agreement, no policy callback",
-				populateTables:      []string{"tbl_a"},
-				event:               &frm.SchemaChangeTable{Change: "CREATED", Keyspace: "test_ks", Object: "tbl_a"},
-				wantSchemaAgreement: 0,
+				name:           "table event: no schema agreement, no policy callback",
+				populateTables: []string{"tbl_a"},
+				event:          &frm.SchemaChangeTable{Change: "CREATED", Keyspace: "test_ks", Object: "tbl_a"},
 			},
 			{
-				name:                "type event: no schema agreement, no policy callback",
-				event:               &frm.SchemaChangeType{Change: "CREATED", Keyspace: "test_ks", Object: "my_type"},
-				wantSchemaAgreement: 0,
+				name:  "type event: no schema agreement, no policy callback",
+				event: &frm.SchemaChangeType{Change: "CREATED", Keyspace: "test_ks", Object: "my_type"},
 			},
 		}
 
@@ -710,8 +706,8 @@ func TestHandleSchemaEvent(t *testing.T) {
 
 				s.handleSchemaEvent([]frame{tt.event})
 
-				if got := ctrl.getAwaitSchemaAgreementCalls(); got != tt.wantSchemaAgreement {
-					t.Fatalf("awaitSchemaAgreement: got %d, want %d", got, tt.wantSchemaAgreement)
+				if got := ctrl.getAwaitSchemaAgreementCalls(); got != 0 {
+					t.Fatalf("awaitSchemaAgreement: got %d, want 0", got)
 				}
 				kc := policy.getKeyspaceChangedCalls()
 				if len(tt.wantKsChanged) == 0 {
@@ -1091,8 +1087,8 @@ func TestHandleSchemaEvent(t *testing.T) {
 			&frm.SchemaChangeKeyspace{Change: "UPDATED", Keyspace: "test_ks"},
 		})
 
-		if got := ctrl.getAwaitSchemaAgreementCalls(); got != 1 {
-			t.Fatalf("awaitSchemaAgreement: got %d, want 1", got)
+		if got := ctrl.getAwaitSchemaAgreementCalls(); got != 0 {
+			t.Fatalf("awaitSchemaAgreement: got %d, want 0", got)
 		}
 		if _, found := s.metadataDescriber.metadata.keyspaceMetadata.getKeyspace("test_ks"); found {
 			t.Fatal("keyspace should have been removed from cache by keyspace event")

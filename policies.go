@@ -668,6 +668,9 @@ type tokenAwareHostPolicy struct {
 	getKeyspaceName     func() string
 	hosts               cowHostList
 	partitioner         string
+	// usedKeyspaces maps keyspaces Pick has routed to (to the last load attempt's time.Time);
+	// schema events refresh only these and the session keyspace.
+	usedKeyspaces sync.Map
 	// mu protects writes to hosts, partitioner, metadata.
 	// reads can be unlocked as long as they are not used for updating state later.
 	mu                       sync.Mutex
@@ -688,10 +691,20 @@ func (t *tokenAwareHostPolicy) Init(s *Session) {
 		if keyspace == "" {
 			return nil, ErrNoKeyspace
 		}
+		// Pick's lazy load would otherwise query a nil control connection.
+		if s.cfg.disableControlConn {
+			return nil, errNoControl
+		}
 		return s.metadataDescriber.GetKeyspace(keyspace)
 	}
 	t.getKeyspaceName = func() string { return s.cfg.Keyspace }
 	t.logger = s.logger
+	// A policy reused after Reset must not keep replicas that no event would refresh.
+	t.usedKeyspaces.Clear()
+	if meta := t.getMetadataForUpdate(); meta.replicas != nil {
+		meta.replicas = nil
+		t.metadata.Store(meta)
+	}
 }
 
 func (t *tokenAwareHostPolicy) Reset() {
@@ -705,6 +718,7 @@ func (t *tokenAwareHostPolicy) Reset() {
 	t.getKeyspaceMetadata = nil
 	t.getKeyspaceName = nil
 	t.logger = nil
+	t.usedKeyspaces.Clear()
 }
 
 func (t *tokenAwareHostPolicy) IsOperational(session *Session) error {
@@ -718,9 +732,83 @@ func (t *tokenAwareHostPolicy) IsLocal(host *HostInfo) bool {
 func (t *tokenAwareHostPolicy) KeyspaceChanged(update KeyspaceUpdateEvent) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	// Skipping unused keyspaces spares every session a metadata refetch per DDL (#1189); Pick loads them on first use.
+	if t.getKeyspaceMetadata == nil || !t.keyspaceInUse(update.Keyspace) {
+		return
+	}
 	meta := t.getMetadataForUpdate()
+	if update.Change == "DROPPED" {
+		// Nothing to fetch for a dropped keyspace; Pick reloads it if it is recreated and used.
+		t.usedKeyspaces.Delete(update.Keyspace)
+		newReplicas := make(map[string]tokenRingReplicas, len(meta.replicas))
+		for ks, replicas := range meta.replicas {
+			if ks != update.Keyspace {
+				newReplicas[ks] = replicas
+			}
+		}
+		meta.replicas = newReplicas
+		t.metadata.Store(meta)
+		return
+	}
 	t.updateReplicas(meta, update.Keyspace)
 	t.metadata.Store(meta)
+}
+
+// keyspaceInUse must be called with t.mu locked.
+func (t *tokenAwareHostPolicy) keyspaceInUse(keyspace string) bool {
+	if t.getKeyspaceName != nil && keyspace == t.getKeyspaceName() {
+		return true
+	}
+	_, ok := t.usedKeyspaces.Load(keyspace)
+	return ok
+}
+
+// replicaLoadRetryInterval bounds how often Pick retries a keyspace whose replica load left no replicas.
+const replicaLoadRetryInterval = time.Minute
+
+// loadReplicasAsync computes replicas for a keyspace the first time Pick sees it; until then queries use the fallback.
+func (t *tokenAwareHostPolicy) loadReplicasAsync(keyspace string) {
+	if keyspace == "" {
+		return
+	}
+	now := time.Now()
+	prev, loaded := t.usedKeyspaces.Load(keyspace)
+	if !loaded {
+		prev, loaded = t.usedKeyspaces.LoadOrStore(keyspace, now)
+	}
+	if loaded {
+		// A miss after a load means it failed (or the strategy is unsupported): retry, rate-limited.
+		if now.Sub(prev.(time.Time)) < replicaLoadRetryInterval || !t.usedKeyspaces.CompareAndSwap(keyspace, prev, now) {
+			return
+		}
+	}
+	go func() {
+		t.KeyspaceChanged(KeyspaceUpdateEvent{Keyspace: keyspace})
+		if _, ok := t.getMetadataReadOnly().replicas[keyspace]; !ok {
+			time.AfterFunc(replicaLoadRetryInterval, func() { t.forgetFailedLoad(keyspace, now) })
+		}
+	}()
+}
+
+// forgetFailedLoad drops a keyspace whose load attempt at stamp left no replicas, so unqueried names don't accumulate.
+func (t *tokenAwareHostPolicy) forgetFailedLoad(keyspace string, stamp time.Time) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if _, ok := t.getMetadataReadOnly().replicas[keyspace]; !ok {
+		t.usedKeyspaces.CompareAndDelete(keyspace, stamp)
+	}
+}
+
+// updateAllReplicas recomputes the session keyspace and every cached keyspace after a token ring change.
+// It must be called with t.mu mutex locked.
+func (t *tokenAwareHostPolicy) updateAllReplicas(meta *clusterMeta) {
+	sessionKs := t.getKeyspaceName()
+	t.updateReplicas(meta, sessionKs)
+	for ks := range meta.replicas {
+		if ks != sessionKs {
+			t.updateReplicas(meta, ks)
+		}
+	}
 }
 
 // updateReplicas updates replicas in clusterMeta.
@@ -734,10 +822,12 @@ func (t *tokenAwareHostPolicy) updateReplicas(meta *clusterMeta, keyspace string
 
 	ks, err := t.getKeyspaceMetadata(keyspace)
 	if err == nil {
-		strat := getStrategy(ks, t.logger)
-		if strat != nil {
-			newReplicas[keyspace] = strat.replicaMap(meta.tokenRing)
+		// An unsupported strategy still gets an (empty) entry, so Pick does not keep retrying the load.
+		var replicas tokenRingReplicas
+		if strat := getStrategy(ks, t.logger); strat != nil {
+			replicas = strat.replicaMap(meta.tokenRing)
 		}
+		newReplicas[keyspace] = replicas
 	}
 
 	for ks, replicas := range meta.replicas {
@@ -758,7 +848,7 @@ func (t *tokenAwareHostPolicy) SetPartitioner(partitioner string) {
 		t.partitioner = partitioner
 		meta := t.getMetadataForUpdate()
 		meta.resetTokenRing(t.partitioner, t.hosts.get().allHosts(), t.logger)
-		t.updateReplicas(meta, t.getKeyspaceName())
+		t.updateAllReplicas(meta)
 		t.metadata.Store(meta)
 	}
 }
@@ -768,7 +858,7 @@ func (t *tokenAwareHostPolicy) AddHost(host *HostInfo) {
 	if t.hosts.add(host) {
 		meta := t.getMetadataForUpdate()
 		meta.resetTokenRing(t.partitioner, t.hosts.get().allHosts(), t.logger)
-		t.updateReplicas(meta, t.getKeyspaceName())
+		t.updateAllReplicas(meta)
 		t.metadata.Store(meta)
 	}
 	t.mu.Unlock()
@@ -783,7 +873,7 @@ func (t *tokenAwareHostPolicy) AddHosts(hosts []*HostInfo) {
 
 	meta := t.getMetadataForUpdate()
 	meta.resetTokenRing(t.partitioner, t.hosts.get().allHosts(), t.logger)
-	t.updateReplicas(meta, t.getKeyspaceName())
+	t.updateAllReplicas(meta)
 	t.metadata.Store(meta)
 
 	t.mu.Unlock()
@@ -798,7 +888,7 @@ func (t *tokenAwareHostPolicy) RemoveHost(host *HostInfo) {
 	if t.hosts.remove(host) {
 		meta := t.getMetadataForUpdate()
 		meta.resetTokenRing(t.partitioner, t.hosts.get().allHosts(), t.logger)
-		t.updateReplicas(meta, t.getKeyspaceName())
+		t.updateAllReplicas(meta)
 		t.metadata.Store(meta)
 	}
 	t.mu.Unlock()
@@ -1000,10 +1090,14 @@ func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 
 	if len(replicas) == 0 {
 		var ht *hostTokens
+		ksReplicas, ok := meta.replicas[qry.Keyspace()]
+		if !ok {
+			t.loadReplicasAsync(qry.Keyspace())
+		}
 		if isInt64Token {
-			ht = meta.replicas[qry.Keyspace()].replicasForInt64(tokenCasted)
+			ht = ksReplicas.replicasForInt64(tokenCasted)
 		} else {
-			ht = meta.replicas[qry.Keyspace()].replicasFor(token)
+			ht = ksReplicas.replicasFor(token)
 		}
 		if ht != nil {
 			needsMutation := t.shuffleReplicas || t.avoidSlowReplicas

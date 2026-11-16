@@ -4947,11 +4947,11 @@ func (f applicationInfoFunc) UpdateStartupOptions(opts map[string]string) { f(op
 //
 // The two are concurrent in practice: the control connection is registered for
 // server push events during controlConn.setupConn, but its
-// finalizeConnection() is deferred to the very end of Session.init. A keyspace
-// SCHEMA_CHANGE delivered inside that window (a freshly bootstrapped cluster
-// still creating its internal keyspaces is enough) makes the event-debouncer
-// goroutine run handleKeyspaceChange -> awaitSchemaAgreement -> querySystem on
-// the connection the main goroutine is mid-write on.
+// finalizeConnection() is deferred to the very end of Session.init. A
+// SCHEMA_CHANGE for the session keyspace delivered inside that window makes
+// the event-debouncer goroutine run handleKeyspaceChange ->
+// policy.KeyspaceChanged -> querySystem on the connection the main goroutine
+// is mid-write on.
 //
 // Run under -race: were the two values plain fields again, this would report
 // "DATA RACE" on them — a torn string header for the clause and a stale timeout.

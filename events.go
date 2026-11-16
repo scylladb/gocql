@@ -162,7 +162,8 @@ func (s *Session) handleSchemaEvent(frames []frame) {
 }
 
 func (s *Session) handleKeyspaceChange(keyspace, change string) {
-	s.control.awaitSchemaAgreement()
+	// No schema agreement wait: the sending node already has the change, and every
+	// session polling on each DDL overloads shard 0 cluster-wide (#1189).
 	if change == "DROPPED" || change == "UPDATED" {
 		s.metadataDescriber.RemoveTabletsWithKeyspace(keyspace)
 	}

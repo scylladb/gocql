@@ -37,6 +37,8 @@ import (
 	"net"
 	"sort"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1867,5 +1869,335 @@ func TestHostSetOverflowPreservesInlineEntries(t *testing.T) {
 	}
 	if !s.contains(extra) {
 		t.Fatal("extra host not found after spill")
+	}
+}
+
+// Schema events must not refetch metadata for keyspaces the session never used (#1189);
+// Pick loads such a keyspace on first use, after which its events are honored.
+func TestHostPolicy_TokenAware_KeyspaceChangedSkipsUnusedKeyspaces(t *testing.T) {
+	t.Parallel()
+
+	const sessionKs, otherKs = "app_ks", "other_ks"
+	var mu sync.Mutex
+	fetches := map[string]int{}
+	fetchCount := func(ks string) int {
+		mu.Lock()
+		defer mu.Unlock()
+		return fetches[ks]
+	}
+
+	policy := TokenAwareHostPolicy(RoundRobinHostPolicy())
+	policyInternal := policy.(*tokenAwareHostPolicy)
+	policyInternal.getKeyspaceName = func() string { return sessionKs }
+	policyInternal.getKeyspaceMetadata = func(ks string) (*KeyspaceMetadata, error) {
+		mu.Lock()
+		fetches[ks]++
+		mu.Unlock()
+		return &KeyspaceMetadata{
+			Name:            ks,
+			StrategyClass:   "SimpleStrategy",
+			StrategyOptions: map[string]any{"class": "SimpleStrategy", "replication_factor": 1},
+		}, nil
+	}
+	policyInternal.AddHosts([]*HostInfo{
+		{hostId: tUUID(0), connectAddress: net.IPv4(10, 0, 0, 1), tokens: []string{"00"}},
+		{hostId: tUUID(1), connectAddress: net.IPv4(10, 0, 0, 2), tokens: []string{"50"}},
+	})
+	policy.SetPartitioner("OrderedPartitioner")
+	sessionFetches := fetchCount(sessionKs)
+
+	policy.KeyspaceChanged(KeyspaceUpdateEvent{Keyspace: otherKs, Change: "CREATED"})
+	if got := fetchCount(otherKs); got != 0 {
+		t.Fatalf("unused keyspace event fetched metadata %d times, want 0", got)
+	}
+	policy.KeyspaceChanged(KeyspaceUpdateEvent{Keyspace: sessionKs, Change: "UPDATED"})
+	if got := fetchCount(sessionKs); got != sessionFetches+1 {
+		t.Fatalf("session keyspace fetches = %d, want %d", got, sessionFetches+1)
+	}
+
+	query := &Query{routingInfo: &queryRoutingInfo{}}
+	query.getKeyspace = func() string { return otherKs }
+	query.RoutingKey([]byte("20"))
+	policy.Pick(query)()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if _, ok := policyInternal.getMetadataReadOnly().replicas[otherKs]; ok {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("replicas for keyspace first seen in Pick were not loaded")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if got := policy.Pick(query)().Info(); got.HostID() != tUUID(1).String() {
+		t.Fatalf("after lazy load picked %s, want token owner %s", got.HostID(), tUUID(1))
+	}
+	if got := fetchCount(otherKs); got != 1 {
+		t.Fatalf("lazy load fetches = %d, want 1", got)
+	}
+
+	policy.KeyspaceChanged(KeyspaceUpdateEvent{Keyspace: otherKs, Change: "UPDATED"})
+	if got := fetchCount(otherKs); got != 2 {
+		t.Fatalf("used keyspace event fetches = %d, want 2", got)
+	}
+
+	policy.KeyspaceChanged(KeyspaceUpdateEvent{Keyspace: otherKs, Change: "DROPPED"})
+	if got := fetchCount(otherKs); got != 2 {
+		t.Fatalf("DROPPED fetched metadata, fetches = %d, want 2", got)
+	}
+	if _, ok := policyInternal.getMetadataReadOnly().replicas[otherKs]; ok {
+		t.Fatal("DROPPED kept the keyspace's replicas")
+	}
+	if _, ok := policyInternal.usedKeyspaces.Load(otherKs); ok {
+		t.Fatal("DROPPED kept the keyspace marked as used")
+	}
+}
+
+// A first-use replica load that fails must be retried by a later Pick, but not more often than replicaLoadRetryInterval.
+func TestHostPolicy_TokenAware_LazyReplicaLoadRetriesAfterFailure(t *testing.T) {
+	t.Parallel()
+
+	const ks = "flaky_ks"
+	var mu sync.Mutex
+	fetches := 0
+	fetchCount := func() int {
+		mu.Lock()
+		defer mu.Unlock()
+		return fetches
+	}
+	waitFor := func(cond func() bool, what string) {
+		t.Helper()
+		deadline := time.Now().Add(5 * time.Second)
+		for !cond() {
+			if time.Now().After(deadline) {
+				t.Fatalf("timed out waiting for %s", what)
+			}
+			time.Sleep(time.Millisecond)
+		}
+	}
+
+	policy := TokenAwareHostPolicy(RoundRobinHostPolicy())
+	policyInternal := policy.(*tokenAwareHostPolicy)
+	policyInternal.getKeyspaceName = func() string { return "" }
+	policyInternal.getKeyspaceMetadata = func(name string) (*KeyspaceMetadata, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		fetches++
+		if fetches == 1 {
+			return nil, errors.New("control connection unavailable")
+		}
+		return &KeyspaceMetadata{
+			Name:            name,
+			StrategyClass:   "SimpleStrategy",
+			StrategyOptions: map[string]any{"class": "SimpleStrategy", "replication_factor": 1},
+		}, nil
+	}
+	policyInternal.AddHosts([]*HostInfo{
+		{hostId: tUUID(0), connectAddress: net.IPv4(10, 0, 0, 1), tokens: []string{"00"}},
+		{hostId: tUUID(1), connectAddress: net.IPv4(10, 0, 0, 2), tokens: []string{"50"}},
+	})
+	policy.SetPartitioner("OrderedPartitioner")
+
+	query := &Query{routingInfo: &queryRoutingInfo{}}
+	query.getKeyspace = func() string { return ks }
+	query.RoutingKey([]byte("20"))
+
+	policy.Pick(query)()
+	waitFor(func() bool { return fetchCount() == 1 }, "first load attempt")
+	firstAttempt, _ := policyInternal.usedKeyspaces.Load(ks)
+
+	policy.Pick(query)()
+	if last, _ := policyInternal.usedKeyspaces.Load(ks); last != firstAttempt {
+		t.Fatal("Pick retried a failed load before replicaLoadRetryInterval elapsed")
+	}
+
+	policyInternal.usedKeyspaces.Store(ks, time.Now().Add(-2*replicaLoadRetryInterval))
+	policy.Pick(query)()
+	waitFor(func() bool {
+		_, ok := policyInternal.getMetadataReadOnly().replicas[ks]
+		return ok
+	}, "replicas after retry")
+	if got := fetchCount(); got != 2 {
+		t.Fatalf("fetches = %d, want 2", got)
+	}
+}
+
+// A keyspace whose strategy yields no replica map must not be reloaded on every Pick miss.
+func TestHostPolicy_TokenAware_UnsupportedStrategyNotReloaded(t *testing.T) {
+	t.Parallel()
+
+	const ks = "local_ks"
+	var fetches atomic.Int32
+	policy := TokenAwareHostPolicy(RoundRobinHostPolicy())
+	policyInternal := policy.(*tokenAwareHostPolicy)
+	policyInternal.getKeyspaceName = func() string { return "" }
+	policyInternal.getKeyspaceMetadata = func(name string) (*KeyspaceMetadata, error) {
+		fetches.Add(1)
+		return &KeyspaceMetadata{Name: name, StrategyClass: "LocalStrategy"}, nil
+	}
+	policyInternal.AddHosts([]*HostInfo{{hostId: tUUID(0), connectAddress: net.IPv4(10, 0, 0, 1), tokens: []string{"00"}}})
+	policy.SetPartitioner("OrderedPartitioner")
+
+	query := &Query{routingInfo: &queryRoutingInfo{}}
+	query.getKeyspace = func() string { return ks }
+	query.RoutingKey([]byte("20"))
+	policy.Pick(query)()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if _, ok := policyInternal.getMetadataReadOnly().replicas[ks]; ok {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("timed out waiting for the load")
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	policyInternal.usedKeyspaces.Store(ks, time.Now().Add(-2*replicaLoadRetryInterval))
+	policy.Pick(query)()
+	if last, _ := policyInternal.usedKeyspaces.Load(ks); time.Since(last.(time.Time)) < replicaLoadRetryInterval {
+		t.Fatal("Pick retried the load of a keyspace with an unsupported strategy")
+	}
+	if got := fetches.Load(); got != 1 {
+		t.Fatalf("fetches = %d, want 1", got)
+	}
+}
+
+// A failed load's record expires without a later query, but never undoes a success or a newer attempt.
+func TestHostPolicy_TokenAware_ForgetFailedLoad(t *testing.T) {
+	t.Parallel()
+
+	const ks = "failed_ks"
+	policy := TokenAwareHostPolicy(RoundRobinHostPolicy())
+	policyInternal := policy.(*tokenAwareHostPolicy)
+	policyInternal.getKeyspaceName = func() string { return "" }
+	policyInternal.getKeyspaceMetadata = func(name string) (*KeyspaceMetadata, error) {
+		if name == "ok_ks" {
+			return &KeyspaceMetadata{
+				Name:            name,
+				StrategyClass:   "SimpleStrategy",
+				StrategyOptions: map[string]any{"class": "SimpleStrategy", "replication_factor": 1},
+			}, nil
+		}
+		return nil, errors.New("load failed")
+	}
+	policyInternal.AddHosts([]*HostInfo{{hostId: tUUID(0), connectAddress: net.IPv4(10, 0, 0, 1), tokens: []string{"00"}}})
+	policy.SetPartitioner("OrderedPartitioner")
+	used := func(name string) bool { _, ok := policyInternal.usedKeyspaces.Load(name); return ok }
+
+	// Failed load: forgotten, then re-added by the next Pick.
+	stamp := time.Now()
+	policyInternal.usedKeyspaces.Store(ks, stamp)
+	policy.KeyspaceChanged(KeyspaceUpdateEvent{Keyspace: ks})
+	policyInternal.forgetFailedLoad(ks, stamp)
+	if used(ks) {
+		t.Fatal("failed load was not forgotten")
+	}
+	query := &Query{routingInfo: &queryRoutingInfo{}}
+	query.getKeyspace = func() string { return ks }
+	query.RoutingKey([]byte("20"))
+	policy.Pick(query)()
+	if !used(ks) {
+		t.Fatal("Pick did not re-add the keyspace")
+	}
+
+	// Successful load: kept.
+	policyInternal.usedKeyspaces.Store("ok_ks", stamp)
+	policy.KeyspaceChanged(KeyspaceUpdateEvent{Keyspace: "ok_ks"})
+	policyInternal.forgetFailedLoad("ok_ks", stamp)
+	if !used("ok_ks") {
+		t.Fatal("successful keyspace was forgotten")
+	}
+
+	// Newer retry, or Reset followed by a fresh record: kept.
+	policyInternal.usedKeyspaces.Store(ks, stamp.Add(time.Second))
+	policyInternal.forgetFailedLoad(ks, stamp)
+	if !used(ks) {
+		t.Fatal("newer attempt was forgotten")
+	}
+	policyInternal.usedKeyspaces.Clear()
+	policyInternal.usedKeyspaces.Store(ks, time.Now())
+	policyInternal.forgetFailedLoad(ks, stamp)
+	if !used(ks) {
+		t.Fatal("record stored after Reset was forgotten")
+	}
+}
+
+// Re-initializing the policy (session rebuilt after Reset) must drop replicas no event would refresh.
+func TestHostPolicy_TokenAware_InitAfterResetDropsReplicas(t *testing.T) {
+	t.Parallel()
+
+	policy := TokenAwareHostPolicy(RoundRobinHostPolicy())
+	policyInternal := policy.(*tokenAwareHostPolicy)
+	policyInternal.getKeyspaceName = func() string { return "" }
+	policyInternal.getKeyspaceMetadata = func(name string) (*KeyspaceMetadata, error) {
+		return &KeyspaceMetadata{
+			Name:            name,
+			StrategyClass:   "SimpleStrategy",
+			StrategyOptions: map[string]any{"class": "SimpleStrategy", "replication_factor": 1},
+		}, nil
+	}
+	policyInternal.AddHosts([]*HostInfo{{hostId: tUUID(0), connectAddress: net.IPv4(10, 0, 0, 1), tokens: []string{"00"}}})
+	policy.SetPartitioner("OrderedPartitioner")
+	policyInternal.usedKeyspaces.Store("other_ks", time.Now())
+	policy.KeyspaceChanged(KeyspaceUpdateEvent{Keyspace: "other_ks"})
+	if _, ok := policyInternal.getMetadataReadOnly().replicas["other_ks"]; !ok {
+		t.Fatal("setup: replicas for other_ks were not computed")
+	}
+
+	policy.Reset()
+	policy.Init(&Session{})
+	if n := len(policyInternal.getMetadataReadOnly().replicas); n != 0 {
+		t.Fatalf("replicas after re-Init = %d keyspaces, want 0", n)
+	}
+	if _, ok := policyInternal.usedKeyspaces.Load("other_ks"); ok {
+		t.Fatal("usedKeyspaces kept other_ks after re-Init")
+	}
+}
+
+// Replica maps of non-session keyspaces must follow token ring changes, not keep the old host set.
+func TestHostPolicy_TokenAware_TopologyChangeRecomputesCachedKeyspaces(t *testing.T) {
+	t.Parallel()
+
+	const ks = "other_ks"
+	policy := TokenAwareHostPolicy(RoundRobinHostPolicy())
+	policyInternal := policy.(*tokenAwareHostPolicy)
+	policyInternal.getKeyspaceName = func() string { return "app_ks" }
+	policyInternal.getKeyspaceMetadata = func(name string) (*KeyspaceMetadata, error) {
+		return &KeyspaceMetadata{
+			Name:            name,
+			StrategyClass:   "SimpleStrategy",
+			StrategyOptions: map[string]any{"class": "SimpleStrategy", "replication_factor": 1},
+		}, nil
+	}
+	hosts := []*HostInfo{
+		{hostId: tUUID(0), connectAddress: net.IPv4(10, 0, 0, 1), tokens: []string{"00"}},
+		{hostId: tUUID(1), connectAddress: net.IPv4(10, 0, 0, 2), tokens: []string{"50"}},
+	}
+	policyInternal.AddHosts(hosts)
+	policy.SetPartitioner("OrderedPartitioner")
+	policyInternal.usedKeyspaces.Store(ks, time.Now())
+	policy.KeyspaceChanged(KeyspaceUpdateEvent{Keyspace: ks})
+
+	ownerOf := func(token string) string {
+		t.Helper()
+		ht := policyInternal.getMetadataReadOnly().replicas[ks].replicasFor(orderedToken(token))
+		if ht == nil || len(ht.hosts) == 0 {
+			t.Fatalf("no replicas for token %s in %s", token, ks)
+		}
+		return ht.hosts[0].HostID()
+	}
+	if got := ownerOf("30"); got != tUUID(1).String() {
+		t.Fatalf("setup: owner of token 30 = %s, want %s", got, tUUID(1))
+	}
+
+	policy.AddHost(&HostInfo{hostId: tUUID(2), connectAddress: net.IPv4(10, 0, 0, 3), tokens: []string{"40"}})
+	if got := ownerOf("30"); got != tUUID(2).String() {
+		t.Fatalf("after AddHost owner of token 30 = %s, want new host %s", got, tUUID(2))
+	}
+
+	policy.RemoveHost(hosts[1])
+	if got := ownerOf("45"); got != tUUID(0).String() {
+		t.Fatalf("after RemoveHost owner of token 45 = %s, want %s", got, tUUID(0))
 	}
 }
