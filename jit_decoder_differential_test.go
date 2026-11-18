@@ -390,8 +390,8 @@ func TestCompiledCachesAreBounded(t *testing.T) {
 	}
 }
 
-// TestScanVaryingDestTypesUnit verifies a caller may vary destination types
-// between rows of one Iter; each Scan resolves its decoder from its own dests.
+// TestScanVaryingDestTypesUnit is the unit counterpart of the integration test:
+// dest types vary between rows with no schema change (the destTypes check).
 func TestScanVaryingDestTypesUnit(t *testing.T) {
 	columns := []ColumnInfo{{Name: "v", TypeInfo: nat(TypeInt)}}
 	data, err := Marshal(columns[0].TypeInfo, int32(7))
