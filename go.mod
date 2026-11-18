@@ -23,7 +23,6 @@ require (
 	github.com/klauspost/compress v1.20.4
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/scylladb/gocql/lz4 v1.19.0
-	golang.org/x/net v0.58.0
 	golang.org/x/sync v0.22.0
 	gopkg.in/inf.v0 v0.9.1
 	sigs.k8s.io/yaml v1.6.0

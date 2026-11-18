@@ -68,8 +68,7 @@ This changes the previous defaults of `QUORUM` and an omitted serial consistency
 (which lets the server use `SERIAL`). Applications that need the previous
 cross-datacenter behavior can set `ClusterConfig.Consistency = gocql.Quorum` and
 `ClusterConfig.SerialConsistency = gocql.Serial` before creating a session.
-Query and batch consistency setters continue to override the session defaults,
-and explicit ScyllaDB Cloud bundle parameters continue to override cluster defaults.
+Query and batch consistency setters continue to override the session defaults.
 
 ## Prepared statements
 
