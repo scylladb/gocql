@@ -31,6 +31,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"gopkg.in/inf.v0"
@@ -432,7 +433,8 @@ func (r *RowData) rowMap(m map[string]any) {
 				m[column] = val
 			}
 		} else if valVal := reflect.ValueOf(val); valVal.Kind() == reflect.Slice && !valVal.IsNil() {
-			valCopy := reflect.MakeSlice(valVal.Type(), valVal.Len(), valVal.Cap())
+			// cap == len: a reused MapScan decode buffer's grown capacity must not leak out.
+			valCopy := reflect.MakeSlice(valVal.Type(), valVal.Len(), valVal.Len())
 			reflect.Copy(valCopy, valVal)
 			m[column] = valCopy.Interface()
 		} else {
@@ -517,34 +519,43 @@ func (iter *Iter) getScanColumns() ([]string, error) {
 // suitable for passing to Scan. Values must be freshly allocated each
 // call because Scan mutates them.
 func (iter *Iter) newScanValues() ([]any, error) {
+	values := make([]any, iter.meta.actualColCount)
+	if err := iter.fillScanValues(values); err != nil {
+		return nil, err
+	}
+	return values, nil
+}
+
+// fillScanValues fills values (len actualColCount) with fresh zero-value pointers per scannable column.
+// Shared by newScanValues and the MapScan fast path.
+func (iter *Iter) fillScanValues(values []any) error {
 	actualSize := iter.meta.actualColCount
-	values := make([]any, actualSize)
 	idx := 0
 	for _, column := range iter.Columns() {
 		if c, ok := column.TypeInfo.(TupleTypeInfo); !ok {
 			if idx >= actualSize {
-				err := fmt.Errorf("gocql: column count overflow in newScanValues: metadata predicted %d columns but encountered more", actualSize)
+				err := fmt.Errorf("gocql: column count overflow in fillScanValues: metadata predicted %d columns but encountered more", actualSize)
 				iter.err = err
-				return nil, err
+				return err
 			}
 			val, err := column.TypeInfo.NewWithError()
 			if err != nil {
 				iter.err = err
-				return nil, err
+				return err
 			}
 			values[idx] = val
 			idx++
 		} else {
 			for _, elem := range c.Elems {
 				if idx >= actualSize {
-					err := fmt.Errorf("gocql: column count overflow in newScanValues: metadata predicted %d columns but encountered more", actualSize)
+					err := fmt.Errorf("gocql: column count overflow in fillScanValues: metadata predicted %d columns but encountered more", actualSize)
 					iter.err = err
-					return nil, err
+					return err
 				}
 				val, err := elem.NewWithError()
 				if err != nil {
 					iter.err = err
-					return nil, err
+					return err
 				}
 				values[idx] = val
 				idx++
@@ -553,12 +564,12 @@ func (iter *Iter) newScanValues() ([]any, error) {
 	}
 
 	if idx != actualSize {
-		err := fmt.Errorf("gocql: column count mismatch in newScanValues: metadata predicted %d columns but got %d", actualSize, idx)
+		err := fmt.Errorf("gocql: column count mismatch in fillScanValues: metadata predicted %d columns but got %d", actualSize, idx)
 		iter.err = err
-		return nil, err
+		return err
 	}
 
-	return values, nil
+	return nil
 }
 
 // TODO(zariel): is it worth exporting this?
@@ -662,30 +673,87 @@ func (iter *Iter) SliceMap() ([]map[string]any, error) {
 //	}
 func (iter *Iter) MapScan(m map[string]any) bool {
 	if iter.err != nil {
+		iter.releaseMapScanCaches()
 		return false
 	}
 
-	// Turn the page first: it may install new metadata that RowData must match.
+	// Turn the page first: it may install new metadata the caches below must match.
 	if !iter.ensureRowsAvailable() {
+		iter.releaseMapScanCaches()
 		return false
 	}
 
-	rowData, err := iter.RowData()
+	// Resolve the (cached) column names once per page.
+	columns, err := iter.getScanColumns()
 	if err != nil {
+		iter.releaseMapScanCaches()
 		return false
 	}
 
-	for i, col := range rowData.Columns {
-		if dest, ok := m[col]; ok {
-			rowData.Values[i] = dest
+	// Locals: a Close racing here can't leave MapScan holding a nil slice (it is
+	// still not concurrency-safe). Defaults are reused across rows.
+	defaults, working := iter.mapScanDefaults, iter.mapScanWorking
+	if defaults == nil || iter.mapScanEpoch != iter.metaEpoch || len(defaults) != iter.meta.actualColCount {
+		defaults = make([]any, iter.meta.actualColCount)
+		if err := iter.fillScanValues(defaults); err != nil {
+			iter.releaseMapScanCaches()
+			return false
 		}
+		iter.mapScanEpoch = iter.metaEpoch
+		// The old working slice may hold the previous page's pointer types.
+		working = nil
 	}
 
-	if iter.Scan(rowData.Values...) {
-		rowData.rowMap(m)
-		return true
+	// Overrides go into a working copy so the defaults stay intact for later rows.
+	values := defaults
+	overridden := false
+	for i, col := range columns {
+		dest, ok := m[col]
+		if !ok {
+			continue
+		}
+		if !overridden {
+			if len(working) != len(defaults) {
+				working = make([]any, len(defaults))
+			}
+			copy(working, defaults)
+			values = working
+			overridden = true
+		}
+		values[i] = dest
 	}
-	return false
+
+	ok := iter.Scan(values...)
+
+	if ok {
+		rd := RowData{Columns: columns, Values: values}
+		rd.rowMap(m)
+	}
+
+	if overridden {
+		// Don't retain caller-supplied destinations between calls.
+		clear(values)
+	}
+
+	if ok {
+		// Skip after Close so a racing Close's release isn't undone.
+		if atomic.LoadInt32(&iter.closed) == 0 {
+			iter.mapScanDefaults, iter.mapScanWorking = defaults, working
+		}
+	} else {
+		// Terminal: don't pin the buffers once the iterator is exhausted.
+		iter.releaseMapScanCaches()
+	}
+
+	return ok
+}
+
+// releaseMapScanCaches only writes when something is cached, so concurrent calls on a
+// shared, already-released Iter stay read-only.
+func (iter *Iter) releaseMapScanCaches() {
+	if iter.mapScanDefaults != nil || iter.mapScanWorking != nil {
+		iter.mapScanDefaults, iter.mapScanWorking = nil, nil
+	}
 }
 
 func copyBytes(p []byte) []byte {

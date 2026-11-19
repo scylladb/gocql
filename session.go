@@ -1160,6 +1160,7 @@ func (s *Session) MapExecuteBatchCAS(batch *Batch, dest map[string]any) (applied
 		return false, nil, err
 	}
 	iter.MapScan(dest)
+	iter.releaseMapScanCaches() // single row; don't pin buffers on the live iter
 	if iter.err != nil {
 		return false, iter, iter.err
 	}
@@ -2584,6 +2585,7 @@ func (q *Query) MapScanCAS(dest map[string]any) (applied bool, err error) {
 		return false, err
 	}
 	iter.MapScan(dest)
+	iter.releaseMapScanCaches() // single row; don't pin buffers on the live iter
 	if iter.err != nil {
 		return false, iter.Close()
 	}
@@ -2724,13 +2726,14 @@ type Iter struct {
 	// are appended here so they are not lost.
 	allWarnings []string
 
-	// scanColumns caches the column names computed by RowData() so that
-	// MapScan does not recompute them on every row. Populated lazily on
-	// the first call to getScanColumns().
-	scanColumns []string
-	meta        resultMetadata
-	// metaEpoch bumps when a page turn installs different metadata (RESULT_METADATA_CHANGED), invalidating scanColumnsEpoch.
+	// MapScan caches reused across rows: column names, default and override destinations.
+	scanColumns     []string
+	mapScanDefaults []any
+	mapScanWorking  []any
+	meta            resultMetadata
+	// metaEpoch bumps when a page turn installs different metadata (RESULT_METADATA_CHANGED), invalidating *Epoch caches.
 	scanColumnsEpoch  int
+	mapScanEpoch      int
 	metaEpoch         int
 	pos               int
 	numRows           int
@@ -3194,6 +3197,8 @@ func (iter *Iter) Warnings() []string {
 // the query or the iteration.
 func (iter *Iter) Close() error {
 	iter.finalize(true)
+	// Not in finalize: that also runs on other goroutines, racing with MapScan.
+	iter.releaseMapScanCaches()
 	return iter.err
 }
 
