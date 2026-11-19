@@ -800,3 +800,32 @@ func TestMapScanNilDestinations(t *testing.T) {
 		t.Fatalf("t[1]=%v want 2", m["t[1]"])
 	}
 }
+
+// TestRowDataColumnsMutationDoesNotAffectMapScan: RowData returns a copy, so editing it
+// cannot change the keys MapScan uses.
+func TestRowDataColumnsMutationDoesNotAffectMapScan(t *testing.T) {
+	t.Parallel()
+	intType := NativeType{typ: TypeInt, proto: 4}
+	b, err := Marshal(intType, int32(1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	iter := &Iter{
+		framer:  &mock.MockFramer{Data: [][]byte{b}},
+		numRows: 1,
+		meta:    resultMetadata{columns: []ColumnInfo{{Name: "a", TypeInfo: intType}}, actualColCount: 1},
+	}
+	rd, err := iter.RowData()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rd.Columns[0] = "mutated"
+
+	m := map[string]any{}
+	if !iter.MapScan(m) {
+		t.Fatal(iter.err)
+	}
+	if v, _ := m["a"].(int); v != 1 || len(m) != 1 {
+		t.Fatalf("MapScan keys changed: %v", m)
+	}
+}

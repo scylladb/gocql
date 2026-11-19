@@ -29,6 +29,7 @@ import (
 	"fmt"
 	"math/big"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -453,7 +454,7 @@ func TupleColumnName(c string, n int) string {
 	return fmt.Sprintf("%s[%d]", c, n)
 }
 
-// RowData returns the RowData for the iterator.
+// RowData returns the RowData for the iterator. Columns is a copy the caller may modify.
 func (iter *Iter) RowData() (RowData, error) {
 	if iter.err != nil {
 		return RowData{}, iter.err
@@ -470,7 +471,7 @@ func (iter *Iter) RowData() (RowData, error) {
 	}
 
 	return RowData{
-		Columns: columns,
+		Columns: slices.Clone(columns),
 		Values:  values,
 	}, nil
 }
