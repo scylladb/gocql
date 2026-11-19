@@ -1623,6 +1623,10 @@ func unmarshalTuple(info TypeInfo, data []byte, value any) error {
 					return unmarshalErrorf("can not unmarshal %s: element %d: unexpected eof", info, i)
 				}
 			}
+			// A nil destination skips the element (bytes are still consumed).
+			if v[i] == nil {
+				continue
+			}
 			err := Unmarshal(elem, p, v[i])
 			if err != nil {
 				return err

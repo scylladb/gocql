@@ -707,3 +707,96 @@ func TestMapScanFailedRebuildDropsCaches(t *testing.T) {
 		t.Fatalf("stale caches kept: defaults=%v working=%v", iter.mapScanDefaults, iter.mapScanWorking)
 	}
 }
+
+// TestScanSkipTupleDestinations: a nil first destination skips the whole tuple
+// column, so later columns stay aligned.
+func TestScanSkipTupleDestinations(t *testing.T) {
+	t.Parallel()
+	intType := NativeType{typ: TypeInt, proto: 4}
+	tt := TupleTypeInfo{NativeType: NativeType{typ: TypeTuple, proto: 4}, Elems: []TypeInfo{intType, intType}}
+	tb, err := Marshal(tt, []any{1, 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := Marshal(intType, int32(9))
+	if err != nil {
+		t.Fatal(err)
+	}
+	iter := &Iter{
+		framer:  &mock.MockFramer{Data: [][]byte{tb, b}},
+		numRows: 1,
+		meta: resultMetadata{
+			columns:        []ColumnInfo{{Name: "t", TypeInfo: tt}, {Name: "b", TypeInfo: intType}},
+			actualColCount: 3,
+		},
+	}
+	var e1, got int
+	if !iter.Scan(nil, &e1, &got) {
+		t.Fatalf("Scan failed: %v", iter.Close())
+	}
+	if got != 9 {
+		t.Fatalf("b=%d want 9 (e1=%d)", got, e1)
+	}
+
+	// A nil first element skips only that element; later ones still decode.
+	iter.framer = &mock.MockFramer{Data: [][]byte{tb, b}}
+	iter.pos, iter.numRows = 0, 1
+	var e2, other int
+	if !iter.Scan(nil, &e2, &other) {
+		t.Fatalf("Scan(nil, &e2, &other) failed: %v", iter.Close())
+	}
+	if e2 != 2 || other != 9 {
+		t.Fatalf("e2=%d other=%d want 2, 9", e2, other)
+	}
+
+	// An all-nil tuple is skipped without decoding, even if its bytes are malformed.
+	iter.framer = &mock.MockFramer{Data: [][]byte{{0xff, 0xff}, b}}
+	iter.pos, iter.numRows = 0, 1
+	if !iter.Scan(nil, nil, &other) || other != 9 {
+		t.Fatalf("Scan(nil, nil, &other): other=%d err=%v", other, iter.Close())
+	}
+}
+
+// TestMapScanNilDestinations: a nil destination in the caller's map yields a nil
+// result and never leaks the previous row's value.
+func TestMapScanNilDestinations(t *testing.T) {
+	t.Parallel()
+	intType := NativeType{typ: TypeInt, proto: 4}
+	tt := TupleTypeInfo{NativeType: NativeType{typ: TypeTuple, proto: 4}, Elems: []TypeInfo{intType, intType}}
+	tb, err := Marshal(tt, []any{1, 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := Marshal(intType, int32(9))
+	if err != nil {
+		t.Fatal(err)
+	}
+	iter := &Iter{
+		framer:  &mock.MockFramer{Data: [][]byte{tb, b, tb, b}},
+		numRows: 2,
+		meta: resultMetadata{
+			columns:        []ColumnInfo{{Name: "t", TypeInfo: tt}, {Name: "b", TypeInfo: intType}},
+			actualColCount: 3,
+		},
+	}
+	m := map[string]any{}
+	if !iter.MapScan(m) {
+		t.Fatal(iter.err)
+	}
+	if m["t[0]"] != 1 || m["t[1]"] != 2 || m["b"] != 9 {
+		t.Fatalf("first row: %v", m)
+	}
+	m = map[string]any{"t[0]": nil, "b": nil}
+	if !iter.MapScan(m) {
+		t.Fatal(iter.err)
+	}
+	if v, ok := m["t[0]"]; !ok || v != nil {
+		t.Fatalf("t[0]=%v ok=%v want nil", v, ok)
+	}
+	if v, ok := m["b"]; !ok || v != nil {
+		t.Fatalf("b=%v ok=%v want nil", v, ok)
+	}
+	if m["t[1]"] != 2 {
+		t.Fatalf("t[1]=%v want 2", m["t[1]"])
+	}
+}

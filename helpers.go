@@ -158,6 +158,9 @@ func goType(t TypeInfo) (reflect.Type, error) {
 }
 
 func dereference(i any) any {
+	if i == nil {
+		return nil
+	}
 	// Fast path: avoid reflect for the common pointer types returned by
 	// NativeType.NewWithError and used in RowData/MapScan.
 	switch v := i.(type) {
