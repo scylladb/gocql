@@ -470,13 +470,10 @@ func (iter *Iter) RowData() (RowData, error) {
 	}, nil
 }
 
-// getScanColumns returns the cached column names for this iterator,
-// computing them on the first call. Column names don't change between
-// rows, so they are computed once and reused.
-//
-// The returned slice is shared across all callers and must not be mutated.
+// getScanColumns returns the cached column names, rebuilt after a metadata-changing page turn.
+// The slice is shared and must not be mutated.
 func (iter *Iter) getScanColumns() ([]string, error) {
-	if iter.scanColumns != nil {
+	if iter.scanColumns != nil && iter.scanColumnsEpoch == iter.metaEpoch {
 		return iter.scanColumns, nil
 	}
 
@@ -512,6 +509,7 @@ func (iter *Iter) getScanColumns() ([]string, error) {
 	}
 
 	iter.scanColumns = columns
+	iter.scanColumnsEpoch = iter.metaEpoch
 	return columns, nil
 }
 
@@ -589,13 +587,25 @@ func (iter *Iter) SliceMap() ([]map[string]any, error) {
 		return nil, iter.err
 	}
 
-	// Not checking for the error because we just did
-	rowData, err := iter.RowData()
-	if err != nil {
-		return nil, err
-	}
+	var rowData RowData
+	built := false
+	epoch := 0
 	dataToReturn := make([]map[string]any, 0)
-	for iter.Scan(rowData.Values...) {
+	for {
+		// Turn the page first: it may install new metadata RowData must match.
+		if !iter.ensureRowsAvailable() {
+			break
+		}
+		if !built || epoch != iter.metaEpoch {
+			var err error
+			if rowData, err = iter.RowData(); err != nil {
+				return nil, err
+			}
+			built, epoch = true, iter.metaEpoch
+		}
+		if !iter.Scan(rowData.Values...) {
+			break
+		}
 		m := make(map[string]any, len(rowData.Columns))
 		rowData.rowMap(m)
 		dataToReturn = append(dataToReturn, m)
@@ -652,6 +662,11 @@ func (iter *Iter) SliceMap() ([]map[string]any, error) {
 //	}
 func (iter *Iter) MapScan(m map[string]any) bool {
 	if iter.err != nil {
+		return false
+	}
+
+	// Turn the page first: it may install new metadata that RowData must match.
+	if !iter.ensureRowsAvailable() {
 		return false
 	}
 

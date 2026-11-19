@@ -2727,8 +2727,11 @@ type Iter struct {
 	// scanColumns caches the column names computed by RowData() so that
 	// MapScan does not recompute them on every row. Populated lazily on
 	// the first call to getScanColumns().
-	scanColumns       []string
-	meta              resultMetadata
+	scanColumns []string
+	meta        resultMetadata
+	// metaEpoch bumps when a page turn installs different metadata (RESULT_METADATA_CHANGED), invalidating scanColumnsEpoch.
+	scanColumnsEpoch  int
+	metaEpoch         int
 	pos               int
 	numRows           int
 	closed            int32
@@ -2756,6 +2759,12 @@ func (iter *Iter) copyPageData(src *Iter) {
 	iter.framer = src.framer
 	iter.next = src.next
 	iter.host = src.host
+	// A changed result set gets fresh columns; only skip-metadata pages reuse the
+	// prepared slice, so other pages usually bump the epoch (a harmless rebuild).
+	if len(iter.meta.columns) != len(src.meta.columns) || iter.meta.actualColCount != src.meta.actualColCount ||
+		(len(src.meta.columns) > 0 && &iter.meta.columns[0] != &src.meta.columns[0]) {
+		iter.metaEpoch++
+	}
 	iter.meta = src.meta
 	iter.allWarnings = append(iter.allWarnings, src.allWarnings...)
 	iter.releasedCustomPayload = src.releasedCustomPayload
@@ -2932,6 +2941,21 @@ func (iter *Iter) fetchNextPage() bool {
 	return iter.err == nil
 }
 
+// ensureRowsAvailable fetches pages until a row is available, finalizing and
+// returning false on close, exhaustion or error. Call it before reading iter.meta.
+func (iter *Iter) ensureRowsAvailable() bool {
+	if atomic.LoadInt32(&iter.closed) != 0 {
+		return false
+	}
+	for iter.pos >= iter.numRows {
+		if !iter.fetchNextPage() {
+			iter.finalize(true)
+			return false
+		}
+	}
+	return true
+}
+
 type Scanner interface {
 	// Next advances the row pointer to point at the next row, the row is valid until
 	// the next call of Next. It returns true if there is a row which is available to be
@@ -2964,15 +2988,8 @@ func (is *iterScanner) Next() bool {
 		return false
 	}
 
-	if atomic.LoadInt32(&iter.closed) != 0 {
+	if !iter.ensureRowsAvailable() {
 		return false
-	}
-
-	for iter.pos >= iter.numRows {
-		if !iter.fetchNextPage() {
-			iter.finalize(true)
-			return false
-		}
 	}
 
 	// A page turn can install new metadata (RESULT_METADATA_CHANGED), so the
@@ -3095,19 +3112,8 @@ func (iter *Iter) Scan(dest ...any) bool {
 		return false
 	}
 
-	if atomic.LoadInt32(&iter.closed) != 0 {
+	if !iter.ensureRowsAvailable() {
 		return false
-	}
-
-	for iter.pos >= iter.numRows {
-		if !iter.fetchNextPage() {
-			iter.finalize(true)
-			return false
-		}
-	}
-
-	if iter.next != nil && iter.pos >= iter.next.pos {
-		iter.next.fetchAsync()
 	}
 
 	// currently only support scanning into an expand tuple, such that its the same
@@ -3116,6 +3122,10 @@ func (iter *Iter) Scan(dest ...any) bool {
 		iter.err = fmt.Errorf("gocql: not enough columns to scan into: have %d want %d", len(dest), iter.meta.actualColCount)
 		iter.finalize(true)
 		return false
+	}
+
+	if iter.next != nil && iter.pos >= iter.next.pos {
+		iter.next.fetchAsync()
 	}
 
 	// i is the current position in dest, could posible replace it and just use
