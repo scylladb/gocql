@@ -2982,6 +2982,12 @@ func (is *iterScanner) Next() bool {
 		is.cols = make([][]byte, len(iter.meta.columns))
 	}
 
+	// Trigger async prefetch of next page when we've consumed enough rows,
+	// matching the timing of Iter.Scan() — before column reading and pos++.
+	if iter.next != nil && iter.pos >= iter.next.pos {
+		iter.next.fetchAsync()
+	}
+
 	for i := 0; i < len(is.cols); i++ {
 		col, err := iter.readColumn()
 		if err != nil {
