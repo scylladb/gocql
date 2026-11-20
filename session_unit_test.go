@@ -619,6 +619,17 @@ type consistencyRetryPolicy struct {
 	consistency Consistency
 }
 
+type decliningConsistencyRetryPolicy struct{}
+
+func (decliningConsistencyRetryPolicy) Attempt(q RetryableQuery) bool {
+	q.SetConsistency(One)
+	return false
+}
+
+func (decliningConsistencyRetryPolicy) GetRetryType(error) RetryType {
+	panic("GetRetryType called after Attempt returned false")
+}
+
 func (p *consistencyRetryPolicy) Attempt(q RetryableQuery) bool {
 	if q.Attempts() != 1 {
 		return false
@@ -650,18 +661,19 @@ func (*synchronizedRetryPolicy) GetRetryType(error) RetryType {
 }
 
 type executorTestQuery struct {
-	ctx               context.Context
-	rt                RetryPolicy
-	spec              SpeculativeExecutionPolicy
-	idempotent        bool
-	consistency       Consistency
-	hostID            string
-	attempts          atomic.Int32
-	borrowed          atomic.Int32
-	released          atomic.Int32
-	consistencyWrites atomic.Int32
-	executeFunc       func(context.Context, *Conn) *Iter
-	finishFunc        func(attemptToken, time.Time, *Iter, *HostInfo)
+	ctx                context.Context
+	rt                 RetryPolicy
+	spec               SpeculativeExecutionPolicy
+	idempotent         bool
+	consistency        Consistency
+	hostID             string
+	attempts           atomic.Int32
+	borrowed           atomic.Int32
+	released           atomic.Int32
+	consistencyWrites  atomic.Int32
+	executeFunc        func(context.Context, *Conn) *Iter
+	observeConsistency func(Consistency)
+	finishFunc         func(attemptToken, time.Time, *Iter, *HostInfo)
 }
 
 func (q *executorTestQuery) borrowForExecution() {
@@ -673,6 +685,9 @@ func (q *executorTestQuery) releaseAfterExecution() {
 }
 
 func (q *executorTestQuery) execute(ctx context.Context, conn *Conn, _ *queryMetrics) *Iter {
+	if q.observeConsistency != nil {
+		q.observeConsistency(q.GetConsistency())
+	}
 	return q.executeFunc(ctx, conn)
 }
 
@@ -709,14 +724,15 @@ func (q *executorTestQuery) GetHostID() string { return q.hostID }
 
 func (q *executorTestQuery) withContext(ctx context.Context) ExecutableQuery {
 	q2 := &executorTestQuery{
-		ctx:         ctx,
-		rt:          q.rt,
-		spec:        q.spec,
-		idempotent:  q.idempotent,
-		consistency: q.consistency,
-		hostID:      q.hostID,
-		executeFunc: q.executeFunc,
-		finishFunc:  q.finishFunc,
+		ctx:                ctx,
+		rt:                 q.rt,
+		spec:               q.spec,
+		idempotent:         q.idempotent,
+		consistency:        q.consistency,
+		hostID:             q.hostID,
+		executeFunc:        q.executeFunc,
+		observeConsistency: q.observeConsistency,
+		finishFunc:         q.finishFunc,
 	}
 	q2.attempts.Store(q.attempts.Load())
 	q2.borrowed.Store(q.borrowed.Load())
@@ -3049,6 +3065,126 @@ func TestQueryExecutorPropagatesWinningRetryConsistency(t *testing.T) {
 			t.Fatalf("loser changed caller consistency to %v, want winner value %v", got, All)
 		}
 	})
+}
+
+func TestQueryExecutorRetainsAttemptedConsistency(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name           string
+		err            error
+		idempotent     bool
+		hosts          int
+		failedAttempts int
+		want           []Consistency
+	}{
+		{"NonIdempotentUnloggedBatch", &RequestErrWriteTimeout{WriteType: "UNLOGGED_BATCH", Received: 1}, false, 2, 1, []Consistency{Quorum}},
+		{"NonIdempotentSimpleTimeout", &RequestErrWriteTimeout{WriteType: "SIMPLE"}, false, 2, 1, []Consistency{Quorum}},
+		{"NonIdempotentWriteFailure", &RequestErrWriteFailure{}, false, 2, 1, []Consistency{Quorum}},
+		{"NonIdempotentCASWriteUnknown", &RequestErrCASWriteUnknown{}, false, 2, 1, []Consistency{Quorum}},
+		{"Rethrow", &RequestErrWriteTimeout{WriteType: "SIMPLE"}, true, 2, 1, []Consistency{Quorum}},
+		{"Ignore", &RequestErrWriteTimeout{WriteType: "SIMPLE", Received: 1}, true, 2, 1, []Consistency{Quorum}},
+		{"Retry", &RequestErrReadTimeout{}, true, 2, 1, []Consistency{Quorum, One}},
+		{"RetryNextHost", &RequestErrWriteFailure{}, true, 2, 1, []Consistency{Quorum, One}},
+		{"RetryLimit", &RequestErrReadTimeout{}, true, 2, 3, []Consistency{Quorum, One, Any}},
+		{"HostsExhausted", &RequestErrWriteFailure{}, true, 1, 1, []Consistency{Quorum}},
+		{"NextHostHasNoPool", &RequestErrWriteFailure{}, true, 0, 1, []Consistency{Quorum}},
+		{"FailedRetryThenHostsExhausted", &RequestErrWriteFailure{}, true, 2, 2, []Consistency{Quorum, One}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			host := (&HostInfo{hostId: UUID{21}}).setState(NodeUp)
+			executor := newTestQueryExecutor(host)
+			if tc.hosts != 1 {
+				secondHost := (&HostInfo{hostId: UUID{22}}).setState(NodeUp)
+				executor.policy.AddHost(secondHost)
+				if tc.hosts == 2 {
+					executor.pool.hostConnPools[secondHost.hostUUID()] = &hostConnPool{
+						host:       secondHost,
+						connPicker: staticConnPicker{conn: &Conn{host: secondHost}},
+					}
+				}
+			}
+
+			var attempted []Consistency
+			qry := &executorTestQuery{
+				rt: &DowngradingConsistencyRetryPolicy{
+					ConsistencyLevelsToTry: []Consistency{One, Any},
+				},
+				idempotent:  tc.idempotent,
+				consistency: Quorum,
+				observeConsistency: func(c Consistency) {
+					attempted = append(attempted, c)
+				},
+				executeFunc: func(context.Context, *Conn) *Iter {
+					if len(attempted) <= tc.failedAttempts {
+						return &Iter{err: tc.err}
+					}
+					return &Iter{}
+				},
+			}
+
+			iter, err := executor.executeQuery(qry, newQueryMetrics())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(tc.want) <= tc.failedAttempts {
+				wantErr := tc.err
+				if tc.hosts == 0 {
+					wantErr = ErrNoPool
+				}
+				if !errors.Is(iter.err, wantErr) {
+					t.Fatalf("error = %v, want %v", iter.err, wantErr)
+				}
+			} else if iter.err != nil {
+				t.Fatalf("retry failed: %v", iter.err)
+			}
+			iter.Close()
+			if !reflect.DeepEqual(attempted, tc.want) {
+				t.Fatalf("attempted consistencies = %v, want %v", attempted, tc.want)
+			}
+			wantRetained := tc.want[len(tc.want)-1]
+			if got := qry.GetConsistency(); got != wantRetained {
+				t.Fatalf("retained consistency = %v, want %v", got, wantRetained)
+			}
+
+			// Reusing the caller's query must start at the last attempted level.
+			qry.executeFunc = func(context.Context, *Conn) *Iter { return &Iter{} }
+			iter, err = executor.executeQuery(qry, newQueryMetrics())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := iter.Close(); err != nil {
+				t.Fatalf("query reuse failed: %v", err)
+			}
+			if got := attempted[len(attempted)-1]; got != wantRetained {
+				t.Fatalf("reused consistency = %v, want %v", got, wantRetained)
+			}
+		})
+	}
+}
+
+func TestQueryExecutorDiscardsDeclinedConsistencyChange(t *testing.T) {
+	host := (&HostInfo{hostId: UUID{23}}).setState(NodeUp)
+	expectedErr := errors.New("do not retry")
+	qry := &executorTestQuery{
+		rt:          decliningConsistencyRetryPolicy{},
+		consistency: Quorum,
+		executeFunc: func(context.Context, *Conn) *Iter {
+			return &Iter{err: expectedErr}
+		},
+	}
+	iter, err := newTestQueryExecutor(host).executeQuery(qry, newQueryMetrics())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := iter.Close(); !errors.Is(err, expectedErr) {
+		t.Fatalf("error = %v, want %v", err, expectedErr)
+	}
+	if got := qry.GetConsistency(); got != Quorum {
+		t.Fatalf("retained consistency = %v, want %v", got, Quorum)
+	}
 }
 
 func TestQueryExecutorSuccessfulAttemptDoesNotWriteConsistency(t *testing.T) {
