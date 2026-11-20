@@ -1007,7 +1007,7 @@ func TestControlHeartBeatSurvivesUnexpectedOptionsResponse(t *testing.T) {
 
 	// Only the fields the failing reconnect reaches. With no hosts and no contact
 	// points it fails in resolveInitialEndpoints, well before refreshRingNow.
-	sess := &Session{logger: log, connCfg: &ConnConfig{}}
+	sess := &Session{ctx: context.Background(), logger: log, connCfg: &ConnConfig{}}
 	sess.hostSource = &ringDescriber{cfg: &sess.cfg, logger: log}
 
 	// state is left at controlConnStarting so heartBeat's CAS lets it run.

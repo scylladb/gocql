@@ -473,6 +473,9 @@ func (c *controlConn) attemptReconnect() error {
 	if err == nil {
 		return nil
 	}
+	if err := c.session.ctx.Err(); err != nil {
+		return err
+	}
 
 	c.session.logger.Printf("gocql: unable to connect to any ring node: %v\n", err)
 	c.session.logger.Printf("gocql: control falling back to initial contact points.\n")
@@ -489,8 +492,14 @@ func (c *controlConn) attemptReconnect() error {
 func (c *controlConn) attemptReconnectToAnyOfHosts(hosts []*HostInfo) error {
 	cfg := c.session.controlConnConfig()
 	for _, host := range hosts {
+		if err := c.session.ctx.Err(); err != nil {
+			return err
+		}
 		conn, err := c.session.dial(c.session.ctx, host, cfg, c)
 		if err != nil {
+			if err := c.session.ctx.Err(); err != nil {
+				return err
+			}
 			if c.session.cfg.ConvictionPolicy.AddFailure(err, host) {
 				c.session.handleNodeDown(host.ConnectAddress(), host.Port())
 			}
