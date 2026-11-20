@@ -5,11 +5,47 @@ package debounce
 
 import (
 	"errors"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 )
+
+func TestRefreshDebouncer_StopWithPendingTimer(t *testing.T) {
+	previous := runtime.GOMAXPROCS(1)
+	defer runtime.GOMAXPROCS(previous)
+
+	for i := 0; i < 100; i++ {
+		d := NewRefreshDebouncer(time.Nanosecond, func() error { return nil })
+		d.Debounce()
+		done := make(chan struct{})
+		go func() {
+			d.Stop()
+			close(done)
+		}()
+		select {
+		case <-done:
+			select {
+			case <-d.done:
+			default:
+				t.Fatal("Stop returned before flusher exited")
+			}
+			d.Stop() // Repeated shutdown must remain safe.
+		case <-time.After(time.Second):
+			// Try to release a blocked quit send before reporting the timeout.
+			select {
+			case <-d.quit:
+			default:
+			}
+			select {
+			case <-done:
+			case <-time.After(time.Second):
+			}
+			t.Fatal("Stop blocked with a pending timer")
+		}
+	}
+}
 
 // This test sends debounce requests and waits until the refresh function is called (which should happen when the timer elapses).
 func TestRefreshDebouncer_MultipleEvents(t *testing.T) {
