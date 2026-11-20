@@ -2719,6 +2719,14 @@ type Iter struct {
 	releasedCustomPayload map[string][]byte
 	next                  *nextIter
 	host                  *HostInfo
+	// rowDecoder is the JIT decoder for this Iter's rows, together with the
+	// dest/columns shape it was compiled for. See ensureRowDecoderFor.
+	rowDecoder *cachedJITDecoder
+	// preparedStmt, when non-nil, is the prepared statement this Iter's rows
+	// came from — used to cache the compiled row decoder across repeat
+	// executions (see preparedStatment.jitDecoder) instead of recompiling it
+	// fresh for every new Iter.
+	preparedStmt *preparedStatment
 	// allWarnings accumulates warnings across page boundaries.
 	// When a page's framer is released during fetchNextPage(), its warnings
 	// are appended here so they are not lost.
@@ -2746,6 +2754,23 @@ func (iter *Iter) Columns() []ColumnInfo {
 	return iter.meta.columns
 }
 
+// ensureRowDecoderFor makes sure iter.rowDecoder is compiled for dest's exact
+// destination-type shape, recompiling it when a caller varies dest's types
+// between rows of one Iter. Scan permits that: the pre-JIT Unmarshal path
+// re-derived its behavior from each value's concrete type on every call, while
+// a compiledRowDecoder is fixed to one shape and would otherwise misapply a
+// decoder built for the wrong Go type.
+//
+// Staleness from a schema change is handled at the mutation point instead —
+// copyPageData clears rowDecoder when it installs a new page's metadata — so
+// this stays a nil check plus one allocation-free compare per row.
+func (iter *Iter) ensureRowDecoderFor(dest []any) {
+	if iter.rowDecoder != nil && destTypesEqualToValues(dest, iter.rowDecoder.destTypes) {
+		return
+	}
+	iter.rowDecoder = resolveRowDecoder(iter.preparedStmt, iter.meta.columns, dest)
+}
+
 // copyPageData copies page-related fields from src to iter, excluding the closed flag.
 // This is used when fetching the next page to avoid races with concurrent Close() calls.
 //
@@ -2757,6 +2782,11 @@ func (iter *Iter) copyPageData(src *Iter) {
 	iter.next = src.next
 	iter.host = src.host
 	iter.meta = src.meta
+	// meta may carry a new schema (RESULT_METADATA_CHANGED at a page boundary),
+	// and preparedStmt must move with it: a decoder compiled for the old
+	// columns must not outlive them, nor be cached onto the superseded stmt.
+	iter.preparedStmt = src.preparedStmt
+	iter.rowDecoder = nil
 	iter.allWarnings = append(iter.allWarnings, src.allWarnings...)
 	iter.releasedCustomPayload = src.releasedCustomPayload
 	iter.pos = src.pos
@@ -2998,22 +3028,25 @@ func (is *iterScanner) Next() bool {
 }
 
 func scanColumn(p []byte, col *ColumnInfo, dest []any) (int, error) {
-	if dest[0] == nil {
-		return 1, nil
-	}
-
 	if col.TypeInfo.Type() == TypeTuple {
 		// this will panic, actually a bug, please report
 		tuple := col.TypeInfo.(TupleTypeInfo)
 
+		// No nil shortcut here: a tuple must consume all its dests (Unmarshal skips
+		// nil ones) to stay aligned with the compiled decoders of later columns.
 		count := len(tuple.Elems)
-		// here we pass in a slice of the struct which has the number number of
-		// values as elements in the tuple
-		if err := Unmarshal(col.TypeInfo, p, dest[:count]); err != nil {
+		// Pass a copy of the window: boxing dest[:count] itself in an interface
+		// would make Scan's variadic dest escape, costing a heap alloc per row.
+		window := make([]any, count)
+		copy(window, dest[:count])
+		if err := Unmarshal(col.TypeInfo, p, window); err != nil {
 			return 0, err
 		}
 		return count, nil
 	} else {
+		if dest[0] == nil {
+			return 1, nil
+		}
 		if err := Unmarshal(col.TypeInfo, p, dest[0]); err != nil {
 			return 0, err
 		}
@@ -3033,13 +3066,20 @@ func (is *iterScanner) Scan(dest ...any) error {
 		return fmt.Errorf("gocql: not enough columns to scan into: have %d want %d", len(dest), iter.meta.actualColCount)
 	}
 
+	iter.ensureRowDecoderFor(dest)
+	dec := iter.rowDecoder.dec
 	// i is the current position in dest, could posible replace it and just use
 	// slices of dest
 	i := 0
 	var err error
 	for j := range iter.meta.columns {
 		var n int
-		n, err = scanColumn(is.cols[j], &iter.meta.columns[j], dest[i:])
+		// Only tuple columns have no compiled decoder.
+		if d := dec.decoders[j]; d != nil {
+			n, err = 1, d(is.cols[j], dest[i])
+		} else {
+			n, err = scanColumn(is.cols[j], &iter.meta.columns[j], dest[i:])
+		}
 		if err != nil {
 			break
 		}
@@ -3112,6 +3152,8 @@ func (iter *Iter) Scan(dest ...any) bool {
 		return false
 	}
 
+	iter.ensureRowDecoderFor(dest)
+	dec := iter.rowDecoder.dec
 	// i is the current position in dest, could posible replace it and just use
 	// slices of dest
 	i := 0
@@ -3123,7 +3165,13 @@ func (iter *Iter) Scan(dest ...any) bool {
 			return false
 		}
 
-		n, err := scanColumn(colBytes, &iter.meta.columns[j], dest[i:])
+		// Only tuple columns have no compiled decoder.
+		n := 1
+		if d := dec.decoders[j]; d != nil {
+			err = d(colBytes, dest[i])
+		} else {
+			n, err = scanColumn(colBytes, &iter.meta.columns[j], dest[i:])
+		}
 		if err != nil {
 			iter.err = err
 			iter.finalize(true)
