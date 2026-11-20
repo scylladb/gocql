@@ -47,6 +47,84 @@ import (
 	"github.com/gocql/gocql/tablets"
 )
 
+type sessionInitFailureDialer struct{}
+
+func (sessionInitFailureDialer) DialHost(context.Context, *HostInfo) (*DialedHost, error) {
+	return nil, errors.New("connection refused by test dialer")
+}
+
+type cancellationWaitingControl struct {
+	controlConnection
+	ctx context.Context
+}
+
+func (c *cancellationWaitingControl) close() {
+	<-c.ctx.Done()
+}
+
+func TestSessionCloseCancelsBeforeControlShutdown(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	s := &Session{ctx: ctx, cancel: cancel, control: &cancellationWaitingControl{ctx: ctx}}
+	done := make(chan struct{})
+	go func() {
+		s.Close()
+		close(done)
+	}()
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+			t.Error("session shutdown did not exit after cancellation")
+		}
+	})
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("session waited for control shutdown before canceling its context")
+	}
+}
+
+func TestNewSessionClosesResourcesOnInitError(t *testing.T) {
+	for _, disableControlConn := range []bool{false, true} {
+		t.Run(fmt.Sprintf("disableControlConn=%t", disableControlConn), func(t *testing.T) {
+			cfg := NewCluster("127.0.0.1")
+			cfg.ProtoVersion = 4
+			cfg.HostDialer = sessionInitFailureDialer{}
+			cfg.disableControlConn = disableControlConn
+			cfg.Logger = nopLogger{}
+
+			// Capture the session before init fails; the caller receives nil.
+			var created *Session
+			cfg.WarningsHandlerBuilder = func(s *Session) WarningHandler {
+				created = s
+				t.Cleanup(s.Close)
+				return nil
+			}
+
+			s, err := cfg.CreateSession()
+			require.Error(t, err)
+			require.Nil(t, s)
+			if disableControlConn {
+				require.Equal(t, ErrNoConnectionsStarted, err)
+			} else {
+				require.Contains(t, err.Error(), "connection refused by test dialer")
+			}
+			require.NotNil(t, created)
+			require.True(t, created.Closed(), "failed session must be closed before returning")
+			require.ErrorIs(t, created.ctx.Err(), context.Canceled)
+			for _, quit := range []<-chan struct{}{created.nodeEvents.quit, created.schemaEvents.quit} {
+				select {
+				case <-quit:
+				default:
+					t.Error("event debouncer still running after session initialization failed")
+				}
+			}
+		})
+	}
+}
+
 func TestQueryIterReturnsErrSessionNotReady(t *testing.T) {
 	t.Parallel()
 
