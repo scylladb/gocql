@@ -15,6 +15,7 @@ type RefreshDebouncer struct {
 	timer        *time.Timer
 	refreshNowCh chan struct{}
 	quit         chan struct{}
+	done         chan struct{}
 	refreshFn    func() error
 	interval     time.Duration
 	mu           sync.Mutex
@@ -27,6 +28,7 @@ func NewRefreshDebouncer(interval time.Duration, refreshFn func() error) *Refres
 		broadcaster:  nil,
 		refreshNowCh: make(chan struct{}, 1),
 		quit:         make(chan struct{}),
+		done:         make(chan struct{}),
 		interval:     interval,
 		timer:        time.NewTimer(interval),
 		refreshFn:    refreshFn,
@@ -62,6 +64,7 @@ func (d *RefreshDebouncer) RefreshNow() <-chan error {
 }
 
 func (d *RefreshDebouncer) flusher() {
+	defer close(d.done)
 	for {
 		select {
 		case <-d.refreshNowCh:
@@ -109,9 +112,9 @@ func (d *RefreshDebouncer) Stop() {
 		return
 	}
 	d.stopped = true
-	d.mu.Unlock()
-	d.quit <- struct{}{} // sync with flusher
 	close(d.quit)
+	d.mu.Unlock()
+	<-d.done
 }
 
 // broadcasts an error to multiple channels (listeners)
