@@ -42,3 +42,5 @@ claude.log
 claude_history.json
 claude_config.json
 CLAUDE.md
+# Dependencies for internal GitHub automation
+.github/node_modules/
