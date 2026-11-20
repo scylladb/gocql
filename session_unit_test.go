@@ -87,8 +87,10 @@ func TestSessionCloseCancelsBeforeControlShutdown(t *testing.T) {
 }
 
 func TestNewSessionClosesResourcesOnInitError(t *testing.T) {
+	const timeout = 5 * time.Second
 	for _, disableControlConn := range []bool{false, true} {
 		t.Run(fmt.Sprintf("disableControlConn=%t", disableControlConn), func(t *testing.T) {
+			before := sessionWorkerStacks()
 			cfg := NewCluster("127.0.0.1")
 			cfg.ProtoVersion = 4
 			cfg.HostDialer = sessionInitFailureDialer{}
@@ -96,14 +98,47 @@ func TestNewSessionClosesResourcesOnInitError(t *testing.T) {
 			cfg.Logger = nopLogger{}
 
 			// Capture the session before init fails; the caller receives nil.
-			var created *Session
+			createdCh := make(chan *Session, 1)
+			var workers map[string]string
 			cfg.WarningsHandlerBuilder = func(s *Session) WarningHandler {
-				created = s
-				t.Cleanup(s.Close)
+				workers = sessionWorkerStacks()
+				for id := range before {
+					delete(workers, id)
+				}
+				createdCh <- s
 				return nil
 			}
 
-			s, err := cfg.CreateSession()
+			type result struct {
+				session *Session
+				err     error
+			}
+			done := make(chan result, 1)
+			go func() {
+				s, err := cfg.CreateSession()
+				done <- result{s, err}
+			}()
+			var created *Session
+			select {
+			case created = <-createdCh:
+			case <-time.After(timeout):
+				t.Fatal("session construction did not reach initialization")
+			}
+			t.Cleanup(func() {
+				created.Close()
+				// Release workers even if a missing cleanup call makes the test fail.
+				created.ringRefresher.Stop()
+				_ = created.eventBus.Stop()
+				created.metadataDescriber.metadata.tabletsMetadata.Close()
+			})
+			var s *Session
+			var err error
+			select {
+			case r := <-done:
+				s, err = r.session, r.err
+			case <-time.After(timeout):
+				t.Fatal("session initialization failure cleanup did not return")
+			}
 			require.Error(t, err)
 			require.Nil(t, s)
 			if disableControlConn {
@@ -114,6 +149,16 @@ func TestNewSessionClosesResourcesOnInitError(t *testing.T) {
 			require.NotNil(t, created)
 			require.True(t, created.Closed(), "failed session must be closed before returning")
 			require.ErrorIs(t, created.ctx.Err(), context.Canceled)
+			require.Len(t, workers, 5, "initialization must start all five session workers")
+			require.Eventually(t, func() bool {
+				remaining := sessionWorkerStacks()
+				for id := range workers {
+					if _, ok := remaining[id]; ok {
+						return false
+					}
+				}
+				return true
+			}, timeout, 10*time.Millisecond, "session workers survived failed initialization: %v", workers)
 			for _, quit := range []<-chan struct{}{created.nodeEvents.quit, created.schemaEvents.quit} {
 				select {
 				case <-quit:
@@ -123,6 +168,28 @@ func TestNewSessionClosesResourcesOnInitError(t *testing.T) {
 			}
 		})
 	}
+}
+
+func sessionWorkerStacks() map[string]string {
+	buf := make([]byte, 64*1024)
+	for {
+		n := runtime.Stack(buf, true)
+		if n < len(buf) {
+			buf = buf[:n]
+			break
+		}
+		buf = make([]byte, 2*len(buf))
+	}
+	workers := make(map[string]string)
+	for _, stack := range strings.Split(string(buf), "\n\n") {
+		if strings.Contains(stack, "created by github.com/gocql/gocql.newEventDebouncer ") ||
+			strings.Contains(stack, "created by github.com/gocql/gocql/debounce.NewRefreshDebouncer ") ||
+			strings.Contains(stack, "created by github.com/gocql/gocql/internal/eventbus.(*EventBus[") ||
+			strings.Contains(stack, "created by github.com/gocql/gocql/tablets.NewCowTabletList ") {
+			workers[strings.Fields(stack)[1]] = stack
+		}
+	}
+	return workers
 }
 
 func TestQueryIterReturnsErrSessionNotReady(t *testing.T) {
