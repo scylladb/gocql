@@ -355,6 +355,10 @@ func (c *controlConn) setupConn(conn *Conn) error {
 		host: host,
 	}
 	old := c.conn.Swap(ch)
+	if atomic.LoadInt32(&c.state) == controlConnClosing {
+		conn.Close()
+		return errors.New("control connection is closing")
+	}
 	var oldHost events.HostInfo
 	if old != nil && old.host != nil {
 		oldHost.HostID = old.host.HostID()
@@ -599,13 +603,17 @@ func (c *controlConn) awaitSchemaAgreement() error {
 }
 
 func (c *controlConn) close() {
-	if atomic.CompareAndSwapInt32(&c.state, controlConnStarted, controlConnClosing) {
-		c.quit <- struct{}{}
-	}
-
+	state := atomic.SwapInt32(&c.state, controlConnClosing)
 	ch := c.getConn()
 	if ch != nil {
 		ch.conn.Close()
+	}
+
+	if state != controlConnClosing {
+		if state == controlConnStarted {
+			c.quit <- struct{}{}
+		}
+		close(c.quit)
 	}
 }
 
