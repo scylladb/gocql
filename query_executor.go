@@ -286,6 +286,9 @@ func (q *queryExecutor) do(ctx context.Context, qry ExecutableQuery, metrics *qu
 		getRetryType = rt.GetRetryType
 	}
 	var potentiallyExecuted bool
+	// Report the consistency of the last physical attempt. A retry policy may
+	// change qry for a retry that is rejected or cannot obtain a connection.
+	attemptedConsistency := qry.GetConsistency()
 	var retryableQry RetryableQuery
 	var localAttempts int64
 
@@ -317,6 +320,7 @@ func (q *queryExecutor) do(ctx context.Context, qry ExecutableQuery, metrics *qu
 				},
 			}, RetryNextHost
 		}
+		attemptedConsistency = qry.GetConsistency()
 		iter = q.attemptQuery(ctx, qry, metrics, executionAttempts, &localAttempts, conn)
 		iter.host = selectedHost.Info()
 		// Update host
@@ -358,7 +362,7 @@ func (q *queryExecutor) do(ctx context.Context, qry ExecutableQuery, metrics *qu
 	for selectedHost != nil {
 		iter, retryType := execute(qry, selectedHost)
 		if iter.err == nil {
-			return iter, qry.GetConsistency()
+			return iter, attemptedConsistency
 		}
 		lastErr = iter.err
 
@@ -380,7 +384,7 @@ func (q *queryExecutor) do(ctx context.Context, qry ExecutableQuery, metrics *qu
 			shouldRetry := getShouldRetry(retryableQry)
 			qry.SetConsistency(retryableQry.GetConsistency())
 			if !shouldRetry {
-				return iter, qry.GetConsistency()
+				return iter, attemptedConsistency
 			}
 			retryType = getRetryType(iter.err)
 		}
@@ -392,7 +396,7 @@ func (q *queryExecutor) do(ctx context.Context, qry ExecutableQuery, metrics *qu
 			// retry on the same host
 			continue
 		case Rethrow, Ignore:
-			return iter, qry.GetConsistency()
+			return iter, attemptedConsistency
 		case RetryNextHost:
 			iter.finalize(true)
 			// retry on the next host
@@ -400,13 +404,13 @@ func (q *queryExecutor) do(ctx context.Context, qry ExecutableQuery, metrics *qu
 			continue
 		default:
 			// Undefined? Return nil and error, this will panic in the requester
-			return &Iter{err: ErrUnknownRetryType}, qry.GetConsistency()
+			return &Iter{err: ErrUnknownRetryType}, attemptedConsistency
 		}
 	}
 	if lastErr != nil {
-		return &Iter{err: lastErr}, qry.GetConsistency()
+		return &Iter{err: lastErr}, attemptedConsistency
 	}
-	return &Iter{err: ErrNoConnections}, qry.GetConsistency()
+	return &Iter{err: ErrNoConnections}, attemptedConsistency
 }
 
 // isPotentiallyExecutedServerError reports whether err is a server response
