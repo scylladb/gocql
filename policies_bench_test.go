@@ -168,7 +168,7 @@ func BenchmarkTabletAwarePickAllReplicas(b *testing.B) {
 
 // setupReplicaMapAwareBench sets up a tokenAwareHostPolicy on the default
 // Murmur3Partitioner replica-map path (no tablets, no custom partitioner).
-func setupReplicaMapAwareBench(b *testing.B, numHosts, rf int) (HostSelectionPolicy, []*Query) {
+func setupReplicaMapAwareBench(b testing.TB, numHosts, rf int) (HostSelectionPolicy, []*Query) {
 	b.Helper()
 
 	const keyspace = "benchks"
