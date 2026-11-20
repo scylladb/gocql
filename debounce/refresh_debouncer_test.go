@@ -22,6 +22,7 @@ func TestRefreshDebouncer_StopWithPendingTimer(t *testing.T) {
 		done := make(chan struct{})
 		go func() {
 			d.Stop()
+			d.Stop() // Repeated shutdown must remain safe.
 			close(done)
 		}()
 		select {
@@ -31,7 +32,6 @@ func TestRefreshDebouncer_StopWithPendingTimer(t *testing.T) {
 			default:
 				t.Fatal("Stop returned before flusher exited")
 			}
-			d.Stop() // Repeated shutdown must remain safe.
 		case <-time.After(time.Second):
 			// Try to release a blocked quit send before reporting the timeout.
 			select {
@@ -44,6 +44,32 @@ func TestRefreshDebouncer_StopWithPendingTimer(t *testing.T) {
 			}
 			t.Fatal("Stop blocked with a pending timer")
 		}
+	}
+}
+
+func TestRefreshDebouncer_RefreshNowAfterStop(t *testing.T) {
+	d := NewRefreshDebouncer(time.Hour, func() error {
+		t.Error("refresh callback ran after shutdown")
+		return nil
+	})
+	done := make(chan struct{})
+	go func() {
+		d.Stop()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("Stop blocked")
+	}
+
+	select {
+	case _, ok := <-d.RefreshNow():
+		if ok {
+			t.Fatal("refresh accepted after shutdown")
+		}
+	default:
+		t.Fatal("refresh listener left waiting after shutdown")
 	}
 }
 
