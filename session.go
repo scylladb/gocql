@@ -288,6 +288,7 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 	}
 
 	if err = s.init(); err != nil {
+		s.Close()
 		if err == ErrNoConnectionsStarted {
 			//This error used to be generated inside NewSession & returned directly
 			//Forward it on up to be backwards compatible
@@ -689,6 +690,11 @@ func (s *Session) Close() {
 	s.isClosing = true
 	s.sessionStateMu.Unlock()
 
+	// Cancel connection setup before waiting for background workers to exit.
+	if s.cancel != nil {
+		s.cancel()
+	}
+
 	if s.pool != nil {
 		s.pool.Close()
 	}
@@ -711,10 +717,6 @@ func (s *Session) Close() {
 
 	if s.ringRefresher != nil {
 		s.ringRefresher.Stop()
-	}
-
-	if s.cancel != nil {
-		s.cancel()
 	}
 
 	if s.clientRoutesHandler != nil {
