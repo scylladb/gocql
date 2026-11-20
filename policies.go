@@ -476,7 +476,8 @@ type HostSelectionPolicy interface {
 }
 
 // SelectedHost is an interface returned when picking a host from a host
-// selection policy.
+// selection policy. Compare picks by Info(), not with == or as map keys:
+// built-in policies may return pointers into reused iterator state.
 type SelectedHost interface {
 	Info() *HostInfo
 	Token() Token
@@ -1043,12 +1044,10 @@ func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 	}
 
 	var (
-		fallbackIter NextHost
-		i, j, k      int
-		remote       [][]*HostInfo
-		tierer       HostTierer
-		tiererOk     bool
-		maxTier      uint
+		remote   [][]*HostInfo
+		tierer   HostTierer
+		tiererOk bool
+		maxTier  uint
 	)
 
 	if tierer, tiererOk = t.fallback.(HostTierer); tiererOk {
@@ -1061,11 +1060,13 @@ func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 		remote = make([][]*HostInfo, maxTier)
 	}
 
-	var used hostSet
+	// One allocation for all mutable iteration state: captured separately, each
+	// variable the closure mutates is its own heap allocation.
+	st := &tokenAwareIter{}
 	return func() SelectedHost {
-		for i < len(replicas) {
-			h := replicas[i]
-			i++
+		for st.i < len(replicas) {
+			h := replicas[st.i]
+			st.i++
 
 			var tier uint
 			if tiererOk {
@@ -1084,49 +1085,70 @@ func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 			}
 
 			if h.IsUp() {
-				used.add(h)
+				st.used.add(h)
 				if token == nil {
-					return int64SelectedHost{info: h, tokenCasted: tokenCasted}
+					return st.int64Selected(h, tokenCasted)
 				}
 				return selectedHost{info: h, token: token}
 			}
 		}
 
 		if t.nonLocalReplicasFallback {
-			for j < len(remote) && k < len(remote[j]) {
-				h := remote[j][k]
-				k++
+			for st.j < len(remote) && st.k < len(remote[st.j]) {
+				h := remote[st.j][st.k]
+				st.k++
 
-				if k >= len(remote[j]) {
-					j++
-					k = 0
+				if st.k >= len(remote[st.j]) {
+					st.j++
+					st.k = 0
 				}
 
 				if h.IsUp() {
-					used.add(h)
+					st.used.add(h)
 					if token == nil {
-						return int64SelectedHost{info: h, tokenCasted: tokenCasted}
+						return st.int64Selected(h, tokenCasted)
 					}
 					return selectedHost{info: h, token: token}
 				}
 			}
 		}
 
-		if fallbackIter == nil {
+		if st.fallbackIter == nil {
 			// fallback
-			fallbackIter = t.fallback.Pick(qry)
+			st.fallbackIter = t.fallback.Pick(qry)
 		}
 
 		// filter the token aware selected hosts from the fallback hosts
-		for fallbackHost := fallbackIter(); fallbackHost != nil; fallbackHost = fallbackIter() {
-			if !used.contains(fallbackHost.Info()) {
-				used.add(fallbackHost.Info())
+		for fallbackHost := st.fallbackIter(); fallbackHost != nil; fallbackHost = st.fallbackIter() {
+			if !st.used.contains(fallbackHost.Info()) {
+				st.used.add(fallbackHost.Info())
 				return fallbackHost
 			}
 		}
 
 		return nil
 	}
+}
+
+// tokenAwareIter is the mutable state of one tokenAwareHostPolicy.Pick iterator.
+type tokenAwareIter struct {
+	fallbackIter NextHost
+	used         hostSet
+	// sel holds the first hosts returned, so the common first pick is not boxed.
+	// Each slot is handed out once: a returned SelectedHost stays valid.
+	sel     [2]int64SelectedHost
+	nsel    int
+	i, j, k int
+}
+
+func (st *tokenAwareIter) int64Selected(h *HostInfo, token int64Token) SelectedHost {
+	if st.nsel == len(st.sel) {
+		return int64SelectedHost{info: h, tokenCasted: token}
+	}
+	s := &st.sel[st.nsel]
+	st.nsel++
+	*s = int64SelectedHost{info: h, tokenCasted: token}
+	return s
 }
 
 type dcAwareRR struct {
@@ -1230,31 +1252,40 @@ func (d *dcAwareRR) HostDown(host *HostInfo) { d.RemoveHost(host) }
 // For tiered and DC-aware strategy:
 // roundRobbin(offset, localHosts, remoteHosts)
 func roundRobbin(shift int, hosts ...[]*HostInfo) NextHost {
-	currentLayer := 0
-	currentlyObserved := 0
+	// One allocation for the mutable state, and the first pick is not boxed.
+	st := &struct {
+		first                           selectedHost
+		currentLayer, currentlyObserved int
+		firstUsed                       bool
+	}{}
 
 	return func() SelectedHost {
 		// iterate over layers
 		for {
-			if currentLayer == len(hosts) {
+			if st.currentLayer == len(hosts) {
 				return nil
 			}
 
-			currentLayerSize := len(hosts[currentLayer])
+			currentLayerSize := len(hosts[st.currentLayer])
 
 			// iterate over hosts within a layer
 			for {
-				currentlyObserved++
-				if currentlyObserved > currentLayerSize {
-					currentLayer++
-					currentlyObserved = 0
+				st.currentlyObserved++
+				if st.currentlyObserved > currentLayerSize {
+					st.currentLayer++
+					st.currentlyObserved = 0
 					break
 				}
 
-				h := hosts[currentLayer][(shift+currentlyObserved)%currentLayerSize]
+				h := hosts[st.currentLayer][(shift+st.currentlyObserved)%currentLayerSize]
 
 				if h.IsUp() {
-					return selectedHost{info: h}
+					if st.firstUsed {
+						return selectedHost{info: h}
+					}
+					st.firstUsed = true
+					st.first = selectedHost{info: h}
+					return &st.first
 				}
 
 			}

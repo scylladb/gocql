@@ -1869,3 +1869,47 @@ func TestHostSetOverflowPreservesInlineEntries(t *testing.T) {
 		t.Fatal("extra host not found after spill")
 	}
 }
+
+// TestPickReturnedHostsStable checks that hosts returned earlier by an iterator
+// are not overwritten when it advances: Pick hands out pointers into its state.
+func TestPickReturnedHostsStable(t *testing.T) {
+	t.Parallel()
+
+	check := func(t *testing.T, iter NextHost, minHosts int) {
+		t.Helper()
+		type snap struct {
+			info *HostInfo
+			tok  Token
+		}
+		var got []SelectedHost
+		var want []snap
+		for h := iter(); h != nil; h = iter() {
+			got = append(got, h)
+			want = append(want, snap{h.Info(), h.Token()})
+		}
+		if len(got) < minHosts {
+			t.Fatalf("got %d hosts, want at least %d", len(got), minHosts)
+		}
+		for i, h := range got {
+			if h.Info() != want[i].info || h.Token() != want[i].tok {
+				t.Fatalf("host %d changed after advancing the iterator", i)
+			}
+		}
+	}
+
+	t.Run("TokenAware", func(t *testing.T) {
+		t.Parallel()
+		// RF 3 exceeds the iterator's inline slots; the fallback runs roundRobbin.
+		policy, queries := setupReplicaMapAwareBench(t, 6, 3)
+		check(t, policy.Pick(queries[0]), 6)
+	})
+
+	t.Run("RoundRobin", func(t *testing.T) {
+		t.Parallel()
+		policy := RoundRobinHostPolicy()
+		for i := 0; i < 3; i++ {
+			policy.AddHost(&HostInfo{hostId: tUUID(i), connectAddress: net.IPv4(10, 0, 0, byte(i))})
+		}
+		check(t, policy.Pick(nil), 3)
+	})
+}
