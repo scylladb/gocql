@@ -364,6 +364,9 @@ func (e *ExponentialBackoffRetryPolicy) GetRetryTypeLWT(err error) RetryType {
 // retried with the next consistency level.  Furthermore, for other
 // write types, if at least one replica acknowledged the write, the
 // timeout is ignored.
+// Both apply only to operations marked idempotent. A write timeout
+// leaves the operation potentially executed, so for a non-idempotent
+// operation the error is rethrown instead.
 //
 // On an unavailable exception: if at least one replica is alive, the
 // operation is retried with the next provided consistency level.
