@@ -52,6 +52,11 @@ func (d *RefreshDebouncer) Debounce() {
 func (d *RefreshDebouncer) RefreshNow() <-chan error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	if d.stopped {
+		ch := make(chan error)
+		close(ch)
+		return ch
+	}
 	if d.broadcaster == nil {
 		d.broadcaster = newErrorBroadcaster()
 		select {
