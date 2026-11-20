@@ -29,10 +29,136 @@ package gocql
 
 import (
 	"net"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	frm "github.com/gocql/gocql/internal/frame"
 )
+
+func TestControlConnCloseBeforeHeartbeat(t *testing.T) {
+	t.Parallel()
+
+	c := createControlConn(nil)
+	c.close()
+	if state := atomic.LoadInt32(&c.state); state != controlConnClosing {
+		t.Fatalf("control connection state = %d, want closing", state)
+	}
+	select {
+	case <-c.quit:
+	default:
+		t.Fatal("control connection shutdown signal is still open")
+	}
+
+	// A heartbeat scheduled by connect must not start after shutdown.
+	c.heartBeat()
+	c.close()
+}
+
+func TestControlConnCloseUnblocksHeartbeat(t *testing.T) {
+	t.Parallel()
+
+	const timeout = 5 * time.Second
+	conn, peer := newTestExecConn(t, testContextWriter{})
+	t.Cleanup(func() { _ = peer.Close() })
+	s := &Session{logger: nopLogger{}, connCfg: &ConnConfig{}}
+	s.hostSource = &ringDescriber{cfg: &s.cfg, logger: s.logger}
+	c := createControlConn(s)
+	c.conn.Store(&connHost{conn: conn})
+	heartbeatDone := make(chan struct{})
+	closeDone := make(chan struct{})
+	closeStarted := false
+	go func() {
+		c.heartBeat()
+		close(heartbeatDone)
+	}()
+	t.Cleanup(func() {
+		if !closeStarted {
+			go func() {
+				c.close()
+				close(closeDone)
+			}()
+		}
+		// Rescue a failed shutdown without leaving a pending exec or worker.
+		conn.Close()
+		for _, done := range []<-chan struct{}{closeDone, heartbeatDone} {
+			select {
+			case <-done:
+			case <-time.After(timeout):
+				t.Error("control shutdown worker did not exit")
+			}
+		}
+	})
+
+	// The zero metadata timeout leaves OPTIONS pending until the socket closes.
+	waitForSingleCallWithin(t, conn, timeout)
+	closeStarted = true
+	go func() {
+		c.close()
+		close(closeDone)
+	}()
+	select {
+	case <-closeDone:
+	case <-time.After(timeout):
+		t.Fatal("control close blocked on an unanswered heartbeat")
+	}
+}
+
+func TestControlConnRejectsPublicationAfterClose(t *testing.T) {
+	const timeout = 5 * time.Second
+	registering := make(chan struct{})
+	release := make(chan struct{})
+	srv := newControlTestServer(t, func(srv *controlTestServer) {
+		srv.registerReply = func(stream int, resp *framer) {
+			close(registering)
+			<-release
+			resp.writeHeader(0, frm.OpReady, stream)
+		}
+	})
+	t.Cleanup(func() {
+		select {
+		case <-release:
+		default:
+			close(release)
+		}
+	})
+	s, err := newSessionCommon(*srv.cluster())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(s.Close)
+	c := createControlConn(s)
+	s.control = c
+	hosts, err := resolveInitialEndpoints(s.cfg.DNSResolver, s.cfg.Hosts, s.cfg.Port, s.logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn, err := s.dial(s.ctx, hosts[0], s.controlConnConfig(), c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(conn.Close)
+	setupDone := make(chan error, 1)
+	go func() { setupDone <- c.setupConn(conn) }()
+	select {
+	case <-registering:
+	case <-time.After(timeout):
+		t.Fatal("control setup did not reach registration")
+	}
+	c.close()
+	close(release)
+	select {
+	case err := <-setupDone:
+		if err == nil {
+			t.Error("control setup published a connection after shutdown")
+		}
+	case <-time.After(timeout):
+		t.Fatal("control setup did not exit")
+	}
+	if !conn.Closed() {
+		t.Error("late control connection was left open")
+	}
+}
 
 func TestHostInfo_Lookup(t *testing.T) {
 	t.Parallel()
