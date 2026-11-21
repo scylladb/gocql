@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	frm "github.com/gocql/gocql/internal/frame"
 )
@@ -493,17 +494,67 @@ func TestRoutingKeyInfoCacheKeyIncludesKeyspace(t *testing.T) {
 	}
 }
 
+// hostUpNotifier records which hosts the pool has marked up.
+type hostUpNotifier struct {
+	HostSelectionPolicy
+	mu   sync.Mutex
+	seen map[*HostInfo]bool
+	ch   chan struct{}
+}
+
+func (p *hostUpNotifier) HostUp(h *HostInfo) {
+	p.HostSelectionPolicy.HostUp(h)
+	p.mu.Lock()
+	p.seen[h] = true
+	p.mu.Unlock()
+	select {
+	case p.ch <- struct{}{}:
+	default:
+	}
+}
+
+func (p *hostUpNotifier) allUp(hosts []*HostInfo) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, h := range hosts {
+		if !p.seen[h] {
+			return false
+		}
+	}
+	return true
+}
+
 func TestRoutingKeyInfoNoConnection(t *testing.T) {
 	t.Parallel()
 
 	srv := newRoutingTestServer(t, protoVersion4, routingPrepared)
-	s := srv.newSession(t)
-	for _, h := range s.hostSource.getHostsList() {
+	up := &hostUpNotifier{HostSelectionPolicy: RoundRobinHostPolicy(), seen: map[*HostInfo]bool{}, ch: make(chan struct{}, 16)}
+	cfg := testCluster(frm.ProtoVersion(protoVersion4), srv.Address)
+	cfg.PoolConfig.HostSelectionPolicy = up
+	s, err := cfg.CreateSession()
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	t.Cleanup(s.Close)
+
+	// The pool marks each host up from a goroutine after its first connection;
+	// wait for every one, or a late NodeUp overwrites the NodeDown below.
+	hosts := s.hostSource.getHostsList()
+	deadline := time.After(5 * time.Second)
+	for !up.allUp(hosts) {
+		select {
+		case <-up.ch:
+		case <-deadline:
+			t.Fatal("hosts never reported up")
+		}
+	}
+	for _, h := range hosts {
 		h.setState(NodeDown)
 	}
 
-	if _, err := s.routingKeyInfo(context.Background(), routingInsertGlobal, "", 0); err == nil {
-		t.Fatal("expected an error with no host up")
+	_, err = s.routingKeyInfo(context.Background(), routingInsertGlobal, "", 0)
+	if err == nil || !strings.Contains(err.Error(), "no connection available") {
+		t.Fatalf("err = %v, want no connection available", err)
 	}
 }
 
