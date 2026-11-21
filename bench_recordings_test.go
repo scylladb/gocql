@@ -65,14 +65,17 @@ func benchControlQuery() string {
 // being sent, which is the failure this guard exists to make loud.
 //
 // querySystem sends Consistency(One) and sets disableSkipMetadata, and leaves the cluster
-// defaults otherwise -- so the flags are the page size and the default timestamp, and the
-// absent skip-metadata bit is itself part of what is pinned here.
+// defaults otherwise -- including serial consistency. The absent skip-metadata bit
+// is itself part of what is pinned here.
 func benchControlParams() []byte {
 	cluster := NewCluster()
 
 	var flags uint32
 	if cluster.PageSize > 0 {
 		flags |= frm.FlagPageSize
+	}
+	if cluster.SerialConsistency > 0 {
+		flags |= frm.FlagWithSerialConsistency
 	}
 	if cluster.DefaultTimestamp {
 		flags |= frm.FlagDefaultTimestamp
@@ -82,6 +85,9 @@ func benchControlParams() []byte {
 	if cluster.PageSize > 0 {
 		params = append(params, byte(cluster.PageSize>>24), byte(cluster.PageSize>>16),
 			byte(cluster.PageSize>>8), byte(cluster.PageSize))
+	}
+	if cluster.SerialConsistency > 0 {
+		params = append(params, byte(cluster.SerialConsistency>>8), byte(cluster.SerialConsistency))
 	}
 	return params
 }
@@ -163,7 +169,7 @@ func TestBenchRecordingsMatchTheControlQuery(t *testing.T) {
 					len(params), len(wantParams)+timestampLen, len(wantParams), timestampLen)
 			}
 			if got := params[:len(wantParams)]; !bytes.Equal(got, wantParams) {
-				t.Errorf("the recorded control query's parameters are not the ones the driver now sends\n\twant % x\n\tgot  % x\n(the consistency, the query-flags byte, then the page size)"+regenerate, wantParams, got)
+				t.Errorf("the recorded control query's parameters are not the ones the driver now sends\n\twant % x\n\tgot  % x\n(the consistency, query flags, page size and serial consistency)"+regenerate, wantParams, got)
 			}
 		})
 	}
