@@ -229,7 +229,8 @@ func TestSingleHostQueryExecutorSkipsUnreachableHost(t *testing.T) {
 	}
 	cfg := srv.cluster()
 	cfg.Hosts = []string{net.JoinHostPort("127.0.0.2", port), srv.Address}
-	cfg.ConnectTimeout = 500 * time.Millisecond
+	// Long timeout lets the real handshake survive load; the 127.0.0.2 dial is normally refused at once.
+	cfg.ConnectTimeout = 10 * time.Second
 	e, err := NewSingleHostQueryExecutor(cfg)
 	if err != nil {
 		t.Fatalf("NewSingleHostQueryExecutor: %v", err)
