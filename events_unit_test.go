@@ -2315,3 +2315,143 @@ func TestCompileMetadataAggregateWithoutFinalFunc(t *testing.T) {
 		t.Fatal("aggregate not compiled")
 	}
 }
+
+// After ALTER TABLE, ToCQL must not return the old DESCRIBE text, nor drop a
+// table that is still waiting for its refresh.
+func TestTableEventClearsCreateStmts(t *testing.T) {
+	t.Parallel()
+	s, _ := refreshAllSchemaSession(t)
+	s.metadataDescriber.metadata.keyspaceMetadata.updateKeyspace("ks1", func(ks *KeyspaceMetadata) {
+		ks.CreateStmts = "STALE DESCRIBE OUTPUT"
+	})
+	s.handleSchemaEvent([]frame{
+		&frm.SchemaChangeTable{Change: "UPDATED", Keyspace: "ks1", Object: "t1"},
+		&frm.SchemaChangeTable{Change: "UPDATED", Keyspace: "ks1", Object: "t2"},
+	})
+	if _, err := s.metadataDescriber.GetTable("ks1", "t1"); err != nil {
+		t.Fatal(err)
+	}
+
+	ks, err := s.metadataDescriber.GetKeyspace("ks1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cql, err := ks.ToCQL()
+	if err != nil {
+		t.Fatalf("ToCQL: %v", err)
+	}
+	if strings.Contains(cql, "STALE") || !strings.Contains(cql, "CREATE TABLE ks1.t1") || !strings.Contains(cql, "CREATE TABLE ks1.t2") {
+		t.Fatalf("ToCQL returned stale or incomplete CQL:\n%s", cql)
+	}
+}
+
+// DESCRIBE text a partial refresh fetched before a table refresh is older than
+// that refresh, so it must not replace the cleared text.
+func TestTableRefreshDuringPartialRefreshKeepsTextCleared(t *testing.T) {
+	t.Parallel()
+	s, ctrl := refreshAllSchemaSession(t)
+	s.handleSchemaEvent([]frame{&frm.SchemaChangeType{Change: "CREATED", Keyspace: "ks1", Object: "my_type"}})
+	var once sync.Once
+	ctrl.mu.Lock()
+	ctrl.describeText = "OLD DESCRIBE OUTPUT"
+	ctrl.iterFor = func(stmt string) *Iter {
+		if strings.HasPrefix(stmt, "DESCRIBE KEYSPACE") {
+			once.Do(func() {
+				if err := s.metadataDescriber.refreshTableSchema("ks1", "t1"); err != nil {
+					t.Errorf("table refresh: %v", err)
+				}
+			})
+		}
+		return nil
+	}
+	ctrl.mu.Unlock()
+
+	ks, err := s.metadataDescriber.GetKeyspace("ks1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ks.CreateStmts != "" {
+		t.Fatalf("CreateStmts = %q, want cleared", ks.CreateStmts)
+	}
+}
+
+// The same holds for DESCRIBE text a full refresh fetched before the table refresh.
+func TestTableRefreshDuringFullRefreshKeepsTextCleared(t *testing.T) {
+	t.Parallel()
+	s, ctrl := refreshAllSchemaSession(t)
+	var once sync.Once
+	ctrl.mu.Lock()
+	ctrl.describeText = "OLD DESCRIBE OUTPUT"
+	ctrl.iterFor = func(stmt string) *Iter {
+		if strings.HasPrefix(stmt, "DESCRIBE KEYSPACE") {
+			once.Do(func() {
+				if err := s.metadataDescriber.refreshTableSchema("ks1", "t1"); err != nil {
+					t.Errorf("table refresh: %v", err)
+				}
+			})
+		}
+		return nil
+	}
+	ctrl.mu.Unlock()
+
+	if err := s.metadataDescriber.refreshKeyspaceSchema("ks1"); err != nil {
+		t.Fatal(err)
+	}
+	ks, _ := s.metadataDescriber.metadata.keyspaceMetadata.getKeyspace("ks1")
+	if ks.CreateStmts != "" {
+		t.Fatalf("CreateStmts = %q, want cleared", ks.CreateStmts)
+	}
+}
+
+// DESCRIBE text fetched while the table queries run may predate what they
+// returned, so it must not survive the table refresh either.
+func TestPartialRefreshDuringTableQueriesKeepsTextCleared(t *testing.T) {
+	t.Parallel()
+	s, ctrl := refreshAllSchemaSession(t)
+	s.handleSchemaEvent([]frame{&frm.SchemaChangeType{Change: "CREATED", Keyspace: "ks1", Object: "my_type"}})
+	var once sync.Once
+	ctrl.mu.Lock()
+	ctrl.describeText = "OLD DESCRIBE OUTPUT"
+	ctrl.iterFor = func(stmt string) *Iter {
+		if strings.Contains(stmt, "system_schema.tables") && strings.Contains(stmt, "table_name = ?") {
+			once.Do(func() {
+				snapshot, _ := s.metadataDescriber.metadata.keyspaceMetadata.getKeyspace("ks1")
+				if err := s.metadataDescriber.refreshPartialKeyspaceSchema("ks1", snapshot); err != nil {
+					t.Errorf("partial refresh: %v", err)
+				}
+			})
+		}
+		return nil
+	}
+	ctrl.mu.Unlock()
+
+	if err := s.metadataDescriber.refreshTableSchema("ks1", "t1"); err != nil {
+		t.Fatal(err)
+	}
+	ks, _ := s.metadataDescriber.metadata.keyspaceMetadata.getKeyspace("ks1")
+	if ks.CreateStmts != "" {
+		t.Fatalf("CreateStmts = %q, want cleared", ks.CreateStmts)
+	}
+}
+
+// A partial refresh that leaves a category dirty clears the text but keeps
+// the higher seq, so older text cannot replace that clear later.
+func TestPartialRefreshDirtyClearKeepsHigherSeq(t *testing.T) {
+	t.Parallel()
+	s, _ := refreshAllSchemaSession(t)
+	s.handleSchemaEvent([]frame{&frm.SchemaChangeType{Change: "CREATED", Keyspace: "ks1", Object: "my_type"}})
+	snapshot, _ := s.metadataDescriber.metadata.keyspaceMetadata.getKeyspace("ks1")
+	high := invalidationGen.Add(1000)
+	s.metadataDescriber.metadata.keyspaceMetadata.updateKeyspace("ks1", func(ks *KeyspaceMetadata) {
+		ks.CreateStmts, ks.createStmtsSeq = "", high
+		ks.invalidateFunctions() // dirtied after the snapshot, so it stays dirty
+	})
+
+	if err := s.metadataDescriber.refreshPartialKeyspaceSchema("ks1", snapshot); err != nil {
+		t.Fatal(err)
+	}
+	ks, _ := s.metadataDescriber.metadata.keyspaceMetadata.getKeyspace("ks1")
+	if ks.CreateStmts != "" || ks.createStmtsSeq < high {
+		t.Fatalf("CreateStmts = %q, seq = %d, want cleared with seq >= %d", ks.CreateStmts, ks.createStmtsSeq, high)
+	}
+}

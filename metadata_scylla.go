@@ -449,12 +449,11 @@ func (c *cowKeyspaceMetadataMap) replaceKeyspace(keyspaceName string, replacemen
 			replacement.Aggregates = current.Aggregates
 		}
 		// Keep the DESCRIBE fetched later; a still-dirty entry has no matching text.
-		if preserved {
-			if current.needsPartialRefresh() {
-				replacement.CreateStmts, replacement.createStmtsSeq = "", 0
-			} else if current.createStmtsSeq > replacement.createStmtsSeq {
-				replacement.CreateStmts, replacement.createStmtsSeq = current.CreateStmts, current.createStmtsSeq
-			}
+		// A clear keeps the higher seq, so older text cannot replace it later.
+		if preserved && current.needsPartialRefresh() {
+			replacement.CreateStmts, replacement.createStmtsSeq = "", max(current.createStmtsSeq, replacement.createStmtsSeq)
+		} else if current.createStmtsSeq > replacement.createStmtsSeq && (preserved || current.CreateStmts == "") {
+			replacement.CreateStmts, replacement.createStmtsSeq = current.CreateStmts, current.createStmtsSeq
 		}
 	}
 
@@ -1133,9 +1132,16 @@ func (s *metadataDescriber) refreshTableSchema(keyspaceName, tableName string) e
 		columns = append(columns, viewColumns...)
 	}
 
+	// Taken after the queries: DESCRIBE text fetched before or alongside them is older.
+	clearSeq := invalidationGen.Add(1)
+
 	// Atomically clone-and-swap the keyspace metadata to avoid data races
 	// with concurrent readers.
 	applied := s.metadata.keyspaceMetadata.updateKeyspace(keyspaceName, func(ks *KeyspaceMetadata) {
+		// The DESCRIBE text no longer matches Tables; ToCQL rebuilds it client-side.
+		if clearSeq > ks.createStmtsSeq {
+			ks.CreateStmts, ks.createStmtsSeq = "", clearSeq
+		}
 		if len(tables) == 0 {
 			ks.removeTable(tableName)
 		} else {
@@ -1281,7 +1287,7 @@ func (s *metadataDescriber) refreshPartialKeyspaceSchema(keyspaceName string, sn
 		if changed {
 			if ks.needsPartialRefresh() {
 				// The fetched text can't match a category still dirty.
-				ks.CreateStmts, ks.createStmtsSeq = "", 0
+				ks.CreateStmts, ks.createStmtsSeq = "", max(ks.createStmtsSeq, createStmtsSeq)
 			} else if createStmtsSeq > ks.createStmtsSeq {
 				ks.CreateStmts, ks.createStmtsSeq = string(createStmts), createStmtsSeq
 			}

@@ -804,6 +804,9 @@ func TestCowKeyspaceMetadataMapReplaceKeyspaceKeepsCreateStmtsAfterCompletedPart
 				if got.CreateStmts != want {
 					t.Fatalf("CreateStmts = %q, want %q", got.CreateStmts, want)
 				}
+				if dirty && got.createStmtsSeq != 10 {
+					t.Fatalf("createStmtsSeq = %d, want 10 (the higher one) so older text cannot replace the clear", got.createStmtsSeq)
+				}
 				switch cat {
 				case "types":
 					if len(got.Types) != 1 {
@@ -819,6 +822,23 @@ func TestCowKeyspaceMetadataMapReplaceKeyspaceKeepsCreateStmtsAfterCompletedPart
 					}
 				}
 			})
+		}
+	}
+}
+
+// With no category preserved, a full refresh keeps a newer clear (from a table
+// refresh) but otherwise publishes its own text, which matches its tables.
+func TestCowKeyspaceMetadataMapReplaceKeyspaceKeepsNewerClear(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct{ current, want string }{
+		{current: "", want: ""},
+		{current: "partial describe", want: "full describe"},
+	} {
+		m := &cowKeyspaceMetadataMap{}
+		m.set("test_ks", &KeyspaceMetadata{Name: "test_ks", CreateStmts: tc.current, createStmtsSeq: 10})
+		m.replaceKeyspace("test_ks", &KeyspaceMetadata{Name: "test_ks", CreateStmts: "full describe", createStmtsSeq: 5}, 0, 0, 0)
+		if got, _ := m.getKeyspace("test_ks"); got.CreateStmts != tc.want {
+			t.Errorf("current %q: CreateStmts = %q, want %q", tc.current, got.CreateStmts, tc.want)
 		}
 	}
 }
