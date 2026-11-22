@@ -2731,8 +2731,8 @@ func (c *Conn) executeQueryWithMetrics(ctx context.Context, qry *Query, metrics 
 			return &Iter{err: err}
 		}
 
-		if len(values) != info.request.actualColCount {
-			return &Iter{err: fmt.Errorf("gocql: expected %d values send got %d", info.request.actualColCount, len(values))}
+		if len(values) != len(info.request.columns) {
+			return &Iter{err: fmt.Errorf("gocql: expected %d values send got %d", len(info.request.columns), len(values))}
 		}
 
 		params.values = getQueryValues(len(values))
@@ -3082,19 +3082,18 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 				}
 			}
 
-			if len(values) != info.request.actualColCount {
+			if len(values) != len(info.request.columns) {
 				putBatchQueryValues(req.statements)
-				return &Iter{err: fmt.Errorf("gocql: batch statement %d expected %d values send got %d", i, info.request.actualColCount, len(values))}
+				return &Iter{err: fmt.Errorf("gocql: batch statement %d expected %d values send got %d", i, len(info.request.columns), len(values))}
 			}
 
 			b.preparedID = info.id
 			stmts[string(info.id)] = entry.Stmt
 
-			b.values = getQueryValues(info.request.actualColCount)
+			b.values = getQueryValues(len(values))
 
-			for j := 0; j < info.request.actualColCount; j++ {
+			for j, value := range values {
 				v := &b.values[j]
-				value := values[j]
 				typ := info.request.columns[j].TypeInfo
 				if err := marshalQueryValue(typ, value, v); err != nil {
 					putBatchQueryValues(req.statements)
