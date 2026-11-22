@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"log"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -1660,4 +1661,22 @@ func TestConcurrentSchemaRefreshErrorHandling(t *testing.T) {
 			}
 		}
 	})
+}
+
+func TestRefreshKeyspaceQuotesDescribeName(t *testing.T) {
+	for name, want := range map[string]string{
+		"lower_ks": `DESCRIBE KEYSPACE lower_ks WITH INTERNALS`,
+		"MyKs":     `DESCRIBE KEYSPACE "MyKs" WITH INTERNALS`,
+		`My"Ks`:    `DESCRIBE KEYSPACE "My""Ks" WITH INTERNALS`,
+	} {
+		ctrl := &schemaDataMock{knownKeyspaces: map[string][]tableInfo{name: nil}}
+		s := newSchemaEventTestSessionWithMock(ctrl)
+		if err := s.metadataDescriber.refreshKeyspaceSchema(name); err != nil {
+			t.Fatalf("%s: refresh: %v", name, err)
+		}
+		stmts := ctrl.getStatements()
+		if !slices.Contains(stmts, want) {
+			t.Errorf("%s: want %q among queries:\n%s", name, want, strings.Join(stmts, "\n"))
+		}
+	}
 }
