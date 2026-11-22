@@ -22,11 +22,13 @@
 package gocql
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1660,4 +1662,133 @@ func TestConcurrentSchemaRefreshErrorHandling(t *testing.T) {
 			}
 		}
 	})
+}
+
+// A DROP that lands while a refresh is fetching must not be undone when the
+// refresh publishes what it fetched before the drop.
+func TestRefreshKeyspaceDoesNotResurrectDroppedKeyspace(t *testing.T) {
+	ctrl := &schemaDataMock{knownKeyspaces: map[string][]tableInfo{"ks1": {{name: "tbl"}}}}
+	s := newSchemaEventTestSessionWithMock(ctrl)
+	populateKeyspace(s, "ks1", "tbl")
+
+	var ksQueries atomic.Int32
+	ctrl.iterFor = func(stmt string) *Iter {
+		if !strings.HasPrefix(stmt, "SELECT durable_writes, replication FROM system_schema.keyspaces") {
+			return nil
+		}
+		if ksQueries.Add(1) == 1 {
+			// first fetch still sees the keyspace, but the drop event wins the race to the cache
+			s.handleSchemaEvent([]frame{&frm.SchemaChangeKeyspace{Change: "DROPPED", Keyspace: "ks1"}})
+			return nil
+		}
+		return &Iter{}
+	}
+
+	err := s.metadataDescriber.refreshKeyspaceSchema("ks1")
+	if !errors.Is(err, ErrKeyspaceDoesNotExist) {
+		t.Fatalf("refresh: got %v, want ErrKeyspaceDoesNotExist", err)
+	}
+	if _, ok := s.metadataDescriber.metadata.keyspaceMetadata.getKeyspace("ks1"); ok {
+		t.Fatal("dropped keyspace was resurrected in the cache")
+	}
+}
+
+// The same holds when nothing was cached when the refresh started.
+func TestRefreshKeyspaceDoesNotResurrectWhenUncached(t *testing.T) {
+	ctrl := &schemaDataMock{knownKeyspaces: map[string][]tableInfo{"ks1": {{name: "tbl"}}}}
+	s := newSchemaEventTestSessionWithMock(ctrl)
+
+	var ksQueries atomic.Int32
+	ctrl.iterFor = func(stmt string) *Iter {
+		if !strings.HasPrefix(stmt, "SELECT durable_writes, replication FROM system_schema.keyspaces") {
+			return nil
+		}
+		if ksQueries.Add(1) == 1 {
+			s.metadataDescriber.dropKeyspaceSchema("ks1")
+			return nil
+		}
+		return &Iter{}
+	}
+
+	if err := s.metadataDescriber.refreshKeyspaceSchema("ks1"); !errors.Is(err, ErrKeyspaceDoesNotExist) {
+		t.Fatalf("refresh: got %v, want ErrKeyspaceDoesNotExist", err)
+	}
+	if _, ok := s.metadataDescriber.metadata.keyspaceMetadata.getKeyspace("ks1"); ok {
+		t.Fatal("dropped keyspace was resurrected in the cache")
+	}
+}
+
+// A keyspace dropped during every fetch (dropped and recreated over and over)
+// gives up after three attempts and reports it missing.
+func TestRefreshKeyspaceBoundedRetries(t *testing.T) {
+	ctrl := &schemaDataMock{knownKeyspaces: map[string][]tableInfo{"ks1": {{name: "tbl"}}}}
+	s := newSchemaEventTestSessionWithMock(ctrl)
+
+	var ksQueries atomic.Int32
+	ctrl.iterFor = func(stmt string) *Iter {
+		if strings.HasPrefix(stmt, "SELECT durable_writes, replication FROM system_schema.keyspaces") {
+			ksQueries.Add(1)
+			s.metadataDescriber.dropKeyspaceSchema("ks1")
+		}
+		return nil
+	}
+
+	if err := s.metadataDescriber.refreshKeyspaceSchema("ks1"); !errors.Is(err, ErrKeyspaceDoesNotExist) {
+		t.Fatalf("refresh: got %v, want ErrKeyspaceDoesNotExist", err)
+	}
+	if got := ksQueries.Load(); got != 3 {
+		t.Fatalf("keyspace fetched %d times, want 3", got)
+	}
+	if _, ok := s.metadataDescriber.metadata.keyspaceMetadata.getKeyspace("ks1"); ok {
+		t.Fatal("dropped keyspace was published")
+	}
+}
+
+// Invalidations that are not drops (keyspace UPDATED, type/function events)
+// do not make a refresh refetch.
+func TestRefreshKeyspaceIgnoresNonDropInvalidation(t *testing.T) {
+	ctrl := &schemaDataMock{knownKeyspaces: map[string][]tableInfo{"ks1": {{name: "tbl"}}}}
+	s := newSchemaEventTestSessionWithMock(ctrl)
+
+	var ksQueries atomic.Int32
+	ctrl.iterFor = func(stmt string) *Iter {
+		if strings.HasPrefix(stmt, "SELECT durable_writes, replication FROM system_schema.keyspaces") {
+			ksQueries.Add(1)
+			s.metadataDescriber.invalidateKeyspaceSchema("ks1")
+		}
+		return nil
+	}
+
+	if err := s.metadataDescriber.refreshKeyspaceSchema("ks1"); err != nil {
+		t.Fatalf("refresh: %v", err)
+	}
+	if got := ksQueries.Load(); got != 1 {
+		t.Fatalf("keyspace fetched %d times, want 1", got)
+	}
+}
+
+// A refresh that starts with nothing cached publishes as before.
+func TestRefreshKeyspacePublishesWhenUncached(t *testing.T) {
+	ctrl := &schemaDataMock{knownKeyspaces: map[string][]tableInfo{"ks1": {{name: "tbl"}}}}
+	s := newSchemaEventTestSessionWithMock(ctrl)
+	if err := s.metadataDescriber.refreshKeyspaceSchema("ks1"); err != nil {
+		t.Fatalf("refresh: %v", err)
+	}
+	if _, ok := s.metadataDescriber.metadata.keyspaceMetadata.getKeyspace("ks1"); !ok {
+		t.Fatal("keyspace not published")
+	}
+}
+
+func TestKeyspaceFetchTrackingIsReleased(t *testing.T) {
+	var c cowKeyspaceMetadataMap
+	c.dropKeyspace("idle") // no fetch in flight: nothing tracked
+	d := c.beginFetch("ks")
+	c.dropKeyspace("ks")
+	if c.setUnlessDropped("ks", &KeyspaceMetadata{Name: "ks"}, d) {
+		t.Fatal("published despite drop")
+	}
+	c.endFetch("ks")
+	if len(c.fetches) != 0 {
+		t.Fatalf("fetches not released: %v", c.fetches)
+	}
 }
