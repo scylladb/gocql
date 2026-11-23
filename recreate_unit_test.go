@@ -885,9 +885,9 @@ func TestToCQLGeneratesWholeKeyspace(t *testing.T) {
 		}
 	}
 
-	// ToCQL caches its own output in CreateStmts.
-	if ks.CreateStmts != got {
-		t.Error("ToCQL did not cache the generated schema in CreateStmts")
+	// ToCQL must not write CreateStmts: the metadata is shared with concurrent readers.
+	if ks.CreateStmts != "" {
+		t.Error("ToCQL cached the generated schema in CreateStmts")
 	}
 }
 
@@ -1695,8 +1695,7 @@ func TestToCQLIsDeterministic(t *testing.T) {
 		return ks
 	}
 
-	// A fresh keyspace each round: ToCQL caches its output in CreateStmts, so
-	// reusing one would short-circuit every call after the first.
+	// A fresh keyspace each round, so no round sees state left by an earlier one.
 	const rounds = 100
 	var first string
 	for i := 0; i < rounds; i++ {

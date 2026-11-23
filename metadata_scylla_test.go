@@ -8,6 +8,8 @@
 package gocql
 
 import (
+	"fmt"
+	"sync"
 	"testing"
 )
 
@@ -503,4 +505,386 @@ func assertKeyspaceMetadata(t *testing.T, actual, expected *KeyspaceMetadata) {
 	assertTableMetadata(t, expected.Name, actual.Tables, expected.Tables)
 	assertViewsMetadata(t, expected.Name, actual.Views, expected.Views)
 	assertIndicesMetadata(t, expected.Name, actual.Indexes, expected.Indexes)
+}
+
+func TestCowKeyspaceMetadataMapInvalidateTypes(t *testing.T) {
+	t.Parallel()
+
+	m := &cowKeyspaceMetadataMap{}
+	ks := &KeyspaceMetadata{
+		Name:  "test_ks",
+		Types: map[string]*TypeMetadata{"mytype": {Name: "mytype"}},
+	}
+	m.set("test_ks", ks)
+
+	m.invalidateTypes("test_ks")
+
+	got, found := m.getKeyspace("test_ks")
+	if !found {
+		t.Fatal("keyspace should still exist after invalidateTypes")
+	}
+	if got.typesInvalidationGen == 0 {
+		t.Fatalf("expected typesInvalidationGen to be bumped, got %d", got.typesInvalidationGen)
+	}
+	if !got.typesInvalidated {
+		t.Fatal("expected typesInvalidated to be true")
+	}
+	// Types map should still be present (not removed)
+	if got.Types == nil {
+		t.Fatal("Types map should not be nil")
+	}
+}
+
+func TestCowKeyspaceMetadataMapInvalidateFunctions(t *testing.T) {
+	t.Parallel()
+
+	m := &cowKeyspaceMetadataMap{}
+	ks := &KeyspaceMetadata{
+		Name:      "test_ks",
+		Functions: map[string]*FunctionMetadata{"myfunc": {Name: "myfunc"}},
+	}
+	m.set("test_ks", ks)
+
+	m.invalidateFunctions("test_ks")
+
+	got, found := m.getKeyspace("test_ks")
+	if !found {
+		t.Fatal("keyspace should still exist after invalidateFunctions")
+	}
+	if got.functionsInvalidationGen == 0 {
+		t.Fatalf("expected functionsInvalidationGen to be bumped, got %d", got.functionsInvalidationGen)
+	}
+	if got.aggregatesInvalidationGen == 0 {
+		t.Fatalf("expected aggregatesInvalidationGen to be bumped, got %d", got.aggregatesInvalidationGen)
+	}
+	if !got.functionsInvalidated {
+		t.Fatal("expected functionsInvalidated to be true")
+	}
+	if !got.aggregatesInvalidated {
+		t.Fatal("expected aggregatesInvalidated to be true")
+	}
+}
+
+func TestCowKeyspaceMetadataMapInvalidateAggregates(t *testing.T) {
+	t.Parallel()
+
+	m := &cowKeyspaceMetadataMap{}
+	ks := &KeyspaceMetadata{
+		Name:       "test_ks",
+		Aggregates: map[string]*AggregateMetadata{"myagg": {Name: "myagg"}},
+	}
+	m.set("test_ks", ks)
+
+	m.invalidateAggregates("test_ks")
+
+	got, found := m.getKeyspace("test_ks")
+	if !found {
+		t.Fatal("keyspace should still exist after invalidateAggregates")
+	}
+	if got.aggregatesInvalidationGen == 0 {
+		t.Fatalf("expected aggregatesInvalidationGen to be bumped, got %d", got.aggregatesInvalidationGen)
+	}
+	if !got.aggregatesInvalidated {
+		t.Fatal("expected aggregatesInvalidated to be true")
+	}
+}
+
+func TestCowKeyspaceMetadataMapInvalidateFunctionsBumpsGeneration(t *testing.T) {
+	t.Parallel()
+
+	m := &cowKeyspaceMetadataMap{}
+	m.set("test_ks", &KeyspaceMetadata{Name: "test_ks"})
+
+	m.invalidateFunctions("test_ks")
+	first, _ := m.getKeyspace("test_ks")
+	firstGen := first.functionsInvalidationGen
+	m.invalidateFunctions("test_ks")
+
+	got, found := m.getKeyspace("test_ks")
+	if !found {
+		t.Fatal("keyspace should still exist after repeated invalidateFunctions")
+	}
+	if got.functionsInvalidationGen <= firstGen {
+		t.Fatalf("expected generation to increase, got %d after %d", got.functionsInvalidationGen, firstGen)
+	}
+	if got.functionsInvalidationGen == 0 {
+		t.Fatalf("expected functionsInvalidationGen to be bumped, got %d", got.functionsInvalidationGen)
+	}
+	if got.aggregatesInvalidationGen == 0 {
+		t.Fatalf("expected aggregatesInvalidationGen to be bumped, got %d", got.aggregatesInvalidationGen)
+	}
+	if !got.functionsInvalidated || !got.aggregatesInvalidated {
+		t.Fatal("expected repeated invalidation to keep dirty flags set")
+	}
+}
+
+func TestCowKeyspaceMetadataMapReplaceKeyspaceOnEmptyMap(t *testing.T) {
+	t.Parallel()
+
+	m := &cowKeyspaceMetadataMap{}
+	replacement := &KeyspaceMetadata{Name: "test_ks"}
+
+	m.replaceKeyspace("test_ks", replacement, 0, 0, 0)
+
+	got, found := m.getKeyspace("test_ks")
+	if !found {
+		t.Fatal("expected keyspace to be stored")
+	}
+	if got != replacement {
+		t.Fatal("expected replacement keyspace to be stored as-is")
+	}
+}
+
+func TestCowKeyspaceMetadataMapInvalidateNonexistentKeyspace(t *testing.T) {
+	t.Parallel()
+
+	m := &cowKeyspaceMetadataMap{}
+
+	// Should not panic on non-existent keyspace
+	m.invalidateTypes("nonexistent")
+	m.invalidateFunctions("nonexistent")
+	m.invalidateAggregates("nonexistent")
+}
+
+func TestKeyspaceMetadataNeedsPartialRefresh(t *testing.T) {
+	t.Parallel()
+
+	ks := &KeyspaceMetadata{Name: "test_ks"}
+	if ks.needsPartialRefresh() {
+		t.Fatal("fresh keyspace should not need partial refresh")
+	}
+
+	ks.typesInvalidated = true
+	ks.typesInvalidationGen = 1
+	if !ks.needsPartialRefresh() {
+		t.Fatal("should need partial refresh when types invalidated")
+	}
+
+	ks.typesInvalidated = false
+	ks.typesInvalidationGen = 0
+	ks.functionsInvalidated = true
+	ks.functionsInvalidationGen = 1
+	if !ks.needsPartialRefresh() {
+		t.Fatal("should need partial refresh when functions invalidated")
+	}
+
+	ks.functionsInvalidated = false
+	ks.functionsInvalidationGen = 0
+	ks.aggregatesInvalidated = true
+	ks.aggregatesInvalidationGen = 1
+	if !ks.needsPartialRefresh() {
+		t.Fatal("should need partial refresh when aggregates invalidated")
+	}
+}
+
+func TestKeyspaceMetadataInvalidateFunctionsCascadesToAggregates(t *testing.T) {
+	t.Parallel()
+
+	ks := &KeyspaceMetadata{}
+	ks.invalidateFunctions()
+
+	if ks.functionsInvalidationGen == 0 {
+		t.Fatalf("expected functionsInvalidationGen to be bumped, got %d", ks.functionsInvalidationGen)
+	}
+	if ks.aggregatesInvalidationGen == 0 {
+		t.Fatalf("expected aggregatesInvalidationGen to be bumped, got %d", ks.aggregatesInvalidationGen)
+	}
+	if !ks.functionsInvalidated || !ks.aggregatesInvalidated {
+		t.Fatal("invalidateFunctions should set both dirty flags")
+	}
+}
+
+func TestKeyspaceMetadataInvalidateTypesOnlyBumpsTypesGeneration(t *testing.T) {
+	t.Parallel()
+
+	ks := &KeyspaceMetadata{}
+	ks.invalidateTypes()
+
+	if ks.typesInvalidationGen == 0 {
+		t.Fatalf("expected typesInvalidationGen to be bumped, got %d", ks.typesInvalidationGen)
+	}
+	if !ks.typesInvalidated {
+		t.Fatal("invalidateTypes should set types dirty flag")
+	}
+	if ks.functionsInvalidationGen != 0 {
+		t.Fatalf("expected functionsInvalidationGen to remain 0, got %d", ks.functionsInvalidationGen)
+	}
+	if ks.aggregatesInvalidationGen != 0 {
+		t.Fatalf("expected aggregatesInvalidationGen to remain 0, got %d", ks.aggregatesInvalidationGen)
+	}
+}
+
+func TestKeyspaceMetadataClonePreservesInvalidationFlags(t *testing.T) {
+	t.Parallel()
+
+	ks := &KeyspaceMetadata{
+		Name:                      "test_ks",
+		Tables:                    map[string]*TableMetadata{},
+		Functions:                 map[string]*FunctionMetadata{},
+		Aggregates:                map[string]*AggregateMetadata{},
+		Types:                     map[string]*TypeMetadata{},
+		Indexes:                   map[string]*IndexMetadata{},
+		Views:                     map[string]*ViewMetadata{},
+		typesInvalidated:          true,
+		functionsInvalidated:      true,
+		aggregatesInvalidated:     true,
+		typesInvalidationGen:      3,
+		functionsInvalidationGen:  4,
+		aggregatesInvalidationGen: 5,
+	}
+
+	cloned := ks.Clone()
+	if cloned.typesInvalidationGen != 3 {
+		t.Fatalf("Clone should preserve typesInvalidationGen, got %d", cloned.typesInvalidationGen)
+	}
+	if !cloned.typesInvalidated {
+		t.Fatal("Clone should preserve typesInvalidated")
+	}
+	if cloned.functionsInvalidationGen != 4 {
+		t.Fatalf("Clone should preserve functionsInvalidationGen, got %d", cloned.functionsInvalidationGen)
+	}
+	if !cloned.functionsInvalidated {
+		t.Fatal("Clone should preserve functionsInvalidated")
+	}
+	if cloned.aggregatesInvalidationGen != 5 {
+		t.Fatalf("Clone should preserve aggregatesInvalidationGen, got %d", cloned.aggregatesInvalidationGen)
+	}
+	if !cloned.aggregatesInvalidated {
+		t.Fatal("Clone should preserve aggregatesInvalidated")
+	}
+}
+
+// With categories carried forward, the DESCRIBE fetched later (higher
+// createStmtsSeq) wins; a still-dirty entry has no usable text.
+func TestCowKeyspaceMetadataMapReplaceKeyspaceKeepsCreateStmtsAfterCompletedPartialRefresh(t *testing.T) {
+	t.Parallel()
+
+	for _, cat := range []string{"types", "functions", "aggregates"} {
+		for _, mode := range []string{"clean/partial newer", "clean/full newer", "dirty"} {
+			dirty := mode == "dirty"
+			t.Run(fmt.Sprintf("%s/%s", cat, mode), func(t *testing.T) {
+				t.Parallel()
+
+				m := &cowKeyspaceMetadataMap{}
+				m.set("test_ks", &KeyspaceMetadata{Name: "test_ks", CreateStmts: "old"})
+
+				newTypes := map[string]*TypeMetadata{"t": {Name: "t"}}
+				newFuncs := map[string]*FunctionMetadata{"f": {Name: "f"}}
+				newAggs := map[string]*AggregateMetadata{"a": {Name: "a"}}
+				m.updateKeyspace("test_ks", func(ks *KeyspaceMetadata) {
+					switch cat {
+					case "types":
+						ks.invalidateTypes()
+						ks.Types, ks.typesInvalidated = newTypes, dirty
+					case "functions":
+						ks.invalidateFunctions()
+						ks.Functions, ks.functionsInvalidated = newFuncs, dirty
+						ks.Aggregates, ks.aggregatesInvalidated = newAggs, dirty
+					case "aggregates":
+						ks.aggregatesInvalidationGen++
+						ks.Aggregates, ks.aggregatesInvalidated = newAggs, dirty
+					}
+					ks.CreateStmts, ks.createStmtsSeq = "partial describe", 10
+					if dirty {
+						ks.CreateStmts = ""
+					}
+				})
+
+				replSeq, want := uint64(5), "partial describe"
+				switch mode {
+				case "clean/full newer":
+					replSeq, want = 20, "full describe"
+				case "dirty":
+					want = ""
+				}
+				replacement := &KeyspaceMetadata{Name: "test_ks", CreateStmts: "full describe", createStmtsSeq: replSeq}
+				m.replaceKeyspace("test_ks", replacement, 0, 0, 0)
+
+				got, _ := m.getKeyspace("test_ks")
+				if got.CreateStmts != want {
+					t.Fatalf("CreateStmts = %q, want %q", got.CreateStmts, want)
+				}
+				if dirty && got.createStmtsSeq != 10 {
+					t.Fatalf("createStmtsSeq = %d, want 10 (the higher one) so older text cannot replace the clear", got.createStmtsSeq)
+				}
+				switch cat {
+				case "types":
+					if len(got.Types) != 1 {
+						t.Fatalf("expected newer types preserved, got %v", got.Types)
+					}
+				case "functions":
+					if len(got.Functions) != 1 || len(got.Aggregates) != 1 {
+						t.Fatalf("expected newer functions/aggregates preserved, got %v %v", got.Functions, got.Aggregates)
+					}
+				case "aggregates":
+					if len(got.Aggregates) != 1 {
+						t.Fatalf("expected newer aggregates preserved, got %v", got.Aggregates)
+					}
+				}
+			})
+		}
+	}
+}
+
+// With no category preserved, a full refresh keeps a newer clear (from a table
+// refresh) but otherwise publishes its own text, which matches its tables.
+func TestCowKeyspaceMetadataMapReplaceKeyspaceKeepsNewerClear(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct{ current, want string }{
+		{current: "", want: ""},
+		{current: "partial describe", want: "full describe"},
+	} {
+		m := &cowKeyspaceMetadataMap{}
+		m.set("test_ks", &KeyspaceMetadata{Name: "test_ks", CreateStmts: tc.current, createStmtsSeq: 10})
+		m.replaceKeyspace("test_ks", &KeyspaceMetadata{Name: "test_ks", CreateStmts: "full describe", createStmtsSeq: 5}, 0, 0, 0)
+		if got, _ := m.getKeyspace("test_ks"); got.CreateStmts != tc.want {
+			t.Errorf("current %q: CreateStmts = %q, want %q", tc.current, got.CreateStmts, tc.want)
+		}
+	}
+}
+
+func TestKeyspaceMetadataToCQLConcurrentNoRace(t *testing.T) {
+	t.Parallel()
+
+	ks := &KeyspaceMetadata{Name: "ks", StrategyClass: "SimpleStrategy", StrategyOptions: map[string]any{"replication_factor": "1"}}
+
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := ks.ToCQL(); err != nil {
+				t.Error(err)
+			}
+		}()
+	}
+	wg.Wait()
+}
+
+func TestInvalidationGenerationNotReusedAfterKeyspaceRecreate(t *testing.T) {
+	t.Parallel()
+
+	m := &cowKeyspaceMetadataMap{}
+	m.set("ks", &KeyspaceMetadata{Name: "ks"})
+	m.invalidateTypes("ks")
+	old, _ := m.getKeyspace("ks")
+	snapshotGen := old.typesInvalidationGen
+
+	m.removeKeyspace("ks")
+	m.set("ks", &KeyspaceMetadata{Name: "ks"})
+	m.invalidateTypes("ks")
+
+	// Mirrors the apply guard in refreshPartialKeyspaceSchema.
+	stale := m.updateKeyspace("ks", func(ks *KeyspaceMetadata) {
+		if ks.typesInvalidated && ks.typesInvalidationGen == snapshotGen {
+			ks.typesInvalidated = false
+		}
+	})
+	if !stale {
+		t.Fatal("keyspace should exist")
+	}
+	got, _ := m.getKeyspace("ks")
+	if !got.typesInvalidated {
+		t.Fatal("stale partial result must be rejected; dirty flag was cleared")
+	}
 }
