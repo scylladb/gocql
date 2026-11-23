@@ -45,7 +45,7 @@ func TestMarshalDecimalCorrupt(t *testing.T) {
 			t.Parallel()
 
 			serialization.NegativeMarshalSet{
-				Values: mod.Values{"1s2", "1s", "-1s", ",1", "0,1"}.AddVariants(mod.All...),
+				Values: mod.Values{"1s2", "1s", "-1s", ",1", "0,1", "0;", "2;", "-2;"}.AddVariants(mod.All...),
 			}.Run("corrupt_vals", t, marshal)
 
 			serialization.NegativeUnmarshalSet{
