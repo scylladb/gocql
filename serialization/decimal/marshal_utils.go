@@ -113,8 +113,6 @@ func encScale64(v int64) []byte {
 
 func encUnscaledString(v string) ([]byte, error) {
 	switch {
-	case len(v) == 0:
-		return nil, nil
 	case len(v) <= 18:
 		n, err := strconv.ParseInt(v, 10, 64)
 		if err != nil {
