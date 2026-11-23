@@ -160,6 +160,9 @@ func (cf *connFramers) releaseRead(c *Conn, f *framer) {
 		return // already released
 	}
 	f.header = nil
+	// Drop the last response's Warnings so the pool does not keep them reachable.
+	f.headerStore.Warnings = nil
+	f.voidFrame.Warnings = nil
 	f.traceID = nil
 	f.customPayload = nil
 	if !cf.readPool.enabled.Load() {

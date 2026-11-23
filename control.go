@@ -566,7 +566,8 @@ func (c *controlConn) writeFrame(w frameBuilder) (frame, error) {
 	}
 	defer framer.Release()
 
-	return framer.parseFrame()
+	resp, err := framer.parseFrame()
+	return detachFrame(resp), err
 }
 
 // query will return nil if the connection is closed or nil

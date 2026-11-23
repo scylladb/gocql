@@ -658,7 +658,8 @@ func (s *startupCoordinator) write(ctx context.Context, frame frameBuilder, star
 	}
 	defer framer.Release()
 
-	return framer.parseFrame()
+	resp, err := framer.parseFrame()
+	return detachFrame(resp), err
 }
 
 func (s *startupCoordinator) options(ctx context.Context, startupCompleted *atomic.Bool) error {
@@ -1064,6 +1065,7 @@ func (c *Conn) heartBeat(ctx context.Context) {
 		}
 
 		resp, err := framer.parseFrame()
+		resp = detachFrame(resp)
 		framer.Release()
 		if err != nil {
 			// invalid frame
@@ -1242,6 +1244,7 @@ func (c *Conn) processFrameSource(ctx context.Context, src frameSource) error {
 		}
 
 		frame, err := framer.parseFrame()
+		frame = detachFrame(frame)
 		// NOTE: Safe to release the framer here because all error frame types
 		// (from parseErrorFrame) contain only strings, scalars, and defensively-
 		// copied []byte fields. None retain sub-slices of the framer's read buffer.

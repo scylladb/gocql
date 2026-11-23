@@ -293,6 +293,8 @@ type framer struct {
 	// framer reused for consecutive v5 requests keeps both the raw-frame buffer
 	// and the wire buffer alive instead of allocating a new one per request.
 	wireBuf               []byte
+	headerStore           frm.FrameHeader // backs header, so it is not heap-allocated per response
+	voidFrame             resultVoidFrame // returned for void results, saving an allocation per write
 	flagLWT               int
 	rateLimitingErrorCode int
 	flags                 byte
@@ -463,7 +465,8 @@ func (f *framer) readFrame(r io.Reader, head *frm.FrameHeader) error {
 		}
 	}
 
-	f.header = head
+	f.headerStore = *head
+	f.header = &f.headerStore
 	return nil
 }
 
@@ -483,7 +486,8 @@ func (f *framer) adoptFrameBody(body []byte, head *frm.FrameHeader) error {
 		return fmt.Errorf("gocql: frame body length %d does not match the %d bytes reassembled", head.Length, len(body))
 	}
 	f.buf = body
-	f.header = head
+	f.headerStore = *head
+	f.header = &f.headerStore
 	return nil
 }
 
@@ -517,6 +521,7 @@ func recoverMalformedFrame(r any, err *error) {
 	*err = mf.Unwrap()
 }
 
+// parseFrame's void result is owned by the framer; pass it through detachFrame to keep it past Release.
 func (f *framer) parseFrame() (frame frame, err error) {
 	// The read helpers panic with a malformedFrameError instead of returning one (see
 	// readByte); this recover is what makes a malformed frame a protocol error.
@@ -1208,12 +1213,22 @@ func (f *resultVoidFrame) String() string {
 	return "[result_void]"
 }
 
+// detachFrame copies a framer-owned void result so it outlives the framer's Release.
+func detachFrame(fr frame) frame {
+	if v, ok := fr.(*resultVoidFrame); ok {
+		c := *v
+		return &c
+	}
+	return fr
+}
+
 func (f *framer) parseResultFrame() (frame, error) {
 	kind := f.readInt()
 
 	switch kind {
 	case frm.ResultKindVoid:
-		return &resultVoidFrame{FrameHeader: *f.header}, nil
+		f.voidFrame.FrameHeader = *f.header
+		return &f.voidFrame, nil
 	case frm.ResultKindRows:
 		return f.parseResultRows(), nil
 	case frm.ResultKindKeyspace:
