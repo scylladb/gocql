@@ -72,3 +72,39 @@ func TestDec2BigInt(t *testing.T) {
 		}
 	})
 }
+
+func TestUnmarshalBigIntNilDestination(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name string
+		data []byte
+	}{
+		{name: "null"},
+		{name: "empty", data: []byte{}},
+		{name: "positive", data: []byte{1}},
+		{name: "negative", data: []byte{255}},
+		{name: "large", data: []byte{1, 0, 0, 0, 0, 0, 0, 0, 0}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var v *big.Int
+			var vr **big.Int
+			for _, decode := range []struct {
+				name string
+				call func() error
+				want error
+			}{
+				{name: "DecBigInt", call: func() error { return DecBigInt(tt.data, v) }, want: errNilReference(v)},
+				{name: "DecBigIntR", call: func() error { return DecBigIntR(tt.data, vr) }, want: errNilReference(vr)},
+				{name: "UnmarshalBigInt", call: func() error { return Unmarshal(tt.data, v) }, want: errNilReference(v)},
+				{name: "UnmarshalBigIntR", call: func() error { return Unmarshal(tt.data, vr) }, want: errNilReference(vr)},
+			} {
+				t.Run(decode.name, func(t *testing.T) {
+					if err := decode.call(); err == nil || err.Error() != decode.want.Error() {
+						t.Fatalf("expected %v, got %v", decode.want, err)
+					}
+				})
+			}
+		})
+	}
+}

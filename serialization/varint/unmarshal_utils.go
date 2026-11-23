@@ -98,6 +98,10 @@ func DecStringR(p []byte, v **string) error {
 }
 
 func DecBigInt(p []byte, v *big.Int) error {
+	if v == nil {
+		return errNilReference(v)
+	}
+
 	switch len(p) {
 	case 0:
 		v.SetInt64(0)
@@ -126,6 +130,10 @@ func DecBigInt(p []byte, v *big.Int) error {
 }
 
 func DecBigIntR(p []byte, v **big.Int) error {
+	if v == nil {
+		return errNilReference(v)
+	}
+
 	if p != nil {
 		*v = big.NewInt(0)
 		return DecBigInt(p, *v)
