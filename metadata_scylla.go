@@ -341,9 +341,15 @@ func compareInterfaceMaps(a, b map[string]any) bool {
 	return true
 }
 
+type fetchState struct {
+	n     int    // fetches in flight
+	drops uint64 // drops seen while in flight
+}
+
 // cowTabletList implements a copy on write keyspace metadata map, its equivalent type is map[string]*KeyspaceMetadata
 type cowKeyspaceMetadataMap struct {
 	keyspaceMap atomic.Pointer[map[string]*KeyspaceMetadata]
+	fetches     map[string]*fetchState // guarded by mu; only keyspaces with a fetch in flight
 	mu          sync.Mutex
 }
 
@@ -364,12 +370,54 @@ func (c *cowKeyspaceMetadataMap) getKeyspace(keyspaceName string) (*KeyspaceMeta
 	return val, ok
 }
 
+// beginFetch registers an in-flight fetch and returns the drop count to pass
+// to setUnlessDropped. Pair with endFetch.
+func (c *cowKeyspaceMetadataMap) beginFetch(keyspaceName string) uint64 {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.fetches == nil {
+		c.fetches = make(map[string]*fetchState)
+	}
+	f := c.fetches[keyspaceName]
+	if f == nil {
+		f = &fetchState{}
+		c.fetches[keyspaceName] = f
+	}
+	f.n++
+	return f.drops
+}
+
+func (c *cowKeyspaceMetadataMap) endFetch(keyspaceName string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if f := c.fetches[keyspaceName]; f != nil {
+		if f.n--; f.n <= 0 {
+			delete(c.fetches, keyspaceName)
+		}
+	}
+}
+
+// setUnlessDropped publishes keyspaceMetadata only if the keyspace was not
+// dropped since beginFetch, so a late fetch cannot undo a drop.
+func (c *cowKeyspaceMetadataMap) setUnlessDropped(keyspaceName string, keyspaceMetadata *KeyspaceMetadata, drops uint64) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if f := c.fetches[keyspaceName]; f != nil && f.drops != drops {
+		return false
+	}
+	c.storeLocked(keyspaceName, keyspaceMetadata)
+	return true
+}
+
 func (c *cowKeyspaceMetadataMap) set(keyspaceName string, keyspaceMetadata *KeyspaceMetadata) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	c.storeLocked(keyspaceName, keyspaceMetadata)
+	return true
+}
 
+func (c *cowKeyspaceMetadataMap) storeLocked(keyspaceName string, keyspaceMetadata *KeyspaceMetadata) {
 	m := c.get()
-
 	newM := map[string]*KeyspaceMetadata{}
 	for name, metadata := range m {
 		newM[name] = metadata
@@ -377,7 +425,6 @@ func (c *cowKeyspaceMetadataMap) set(keyspaceName string, keyspaceMetadata *Keys
 	newM[keyspaceName] = keyspaceMetadata
 
 	c.keyspaceMap.Store(&newM)
-	return true
 }
 
 func (c *cowKeyspaceMetadataMap) invalidateTable(keyspaceName, tableName string) {
@@ -389,7 +436,20 @@ func (c *cowKeyspaceMetadataMap) invalidateTable(keyspaceName, tableName string)
 func (c *cowKeyspaceMetadataMap) removeKeyspace(keyspaceName string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	c.removeLocked(keyspaceName)
+}
 
+// dropKeyspace removes a dropped keyspace and records the drop for in-flight refreshes.
+func (c *cowKeyspaceMetadataMap) dropKeyspace(keyspaceName string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if f := c.fetches[keyspaceName]; f != nil {
+		f.drops++
+	}
+	c.removeLocked(keyspaceName)
+}
+
+func (c *cowKeyspaceMetadataMap) removeLocked(keyspaceName string) {
 	m := c.get()
 	newM := maps.Clone(m)
 	delete(newM, keyspaceName)
@@ -682,6 +742,10 @@ func (s *metadataDescriber) invalidateKeyspaceSchema(keyspaceName string) {
 	s.metadata.keyspaceMetadata.removeKeyspace(keyspaceName)
 }
 
+func (s *metadataDescriber) dropKeyspaceSchema(keyspaceName string) {
+	s.metadata.keyspaceMetadata.dropKeyspace(keyspaceName)
+}
+
 func (s *metadataDescriber) invalidateTableSchema(keyspaceName, tableName string) {
 	s.metadata.keyspaceMetadata.invalidateTable(keyspaceName, tableName)
 }
@@ -760,6 +824,23 @@ func (s *metadataDescriber) refreshAllSchema() error {
 // depend on each other's results. The results are only combined in
 // compileMetadata after all queries complete.
 func (s *metadataDescriber) refreshKeyspaceSchema(keyspaceName string) error {
+	// A refetch after a drop normally reports ErrKeyspaceDoesNotExist; bounded
+	// in case the keyspace keeps being dropped and recreated.
+	const maxAttempts = 3
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		if published, err := s.fetchKeyspaceSchema(keyspaceName); err != nil || published {
+			return err
+		}
+	}
+	return ErrKeyspaceDoesNotExist
+}
+
+// fetchKeyspaceSchema reports false if the keyspace was dropped mid-fetch, as
+// this data may predate the drop.
+func (s *metadataDescriber) fetchKeyspaceSchema(keyspaceName string) (published bool, err error) {
+	drops := s.metadata.keyspaceMetadata.beginFetch(keyspaceName)
+	defer s.metadata.keyspaceMetadata.endFetch(keyspaceName)
+
 	var (
 		keyspace    *KeyspaceMetadata
 		tables      []TableMetadata
@@ -776,10 +857,10 @@ func (s *metadataDescriber) refreshKeyspaceSchema(keyspaceName string) error {
 	// synchronisation is needed beyond errgroup itself.
 	var g errgroup.Group
 
+	var keyspaceErr error
 	g.Go(func() error {
-		var err error
-		keyspace, err = getKeyspaceMetadata(s.session, keyspaceName)
-		return err
+		keyspace, keyspaceErr = getKeyspaceMetadata(s.session, keyspaceName)
+		return keyspaceErr
 	})
 	g.Go(func() error {
 		var err error
@@ -823,14 +904,16 @@ func (s *metadataDescriber) refreshKeyspaceSchema(keyspaceName string) error {
 	})
 
 	if err := g.Wait(); err != nil {
-		return err
+		// Confirmed absence wins over a racing query's error (e.g. DESCRIBE).
+		if errors.Is(keyspaceErr, ErrKeyspaceDoesNotExist) {
+			err = keyspaceErr
+		}
+		return false, err
 	}
 
 	compileMetadata(keyspace, tables, columns, functions, aggregates, types, indexes, views, createStmts)
 
-	s.metadata.keyspaceMetadata.set(keyspaceName, keyspace)
-
-	return nil
+	return s.metadata.keyspaceMetadata.setUnlessDropped(keyspaceName, keyspace, drops), nil
 }
 
 func (s *metadataDescriber) refreshTableSchema(keyspaceName, tableName string) error {

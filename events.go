@@ -146,7 +146,11 @@ func (s *Session) handleSchemaEvent(frames []frame) {
 	for _, frame := range frames {
 		switch f := frame.(type) {
 		case *frm.SchemaChangeKeyspace:
-			s.metadataDescriber.invalidateKeyspaceSchema(f.Keyspace)
+			if f.Change == "DROPPED" {
+				s.metadataDescriber.dropKeyspaceSchema(f.Keyspace)
+			} else {
+				s.metadataDescriber.invalidateKeyspaceSchema(f.Keyspace)
+			}
 			s.handleKeyspaceChange(f.Keyspace, f.Change)
 		case *frm.SchemaChangeTable:
 			s.metadataDescriber.invalidateTableSchema(f.Keyspace, f.Object)
