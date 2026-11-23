@@ -31,6 +31,57 @@ func TestDecStr(t *testing.T) {
 	}
 }
 
+func TestDecStringFractionalSeconds(t *testing.T) {
+	for _, tc := range []struct {
+		nanos int64
+		want  string
+	}{
+		{60_500_000_000, "1m0.5s"},
+		{60_050_000_000, "1m0.05s"},
+		{60_000_001_000, "1m0.000001s"},
+		{60_000_000_010, "1m0.00000001s"},
+		{60_000_000_001, "1m0.000000001s"},
+		{3_600_005_000_000, "1h0.005s"},
+		{3_600_000_000_001, "1h0.000000001s"},
+		{3_660_500_000_000, "1h1m0.5s"},
+		{61_500_000_000, "1m1.5s"},
+		{65_000_000_000, "1m5s"},
+		{60_000_000_000, "1m"},
+		{1_500_000, "1.5ms"},
+	} {
+		for _, sign := range []int64{1, -1} {
+			nanos, want := sign*tc.nanos, tc.want
+			if sign < 0 {
+				want = "-" + want
+			}
+			t.Run(want, func(t *testing.T) {
+				data, err := EncInt64(nanos)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var got string
+				if err := DecString(data, &got); err != nil {
+					t.Fatal(err)
+				}
+				if got != want {
+					t.Fatalf("DecString(%d) = %q, want %q", nanos, got, want)
+				}
+				data, err = EncString(got)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var roundTrip int64
+				if err := DecInt64(data, &roundTrip); err != nil {
+					t.Fatal(err)
+				}
+				if roundTrip != nanos {
+					t.Fatalf("round trip = %d, want %d", roundTrip, nanos)
+				}
+			})
+		}
+	}
+}
+
 func testDecString(t *testing.T, m, d int32, n int64) {
 	t.Helper()
 	expected := getTestString(m, d, n)

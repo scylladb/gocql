@@ -132,7 +132,7 @@ func printNanoseconds(out *[50]byte, n uint64, pos int) int {
 
 func printIntFrac(out *[50]byte, n uint64, dotPos, pos int) int {
 	start := false
-	for i := 0; n > 0; i++ {
+	for i := 0; n > 0 || i <= dotPos; i++ {
 		digit := n % 10
 		if start && i == dotPos {
 			out[pos] = '.'
