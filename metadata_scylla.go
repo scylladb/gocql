@@ -1570,7 +1570,8 @@ func getCreateStatements(session *Session, keyspaceName string) ([]byte, error) 
 	if !session.useSystemSchema {
 		return nil, nil
 	}
-	iter := session.control.query(fmt.Sprintf(`DESCRIBE KEYSPACE %s WITH INTERNALS`, keyspaceName))
+	// unquoted, the server folds a mixed-case name to lower case and describes the wrong keyspace
+	iter := session.control.query(fmt.Sprintf(`DESCRIBE KEYSPACE %s WITH INTERNALS`, cqlHelpers.ident(keyspaceName)))
 
 	var createStatements []string
 
