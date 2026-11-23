@@ -7,6 +7,135 @@ import (
 	"testing"
 )
 
+func TestEncStringIntegerOverflow(t *testing.T) {
+	for _, value := range []string{
+		"9223372036854775809",
+		"18446744073709551616",
+		"18446744073709551620",
+		"999999999999999999999999999999",
+	} {
+		for _, unit := range []string{"ns", "us", "µs", "μs", "ms", "s", "m", "h", "d", "w", "mo", "y"} {
+			for _, sign := range []string{"", "+", "-"} {
+				input := sign + value + unit
+				t.Run(input, func(t *testing.T) {
+					data, err := EncString(input)
+					if err == nil || data != nil {
+						t.Fatalf("EncString(%q) = (%x, %v), want nil data and an error", input, data, err)
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestEncStringIntegerBoundaries(t *testing.T) {
+	for _, tt := range []struct {
+		input string
+		want  Duration
+	}{
+		{"9223372036854775807ns", Duration{Nanoseconds: math.MaxInt64}},
+		{"+9223372036854775807ns", Duration{Nanoseconds: math.MaxInt64}},
+		{"-9223372036854775808ns", Duration{Nanoseconds: math.MinInt64}},
+		{"2147483647mo", Duration{Months: math.MaxInt32}},
+		{"-2147483648mo", Duration{Months: math.MinInt32}},
+		{"2147483647d", Duration{Days: math.MaxInt32}},
+		{"-2147483648d", Duration{Days: math.MinInt32}},
+	} {
+		t.Run(tt.input, func(t *testing.T) {
+			data, err := EncString(tt.input)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got Duration
+			if err := DecDuration(data, &got); err != nil {
+				t.Fatal(err)
+			}
+			if got != tt.want {
+				t.Fatalf("decoded %q = %+v, want %+v", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestEncStringCumulativeOverflow(t *testing.T) {
+	for _, input := range []string{
+		"9223372036854775808ns9223372036854775808ns",
+		"+9223372036854775808ns9223372036854775808ns",
+		"-9223372036854775808ns9223372036854775808ns",
+		"9223372036854775807ns1ns",
+		"-9223372036854775808ns1ns",
+		"-808ns9223372036854775us1ns",
+		"-775808ns9223372036854ms1ns",
+		"-854775808ns9223372036s1ns",
+		"-16854775808ns153722867m1ns",
+		"-2836854775808ns2562047h1ns",
+		"2147483647d1d",
+		"-2147483648mo1mo",
+		"-2147483648d1w",
+		"-2147483648mo1y",
+	} {
+		t.Run(input, func(t *testing.T) {
+			if data, err := EncString(input); err == nil || data != nil {
+				t.Fatalf("EncString(%q) = (%x, %v), want nil data and an error", input, data, err)
+			}
+		})
+	}
+	for _, tt := range []struct {
+		input string
+		want  Duration
+	}{
+		{"9223372036854775806ns1ns", Duration{Nanoseconds: math.MaxInt64}},
+		{"-9223372036854775807ns1ns", Duration{Nanoseconds: math.MinInt64}},
+		{"-808ns9223372036854775us", Duration{Nanoseconds: math.MinInt64}},
+		{"-775808ns9223372036854ms", Duration{Nanoseconds: math.MinInt64}},
+		{"-854775808ns9223372036s", Duration{Nanoseconds: math.MinInt64}},
+		{"-16854775808ns153722867m", Duration{Nanoseconds: math.MinInt64}},
+		{"-2836854775808ns2562047h", Duration{Nanoseconds: math.MinInt64}},
+		{"-2147483647d1d", Duration{Days: math.MinInt32}},
+		{"-2147483647mo1mo", Duration{Months: math.MinInt32}},
+		{"-2147483641d1w", Duration{Days: math.MinInt32}},
+		{"-2147483636mo1y", Duration{Months: math.MinInt32}},
+	} {
+		t.Run(tt.input, func(t *testing.T) {
+			data, err := EncString(tt.input)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got Duration
+			if err := DecDuration(data, &got); err != nil {
+				t.Fatal(err)
+			}
+			if got != tt.want {
+				t.Fatalf("decoded %q = %+v, want %+v", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestEncStringOverflowDiagnostic(t *testing.T) {
+	for _, tt := range []struct {
+		input string
+		want  string
+	}{
+		{"2147483649d", "days 2147483649 out of the range"},
+		{"2147483647d2d", "days 2147483649 out of the range"},
+		{"2147483649mo", "months 2147483649 out of the range"},
+		{"-2147483647mo2mo", "months 2147483649 out of the range"},
+		{"9223372036854775808ns1ns", "nanoseconds 9223372036854775809 out of the range"},
+		{"9223372036854775808ns9223372036854775808ns", "nanoseconds 18446744073709551615 out of the range"},
+	} {
+		t.Run(tt.input, func(t *testing.T) {
+			data, err := EncString(tt.input)
+			if err == nil || data != nil {
+				t.Fatalf("EncString(%q) = (%x, %v), want nil data and an error", tt.input, data, err)
+			}
+			if !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("EncString(%q) error = %q, want it to contain %q", tt.input, err, tt.want)
+			}
+		})
+	}
+}
+
 func TestEncStr(t *testing.T) {
 	for n := int64(math.MaxInt64); n != 1; n = n / 2 {
 		m, d := int32(n), int32(n)
