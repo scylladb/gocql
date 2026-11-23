@@ -3,6 +3,8 @@ package duration
 import (
 	"errors"
 	"fmt"
+	"math"
+	"math/bits"
 )
 
 const (
@@ -14,14 +16,6 @@ const (
 	hour        = 60 * minute
 	week        = 7
 	year        = 12
-
-	microsecondFloat = float64(microsecond)
-	millisecondFloat = float64(millisecond)
-	secondFloat      = float64(second)
-	minuteFloat      = float64(minute)
-	hourFloat        = float64(hour)
-	weekFloat        = float64(week)
-	yearFloat        = float64(year)
 
 	maxNanosecondsNeg = uint64(9223372036854775808)
 	maxNanosecondsPos = maxNanosecondsNeg - 1
@@ -93,7 +87,7 @@ func encStringToUints(s string) (months uint64, days uint64, nanos uint64, neg b
 
 	var writeState parseWriteState
 	readState := readInteger
-	scale := float64(1)
+	scale := uint64(1)
 	var integer, fraction uint64
 	var ok bool
 	for i := 0; i < len(s); i++ {
@@ -114,11 +108,12 @@ func encStringToUints(s string) (months uint64, days uint64, nanos uint64, neg b
 			}
 		case readFraction: // Consume [0-9]* as fraction part of value
 			if c >= '0' && c <= '9' {
-				scale *= 10
-				fraction = fraction*10 + uint64(c) - '0'
-				if fraction > maxNanosecondsNeg {
+				digit := uint64(c - '0')
+				if fraction > (maxNanosecondsNeg-digit)/10 || scale > math.MaxUint64/10 {
 					readState = readSkipFraction
-					fraction /= 10
+				} else {
+					fraction = fraction*10 + digit
+					scale *= 10
 				}
 			} else {
 				i--
@@ -265,9 +260,9 @@ func encStringToUints(s string) (months uint64, days uint64, nanos uint64, neg b
 	return
 }
 
-func addNanoseconds(in, add, fraction uint64, scale float64) (uint64, bool) {
+func addNanoseconds(in, add, fraction, scale uint64) (uint64, bool) {
 	if fraction > 0 {
-		add += uint64(float64(fraction) * (float64(1) / scale))
+		add += fractionOfUnit(fraction, scale, 1)
 		if add > maxNanosecondsNeg {
 			return add, false
 		}
@@ -279,13 +274,13 @@ func addNanoseconds(in, add, fraction uint64, scale float64) (uint64, bool) {
 	return in, true
 }
 
-func addMicroseconds(in, add, fraction uint64, scale float64) (uint64, bool) {
+func addMicroseconds(in, add, fraction, scale uint64) (uint64, bool) {
 	if add > maxMicrosecondsNeg {
 		return add, false
 	}
 	add *= microsecond
 	if fraction > 0 {
-		add += uint64(float64(fraction) * (microsecondFloat / scale))
+		add += fractionOfUnit(fraction, scale, microsecond)
 		if add > maxNanosecondsNeg {
 			return add, false
 		}
@@ -297,13 +292,13 @@ func addMicroseconds(in, add, fraction uint64, scale float64) (uint64, bool) {
 	return in, true
 }
 
-func addMilliseconds(in, add, fraction uint64, scale float64) (uint64, bool) {
+func addMilliseconds(in, add, fraction, scale uint64) (uint64, bool) {
 	if add > maxMillisecondsNeg {
 		return add, false
 	}
 	add *= millisecond
 	if fraction > 0 {
-		add += uint64(float64(fraction) * (millisecondFloat / scale))
+		add += fractionOfUnit(fraction, scale, millisecond)
 		if add > maxNanosecondsNeg {
 			return add, false
 		}
@@ -315,13 +310,13 @@ func addMilliseconds(in, add, fraction uint64, scale float64) (uint64, bool) {
 	return in, true
 }
 
-func addSeconds(in, add, fraction uint64, scale float64) (uint64, bool) {
+func addSeconds(in, add, fraction, scale uint64) (uint64, bool) {
 	if add > maxSecondsNeg {
 		return add, false
 	}
 	add *= second
 	if fraction > 0 {
-		add += uint64(float64(fraction) * (secondFloat / scale))
+		add += fractionOfUnit(fraction, scale, second)
 		if add > maxNanosecondsNeg {
 			return add, false
 		}
@@ -333,13 +328,13 @@ func addSeconds(in, add, fraction uint64, scale float64) (uint64, bool) {
 	return in, true
 }
 
-func addMinutes(in, add, fraction uint64, scale float64) (uint64, bool) {
+func addMinutes(in, add, fraction, scale uint64) (uint64, bool) {
 	if add > maxMinutesNeg {
 		return add, false
 	}
 	add *= minute
 	if fraction > 0 {
-		add += uint64(float64(fraction) * (minuteFloat / scale))
+		add += fractionOfUnit(fraction, scale, minute)
 		if add > maxNanosecondsNeg {
 			return add, false
 		}
@@ -351,13 +346,13 @@ func addMinutes(in, add, fraction uint64, scale float64) (uint64, bool) {
 	return in, true
 }
 
-func addHours(in, add, fraction uint64, scale float64) (uint64, bool) {
+func addHours(in, add, fraction, scale uint64) (uint64, bool) {
 	if add > maxHoursNeg {
 		return add, false
 	}
 	add *= hour
 	if fraction > 0 {
-		add += uint64(float64(fraction) * (hourFloat / scale))
+		add += fractionOfUnit(fraction, scale, hour)
 		if add > maxNanosecondsNeg {
 			return add, false
 		}
@@ -369,9 +364,9 @@ func addHours(in, add, fraction uint64, scale float64) (uint64, bool) {
 	return in, true
 }
 
-func addDaysMonths(in, add, fraction uint64, scale float64) (uint64, bool) {
+func addDaysMonths(in, add, fraction, scale uint64) (uint64, bool) {
 	if fraction > 0 {
-		add += uint64(float64(fraction) * (float64(1) / scale))
+		add += fractionOfUnit(fraction, scale, 1)
 		if add > maxMonthsDaysNeg {
 			return add, false
 		}
@@ -383,13 +378,13 @@ func addDaysMonths(in, add, fraction uint64, scale float64) (uint64, bool) {
 	return in, true
 }
 
-func addWeeks(in, add, fraction uint64, scale float64) (uint64, bool) {
+func addWeeks(in, add, fraction, scale uint64) (uint64, bool) {
 	if add > maxWeeksNeg {
 		return add, false
 	}
 	add *= week
 	if fraction > 0 {
-		add += uint64(float64(fraction) * (weekFloat / scale))
+		add += fractionOfUnit(fraction, scale, week)
 		if add > maxMonthsDaysNeg {
 			return add, false
 		}
@@ -401,13 +396,13 @@ func addWeeks(in, add, fraction uint64, scale float64) (uint64, bool) {
 	return in, true
 }
 
-func addYears(in, add, fraction uint64, scale float64) (uint64, bool) {
+func addYears(in, add, fraction, scale uint64) (uint64, bool) {
 	if add > maxYearsNeg {
 		return add, false
 	}
 	add *= year
 	if fraction > 0 {
-		add += uint64(float64(fraction) * (yearFloat / scale))
+		add += fractionOfUnit(fraction, scale, year)
 		if add > maxMonthsDaysNeg {
 			return add, false
 		}
@@ -417,4 +412,12 @@ func addYears(in, add, fraction uint64, scale float64) (uint64, bool) {
 		return in, false
 	}
 	return in, true
+}
+
+// fractionOfUnit truncates the retained decimal prefix without floating-point rounding.
+func fractionOfUnit(fraction, scale, unit uint64) uint64 {
+	// fraction < scale, so the quotient is less than unit and fits in uint64.
+	hi, lo := bits.Mul64(fraction, unit)
+	value, _ := bits.Div64(hi, lo, scale)
+	return value
 }
