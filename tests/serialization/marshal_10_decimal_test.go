@@ -91,6 +91,39 @@ func TestMarshalDecimal(t *testing.T) {
 				Values: getValues(0, 0).AddVariants(mod.All...),
 			}.Run("zeros", t, marshal, unmarshal)
 
+			for _, tc := range []struct {
+				scale inf.Scale
+				data  []byte
+			}{
+				{5, []byte{0, 0, 0, 5, 0}},
+				{-5, []byte{255, 255, 255, 251, 0}},
+				{math.MaxInt32, []byte{127, 255, 255, 255, 0}},
+				{math.MinInt32, []byte{128, 0, 0, 0, 0}},
+			} {
+				serialization.PositiveSet{
+					Data:   tc.data,
+					Values: getValues(tc.scale, 0).AddVariants(mod.All...),
+				}.Run(fmt.Sprintf("scale%d_zero", tc.scale), t, marshal, nil)
+
+				t.Run(fmt.Sprintf("scale%d_zero_decode", tc.scale), func(t *testing.T) {
+					var value inf.Dec
+					var pointer *inf.Dec
+					for _, target := range []any{&value, &pointer} {
+						if err := unmarshal(tc.data, target); err != nil {
+							t.Fatalf("unmarshal into %T: %v", target, err)
+						}
+					}
+					if pointer == nil {
+						t.Fatal("decoded zero decimal is nil")
+					}
+					for _, result := range []*inf.Dec{&value, pointer} {
+						if result.Scale() != tc.scale || result.Sign() != 0 {
+							t.Errorf("decoded scale=%d sign=%d; want scale=%d sign=0", result.Scale(), result.Sign(), tc.scale)
+						}
+					}
+				})
+			}
+
 			serialization.PositiveSet{
 				Data:   []byte("\x00\x00\x00\x00\x7f\xff\xff\xff\xff\xff\xff\xff"),
 				Values: getValues(0, math.MaxInt64).AddVariants(mod.All...),
