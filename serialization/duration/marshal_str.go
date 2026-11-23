@@ -96,10 +96,11 @@ func encStringToUints(s string) (months uint64, days uint64, nanos uint64, neg b
 		case readInteger: // Consume [0-9.]* as integer part of value
 			switch {
 			case c >= '0' && c <= '9':
-				integer = integer*10 + uint64(c) - '0'
-				if integer > maxNanosecondsNeg {
-					return 0, 0, 0, false, errorOutRange("value", integer)
+				digit := uint64(c - '0')
+				if integer > (maxNanosecondsNeg-digit)/10 {
+					return 0, 0, 0, false, fmt.Errorf("value exceeds maximum magnitude %d", maxNanosecondsNeg)
 				}
+				integer = integer*10 + digit
 			case c == '.':
 				readState = readFraction
 			default:
@@ -267,11 +268,7 @@ func addNanoseconds(in, add, fraction, scale uint64) (uint64, bool) {
 			return add, false
 		}
 	}
-	in += add
-	if in > maxNanosecondsNeg {
-		return in, false
-	}
-	return in, true
+	return addWithinLimit(in, add, maxNanosecondsNeg)
 }
 
 func addMicroseconds(in, add, fraction, scale uint64) (uint64, bool) {
@@ -285,11 +282,7 @@ func addMicroseconds(in, add, fraction, scale uint64) (uint64, bool) {
 			return add, false
 		}
 	}
-	in += add
-	if in > maxNanosecondsNeg {
-		return in, false
-	}
-	return in, true
+	return addWithinLimit(in, add, maxNanosecondsNeg)
 }
 
 func addMilliseconds(in, add, fraction, scale uint64) (uint64, bool) {
@@ -303,11 +296,7 @@ func addMilliseconds(in, add, fraction, scale uint64) (uint64, bool) {
 			return add, false
 		}
 	}
-	in += add
-	if in > maxNanosecondsNeg {
-		return in, false
-	}
-	return in, true
+	return addWithinLimit(in, add, maxNanosecondsNeg)
 }
 
 func addSeconds(in, add, fraction, scale uint64) (uint64, bool) {
@@ -321,11 +310,7 @@ func addSeconds(in, add, fraction, scale uint64) (uint64, bool) {
 			return add, false
 		}
 	}
-	in += add
-	if in > maxNanosecondsNeg {
-		return in, false
-	}
-	return in, true
+	return addWithinLimit(in, add, maxNanosecondsNeg)
 }
 
 func addMinutes(in, add, fraction, scale uint64) (uint64, bool) {
@@ -339,11 +324,7 @@ func addMinutes(in, add, fraction, scale uint64) (uint64, bool) {
 			return add, false
 		}
 	}
-	in += add
-	if in > maxNanosecondsNeg {
-		return in, false
-	}
-	return in, true
+	return addWithinLimit(in, add, maxNanosecondsNeg)
 }
 
 func addHours(in, add, fraction, scale uint64) (uint64, bool) {
@@ -357,11 +338,7 @@ func addHours(in, add, fraction, scale uint64) (uint64, bool) {
 			return add, false
 		}
 	}
-	in += add
-	if in > maxNanosecondsNeg {
-		return in, false
-	}
-	return in, true
+	return addWithinLimit(in, add, maxNanosecondsNeg)
 }
 
 func addDaysMonths(in, add, fraction, scale uint64) (uint64, bool) {
@@ -371,11 +348,7 @@ func addDaysMonths(in, add, fraction, scale uint64) (uint64, bool) {
 			return add, false
 		}
 	}
-	in += add
-	if in > maxMonthsDaysNeg {
-		return in, false
-	}
-	return in, true
+	return addWithinLimit(in, add, maxMonthsDaysNeg)
 }
 
 func addWeeks(in, add, fraction, scale uint64) (uint64, bool) {
@@ -389,11 +362,7 @@ func addWeeks(in, add, fraction, scale uint64) (uint64, bool) {
 			return add, false
 		}
 	}
-	in += add
-	if in > maxMonthsDaysNeg {
-		return in, false
-	}
-	return in, true
+	return addWithinLimit(in, add, maxMonthsDaysNeg)
 }
 
 func addYears(in, add, fraction, scale uint64) (uint64, bool) {
@@ -407,11 +376,16 @@ func addYears(in, add, fraction, scale uint64) (uint64, bool) {
 			return add, false
 		}
 	}
-	in += add
-	if in > maxMonthsDaysNeg {
-		return in, false
+	return addWithinLimit(in, add, maxMonthsDaysNeg)
+}
+
+func addWithinLimit(in, add, limit uint64) (uint64, bool) {
+	if in > math.MaxUint64-add {
+		// Saturate the rejected magnitude for the out-of-range diagnostic.
+		return math.MaxUint64, false
 	}
-	return in, true
+	in += add
+	return in, in <= limit
 }
 
 // fractionOfUnit truncates the retained decimal prefix without floating-point rounding.
