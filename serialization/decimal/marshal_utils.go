@@ -15,7 +15,8 @@ import (
 func EncInfDec(v inf.Dec) ([]byte, error) {
 	sign := v.Sign()
 	if sign == 0 {
-		return []byte{0, 0, 0, 0, 0}, nil
+		scale := v.Scale()
+		return []byte{byte(scale >> 24), byte(scale >> 16), byte(scale >> 8), byte(scale), 0}, nil
 	}
 	return append(encScale(v.Scale()), varint.EncBigIntRS(v.UnscaledBig())...), nil
 }
@@ -98,7 +99,8 @@ func encReflectString(v reflect.Value) ([]byte, error) {
 func encInfDecR(v *inf.Dec) []byte {
 	sign := v.Sign()
 	if sign == 0 {
-		return []byte{0, 0, 0, 0, 0}
+		scale := v.Scale()
+		return []byte{byte(scale >> 24), byte(scale >> 16), byte(scale >> 8), byte(scale), 0}
 	}
 	return append(encScale(v.Scale()), varint.EncBigIntRS(v.UnscaledBig())...)
 }
