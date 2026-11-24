@@ -270,3 +270,70 @@ func TestGetCassandraLongTypeLogsWhyADimensionWasRejected(t *testing.T) {
 		})
 	}
 }
+
+func TestGetCassandraLongTypeRejectsBareComposites(t *testing.T) {
+	for _, name := range []string{"ListType", "SetType", "MapType", "TupleType", "UserType"} {
+		t.Run(name, func(t *testing.T) {
+			ti := getCassandraLongType(name, protoVersion4, nopLogger{})
+			assertResolvedType(t, name, ti, NewCustomType(protoVersion4, TypeCustom, name))
+			if _, err := ti.NewWithError(); err == nil || !strings.Contains(err.Error(), name) {
+				t.Fatalf("NewWithError() = %v, want unsupported type %q", err, name)
+			}
+
+			const p = apacheCassandraTypePrefix
+			for _, spec := range []string{
+				p + "ListType(" + name + ")",
+				p + "SetType(" + name + ")",
+				p + "MapType(" + p + "UTF8Type," + name + ")",
+				p + "MapType(" + name + "," + p + "UTF8Type)",
+			} {
+				nested := getCassandraLongType(spec, protoVersion4, nopLogger{})
+				if _, err := nested.NewWithError(); err == nil || !strings.Contains(err.Error(), name) {
+					t.Errorf("NewWithError(%q) = %v, want unsupported type %q", spec, err, name)
+				}
+			}
+
+			data := []byte{0, 0, 0, 1, 0}
+			tuple := getCassandraLongType(p+"TupleType("+name+")", protoVersion4, nopLogger{})
+			if err := Unmarshal(tuple, data, []any{new(any)}); err == nil || !strings.Contains(err.Error(), name) {
+				t.Errorf("Unmarshal(tuple) = %v, want unsupported type %q", err, name)
+			}
+			udt := getCassandraLongType(p+"UserType(ks,74,66:"+name+")", protoVersion4, nopLogger{})
+			var fields map[string]any
+			if err := Unmarshal(udt, data, &fields); err == nil || !strings.Contains(err.Error(), name) {
+				t.Errorf("Unmarshal(udt) = %v, want unsupported type %q", err, name)
+			}
+		})
+	}
+}
+
+func TestVectorBareCompositeMetadataReturnsErrors(t *testing.T) {
+	for _, name := range []string{"ListType", "SetType", "MapType", "TupleType", "UserType"} {
+		t.Run(name, func(t *testing.T) {
+			spec := apacheCassandraTypePrefix + "VectorType(" + name + ", 3)"
+			ti := wireVectorType(spec)
+			if _, err := ti.NewWithError(); err == nil || !strings.Contains(err.Error(), name) {
+				t.Fatalf("NewWithError() = %v, want unsupported type %q", err, name)
+			}
+			if _, err := NewCustomType(protoVersion4, TypeCustom, spec).NewWithError(); err == nil {
+				t.Fatal("NewWithError accepted a custom vector with a bare composite element")
+			}
+
+			newIter := func() *Iter {
+				return &Iter{numRows: 1, meta: resultMetadata{
+					columns: []ColumnInfo{{Name: "v", TypeInfo: ti}}, colCount: 1, actualColCount: 1,
+				}}
+			}
+			if _, err := newIter().RowData(); err == nil {
+				t.Error("RowData accepted a vector with a bare composite element")
+			}
+			iter := newIter()
+			if iter.MapScan(map[string]any{}) || iter.Close() == nil {
+				t.Error("MapScan accepted a vector with a bare composite element")
+			}
+			if _, err := newIter().SliceMap(); err == nil {
+				t.Error("SliceMap accepted a vector with a bare composite element")
+			}
+		})
+	}
+}

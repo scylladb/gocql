@@ -307,7 +307,9 @@ func getCassandraLongType(name string, protoVer byte, logger StdLogger) TypeInfo
 	} else {
 		// basic type
 		typ := getApacheCassandraType(name)
-		if typ == TypeCustom {
+		switch typ {
+		case TypeCustom, TypeList, TypeSet, TypeMap, TypeTuple, TypeUDT:
+			// Composite types need the arguments handled above, not a NativeType.
 			// Keep the name so an error can say what the server sent, not "custom()".
 			return NewCustomType(protoVer, TypeCustom, name)
 		}
