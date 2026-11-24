@@ -1,6 +1,7 @@
 package serialization_test
 
 import (
+	"fmt"
 	"math/big"
 	"testing"
 
@@ -48,6 +49,18 @@ func TestMarshalVarIntCorrupt(t *testing.T) {
 			serialization.NegativeMarshalSet{
 				Values: mod.Values{"1s2", "1s", "-1s", ".1", ",1", "0.1", "0,1"}.AddVariants(mod.All...),
 			}.Run("corrupt_vals", t, marshal)
+
+			for _, data := range [][]byte{
+				{0xff}, {0x80}, {0xff, 0x7f}, {0x80, 0, 0},
+				{0x80, 0, 0, 0}, {0x80, 0, 0, 0, 0},
+				{0x80, 0, 0, 0, 0, 0}, {0x80, 0, 0, 0, 0, 0, 0},
+				{0x80, 0, 0, 0, 0, 0, 0, 0}, {0xff, 0x7f, 0, 0, 0, 0, 0, 0, 0},
+			} {
+				serialization.NegativeUnmarshalSet{
+					Data:   data,
+					Values: mod.Values{uint8(0), uint16(0), uint32(0), uint64(0), uint(0)}.AddVariants(mod.All...),
+				}.Run(fmt.Sprintf("negative_to_unsigned_%x", data), t, unmarshal)
+			}
 
 			serialization.NegativeUnmarshalSet{
 				Data: []byte("\x00\x7f"),

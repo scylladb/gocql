@@ -8,6 +8,9 @@ func DecUint8(p []byte, v *uint8) error {
 	if v == nil {
 		return errNilReference(v)
 	}
+	if len(p) > 0 && p[0] > 127 {
+		return fmt.Errorf("failed to unmarshal varint: to unmarshal into uint8, the data value should be in the uint8 range")
+	}
 	switch len(p) {
 	case 0:
 		*v = 0
@@ -29,6 +32,9 @@ func DecUint8(p []byte, v *uint8) error {
 func DecUint8R(p []byte, v **uint8) error {
 	if v == nil {
 		return errNilReference(v)
+	}
+	if len(p) > 0 && p[0] > 127 {
+		return fmt.Errorf("failed to unmarshal varint: to unmarshal into uint8, the data value should be in the uint8 range")
 	}
 	switch len(p) {
 	case 0:
@@ -58,6 +64,9 @@ func DecUint16(p []byte, v *uint16) error {
 	if v == nil {
 		return errNilReference(v)
 	}
+	if len(p) > 0 && p[0] > 127 {
+		return fmt.Errorf("failed to unmarshal varint: to unmarshal into uint16, the data value should be in the uint16 range")
+	}
 	switch len(p) {
 	case 0:
 		*v = 0
@@ -81,6 +90,9 @@ func DecUint16(p []byte, v *uint16) error {
 func DecUint16R(p []byte, v **uint16) error {
 	if v == nil {
 		return errNilReference(v)
+	}
+	if len(p) > 0 && p[0] > 127 {
+		return fmt.Errorf("failed to unmarshal varint: to unmarshal into uint16, the data value should be in the uint16 range")
 	}
 	switch len(p) {
 	case 0:
@@ -113,6 +125,9 @@ func DecUint32(p []byte, v *uint32) error {
 	if v == nil {
 		return errNilReference(v)
 	}
+	if len(p) > 0 && p[0] > 127 {
+		return fmt.Errorf("failed to unmarshal varint: to unmarshal into uint32, the data value should be in the uint32 range")
+	}
 	switch len(p) {
 	case 0:
 		*v = 0
@@ -140,6 +155,9 @@ func DecUint32(p []byte, v *uint32) error {
 func DecUint32R(p []byte, v **uint32) error {
 	if v == nil {
 		return errNilReference(v)
+	}
+	if len(p) > 0 && p[0] > 127 {
+		return fmt.Errorf("failed to unmarshal varint: to unmarshal into uint32, the data value should be in the uint32 range")
 	}
 	switch len(p) {
 	case 0:
@@ -178,6 +196,9 @@ func DecUint64(p []byte, v *uint64) error {
 	if v == nil {
 		return errNilReference(v)
 	}
+	if len(p) > 0 && p[0] > 127 {
+		return fmt.Errorf("failed to unmarshal varint: to unmarshal into uint64, the data value should be in the uint64 range")
+	}
 	switch len(p) {
 	case 0:
 		*v = 0
@@ -213,6 +234,9 @@ func DecUint64(p []byte, v *uint64) error {
 func DecUint64R(p []byte, v **uint64) error {
 	if v == nil {
 		return errNilReference(v)
+	}
+	if len(p) > 0 && p[0] > 127 {
+		return fmt.Errorf("failed to unmarshal varint: to unmarshal into uint64, the data value should be in the uint64 range")
 	}
 	switch len(p) {
 	case 0:
@@ -263,6 +287,9 @@ func DecUint(p []byte, v *uint) error {
 	if v == nil {
 		return errNilReference(v)
 	}
+	if len(p) > 0 && p[0] > 127 {
+		return fmt.Errorf("failed to unmarshal varint: to unmarshal into uint, the data value should be in the uint range")
+	}
 	switch len(p) {
 	case 0:
 		*v = 0
@@ -298,6 +325,9 @@ func DecUint(p []byte, v *uint) error {
 func DecUintR(p []byte, v **uint) error {
 	if v == nil {
 		return errNilReference(v)
+	}
+	if len(p) > 0 && p[0] > 127 {
+		return fmt.Errorf("failed to unmarshal varint: to unmarshal into uint, the data value should be in the uint range")
 	}
 	switch len(p) {
 	case 0:
