@@ -30,6 +30,7 @@ package gocql
 import (
 	"crypto/tls"
 	"fmt"
+	"math"
 	"net"
 	"reflect"
 	"strings"
@@ -77,6 +78,23 @@ func TestValidate_ProtoVersionRange(t *testing.T) {
 			cfg.ProtoVersion = version
 			if err := cfg.Validate(); err == nil {
 				t.Fatalf("expected protocol version %d to be rejected", version)
+			}
+		})
+	}
+}
+
+func TestValidate_MaxRequestsPerConn(t *testing.T) {
+	for _, limit := range []int{-1, 0, 1, 32767, 32768, 32769, 40000, 65537, math.MaxInt} {
+		t.Run(fmt.Sprint(limit), func(t *testing.T) {
+			cfg := NewCluster("127.0.0.1")
+			cfg.MaxRequestsPerConn = limit
+			err := cfg.Validate()
+			if limit >= 0 && limit <= 32768 {
+				if err != nil {
+					t.Fatalf("valid request limit %d rejected: %v", limit, err)
+				}
+			} else if err == nil || !strings.Contains(err.Error(), "MaxRequestsPerConn") {
+				t.Fatalf("expected request limit %d to be rejected, got: %v", limit, err)
 			}
 		})
 	}

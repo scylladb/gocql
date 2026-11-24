@@ -177,8 +177,8 @@ type ClusterConfig struct {
 	// selected is not defined (ie, it can be any of the supported in the cluster).
 	ProtoVersion int
 	// Maximum number of inflight requests allowed per connection.
-	// Default: 32768 for CQL v3 and newer
-	// Default: 128 for older CQL versions
+	// Values above 32768 are rejected; zero selects the default.
+	// Default: 32768
 	MaxRequestsPerConn int
 	// Timeout defines the maximum time to wait for a single server response.
 	// The default is 11 seconds, which is slightly higher than the default
@@ -653,6 +653,9 @@ func (cfg *ClusterConfig) Validate() error {
 
 	if cfg.MaxRequestsPerConn < 0 {
 		return errors.New("MaxRequestsPerConn should be positive number or zero")
+	}
+	if cfg.MaxRequestsPerConn > 32768 {
+		return errors.New("MaxRequestsPerConn should not exceed 32768")
 	}
 
 	if cfg.NumConns < 0 {
