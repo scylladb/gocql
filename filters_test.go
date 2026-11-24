@@ -104,6 +104,43 @@ func TestFilter_DenyAll(t *testing.T) {
 	}
 }
 
+func TestFilter_WhiteList_MatchesConnectAddress(t *testing.T) {
+	t.Parallel()
+
+	f := WhiteListHostFilter("127.0.0.1", "::1")
+	for _, test := range []struct {
+		address string
+		accept  bool
+	}{
+		{"127.0.0.1", true},
+		{"127.0.0.2", false},
+		{"::1", true},
+		{"::2", false},
+	} {
+		t.Run(test.address, func(t *testing.T) {
+			host := HostInfoBuilder{ConnectAddress: net.ParseIP(test.address), Port: 9042}.Build()
+			if got := f.Accept(&host); got != test.accept {
+				t.Errorf("connect-only host accepted = %v, want %v", got, test.accept)
+			}
+			resolver := dnsResolverFunc(func(host string) ([]net.IP, error) {
+				if host != "contact.example" {
+					t.Fatalf("unexpected DNS lookup for %q", host)
+				}
+				return []net.IP{net.ParseIP(test.address)}, nil
+			})
+			hosts, err := resolveInitialEndpoint(resolver, "contact.example:9042", 9042)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, initialHost := range hosts {
+				if got := f.Accept(initialHost); got != test.accept {
+					t.Errorf("initial endpoint accepted = %v, want %v", got, test.accept)
+				}
+			}
+		})
+	}
+}
+
 func TestFilter_WhiteList_MatchesRPCAddress(t *testing.T) {
 	t.Parallel()
 

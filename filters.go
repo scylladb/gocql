@@ -99,6 +99,9 @@ func WhiteListHostFilter(hosts ...string) HostFilter {
 		host.mu.RLock()
 		defer host.mu.RUnlock()
 
+		if validIpAddr(host.connectAddress) && m[host.connectAddress.String()] {
+			return true
+		}
 		if validIpAddr(host.rpcAddress) && m[host.rpcAddress.String()] {
 			return true
 		}
