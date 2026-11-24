@@ -204,6 +204,7 @@ func (n *networkTopology) haveRF(replicaCounts map[string]int) bool {
 
 func (n *networkTopology) replicaMap(tokenRing *tokenRing) tokenRingReplicas {
 	dcRacks := make(map[string]map[string]struct{}, len(n.dcs))
+	hostsInDC := make(map[string]int, len(n.dcs))
 	// skipped hosts in a dc
 	skipped := make(map[string][]*HostInfo, len(n.dcs))
 	// number of replicas per dc
@@ -211,8 +212,15 @@ func (n *networkTopology) replicaMap(tokenRing *tokenRing) tokenRingReplicas {
 	// dc -> racks
 	seenDCRacks := make(map[string]map[string]struct{}, len(n.dcs))
 
-	for _, h := range tokenRing.hosts {
+	seen := make(map[*HostInfo]int, len(tokenRing.hosts))
+	for _, th := range tokenRing.tokens {
+		h := th.host
+		if _, ok := seen[h]; ok {
+			continue
+		}
+		seen[h] = 0
 		dc := h.DataCenter()
+		hostsInDC[dc]++
 		rack := h.Rack()
 
 		racks, ok := dcRacks[dc]
@@ -232,10 +240,13 @@ func (n *networkTopology) replicaMap(tokenRing *tokenRing) tokenRingReplicas {
 	replicaRing := make(tokenRingReplicas, 0, len(tokens))
 
 	var totalRF int
-	for _, rf := range n.dcs {
-		totalRF += rf
+	for dc, rf := range n.dcs {
+		// Stop once all available replicas are selected, even if a DC is
+		// absent or has fewer distinct hosts than its replication factor.
+		totalRF += min(rf, hostsInDC[dc])
 	}
 
+	// A nonzero token generation reuses the visited-host map for each replica set.
 	for i, th := range tokenRing.tokens {
 		if rf := n.dcs[th.host.DataCenter()]; rf == 0 {
 			// skip this token since no replica in this datacenter.
@@ -255,7 +266,6 @@ func (n *networkTopology) replicaMap(tokenRing *tokenRing) tokenRingReplicas {
 
 		replicas := make([]*HostInfo, 0, totalRF)
 		for j := 0; j < len(tokens) && (len(replicas) < totalRF && !n.haveRF(replicasInDC)); j++ {
-			// TODO: ensure we dont add the same host twice
 			p := i + j
 			if p >= len(tokens) {
 				p -= len(tokens)
@@ -280,6 +290,11 @@ func (n *networkTopology) replicaMap(tokenRing *tokenRing) tokenRingReplicas {
 				// dont know about this rack
 				continue
 			}
+
+			if seen[h] == i+1 {
+				continue
+			}
+			seen[h] = i + 1
 
 			racks := seenDCRacks[dc]
 			if _, ok := racks[rack]; ok && len(racks) == len(dcRacks[dc]) {
