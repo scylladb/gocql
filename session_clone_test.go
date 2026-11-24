@@ -88,7 +88,7 @@ func TestExecutionCloneCarriesV5Options(t *testing.T) {
 	})
 
 	t.Run("Batch/queryForSpeculativeExecution", func(t *testing.T) {
-		b := &Batch{routingInfo: &queryRoutingInfo{}, metrics: newQueryMetrics()}
+		b := &Batch{routingInfo: &batchRoutingInfo{}, metrics: newQueryMetrics()}
 		b.SetKeyspace("ks_override").WithNowInSeconds(now)
 
 		clone, ok := queryForSpeculativeExecution(b, newQueryMetrics()).(*Batch)

@@ -1219,7 +1219,7 @@ func TestBatchObserverDeprecatedMetricsIncludeManualHostUpdates(t *testing.T) {
 		) {
 			observedBatch, observed = batch, true
 		}),
-		routingInfo: &queryRoutingInfo{},
+		routingInfo: &batchRoutingInfo{},
 		Entries: []BatchEntry{
 			{Stmt: "INSERT INTO tbl (k, v) VALUES (?, ?)", Args: []any{1, "v"}},
 		},
@@ -1457,7 +1457,7 @@ func TestBatchObserverAttemptMetricsAndDeprecatedMetrics(t *testing.T) {
 		) {
 			observedBatch, observed = batch, true
 		}),
-		routingInfo: &queryRoutingInfo{},
+		routingInfo: &batchRoutingInfo{},
 		Entries: []BatchEntry{
 			{Stmt: "INSERT INTO tbl (k, v) VALUES (?, ?)", Args: []any{1, "v"}},
 		},
@@ -1501,7 +1501,7 @@ func TestBatchObserverAttemptMetricsAreCumulative(t *testing.T) {
 		) {
 			observations = append(observations, batch)
 		}),
-		routingInfo: &queryRoutingInfo{},
+		routingInfo: &batchRoutingInfo{},
 	}
 	start := time.Unix(0, 200)
 
@@ -2705,7 +2705,7 @@ func TestIterWarningHandler(t *testing.T) {
 			host:   host,
 		}).bindWarningHandler(&Batch{
 			context:     context.Background(),
-			routingInfo: &queryRoutingInfo{},
+			routingInfo: &batchRoutingInfo{},
 			metrics:     newQueryMetrics(),
 			rt:          &SimpleRetryPolicy{NumRetries: 0},
 			spec:        NonSpeculativeExecution{},
@@ -2722,7 +2722,7 @@ func TestIterWarningHandler(t *testing.T) {
 		handler := &recordingWarningHandler{}
 		batch := &Batch{
 			context:     context.Background(),
-			routingInfo: &queryRoutingInfo{},
+			routingInfo: &batchRoutingInfo{},
 			metrics:     newQueryMetrics(),
 			rt:          &SimpleRetryPolicy{NumRetries: 0},
 			spec:        NonSpeculativeExecution{},
@@ -3542,7 +3542,7 @@ func TestQueryForExecutionPreservesConcreteTypes(t *testing.T) {
 	batchAttempts.Store(3)
 	batch := &Batch{
 		metrics:     newQueryMetrics(),
-		routingInfo: &queryRoutingInfo{},
+		routingInfo: &batchRoutingInfo{},
 		Cons:        One,
 	}
 	executionBatch := queryForRetryExecution(batch, batchMetrics)
@@ -3620,7 +3620,7 @@ func TestSpeculativeExecutionViewCapturesObserverPayload(t *testing.T) {
 			batchObserved <- observed
 		}),
 		metrics:     newQueryMetrics(),
-		routingInfo: &queryRoutingInfo{},
+		routingInfo: &batchRoutingInfo{},
 		Entries: []BatchEntry{
 			{Stmt: "old batch", Args: []any{"old value"}},
 		},
@@ -4456,7 +4456,7 @@ func TestBatchAttemptReportsOverrideKeyspaceToObserver(t *testing.T) {
 
 	obs := &keyspaceCapturingBatchObserver{}
 	b := &Batch{
-		routingInfo: &queryRoutingInfo{},
+		routingInfo: &batchRoutingInfo{},
 		metrics:     newQueryMetrics(),
 		observer:    obs,
 	}
@@ -4533,7 +4533,7 @@ func TestQueryRoutingInfoAccessorsConcurrentWithWrite(t *testing.T) {
 
 	t.Run("Batch", func(t *testing.T) {
 		b := &Batch{
-			routingInfo: &queryRoutingInfo{},
+			routingInfo: &batchRoutingInfo{},
 		}
 
 		var wg sync.WaitGroup
@@ -4598,9 +4598,9 @@ func TestSetKeyspaceInvalidatesRoutingInfo(t *testing.T) {
 	})
 
 	t.Run("Batch", func(t *testing.T) {
-		b := &Batch{routingInfo: &queryRoutingInfo{}}
+		b := &Batch{routingInfo: &batchRoutingInfo{}}
 		b.SetKeyspace("ks_a")
-		cached(b.routingInfo)
+		cached(&b.routingInfo.queryRoutingInfo)
 
 		b.SetKeyspace("ks_b")
 
@@ -4634,9 +4634,9 @@ func TestSetKeyspaceInvalidatesRoutingInfo(t *testing.T) {
 	})
 
 	t.Run("Batch/WithContext does not disturb the source", func(t *testing.T) {
-		b := &Batch{routingInfo: &queryRoutingInfo{}}
+		b := &Batch{routingInfo: &batchRoutingInfo{}}
 		b.SetKeyspace("ks_a")
-		cached(b.routingInfo)
+		cached(&b.routingInfo.queryRoutingInfo)
 
 		copied := b.WithContext(context.Background())
 		copied.SetKeyspace("ks_b")
