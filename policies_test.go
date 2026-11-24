@@ -1913,3 +1913,45 @@ func TestPickReturnedHostsStable(t *testing.T) {
 		check(t, policy.Pick(nil), 3)
 	})
 }
+
+func TestHostPolicy_TokenAware_EmptyReplicaMapFallback(t *testing.T) {
+	t.Parallel()
+	const keyspace = "myKeyspace"
+	hosts := []*HostInfo{
+		{hostId: tUUID(0), connectAddress: net.IPv4(10, 0, 0, 1), dataCenter: "local"},
+		{hostId: tUUID(1), connectAddress: net.IPv4(10, 0, 0, 2), dataCenter: "remote", tokens: []string{"05"}},
+	}
+	ring, err := newTokenRing("OrderedPartitioner", hosts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, known := range []bool{true, false} {
+		name := "missing_map"
+		if known {
+			name = "known_empty_map"
+		}
+		t.Run(name, func(t *testing.T) {
+			fallback := DCAwareRoundRobinPolicy("local")
+			for _, host := range hosts {
+				fallback.AddHost(host)
+			}
+			policy := TokenAwareHostPolicy(fallback, NonLocalReplicasFallback(), DontShuffleReplicas()).(*tokenAwareHostPolicy)
+			replicas := make(map[string]tokenRingReplicas)
+			if known {
+				replicas[keyspace] = (&networkTopology{dcs: map[string]int{"other1": 1, "other2": 1}}).replicaMap(ring)
+			}
+			policy.metadata.Store(&clusterMeta{tokenRing: ring, replicas: replicas})
+			query := &Query{routingInfo: &queryRoutingInfo{}}
+			query.getKeyspace = func() string { return keyspace }
+			query.RoutingKey([]byte("01"))
+			iter := policy.Pick(query)
+			first, second := 0, 1
+			if !known {
+				first, second = 1, 0
+			}
+			expectHosts(t, "first host", iter, tID(first))
+			expectHosts(t, "second host", iter, tID(second))
+			expectNoMoreHosts(t, iter)
+		})
+	}
+}
