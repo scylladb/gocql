@@ -366,3 +366,156 @@ func TestTokenRingReplicas_ReplicasForInt64_MismatchedTokenTypePanicsLikeReplica
 	mustPanic(t, "replicasFor", func() { replicas.replicasFor(int64Token(50)) })
 	mustPanic(t, "replicasForInt64", func() { replicas.replicasForInt64(int64Token(50)) })
 }
+
+func TestPlacementStrategy_NetworkStrategyVnodes(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		dcs    []string
+		racks  []string
+		owners []int
+		rf     map[string]int
+		want   [][]int
+	}{
+		{
+			name:   "single rack",
+			dcs:    []string{"dc1", "dc1", "dc1"},
+			racks:  []string{"r1", "r1", "r1"},
+			owners: []int{0, 0, 1, 2},
+			rf:     map[string]int{"dc1": 3},
+		},
+		{
+			name:   "repeated skipped hosts",
+			dcs:    []string{"dc1", "dc1", "dc1"},
+			racks:  []string{"r1", "r1", "r2"},
+			owners: []int{0, 0, 1, 1, 2},
+			rf:     map[string]int{"dc1": 3},
+			want:   [][]int{{0, 2, 1}, {0, 2, 1}, {1, 2, 0}, {1, 2, 0}, {2, 0, 1}},
+		},
+		{
+			name:   "multiple datacenters",
+			dcs:    []string{"dc1", "dc1", "dc1", "dc2", "dc2", "dc2"},
+			racks:  []string{"r1", "r1", "r2", "r1", "r1", "r2"},
+			owners: []int{0, 0, 3, 3, 1, 1, 4, 4, 2, 5},
+			rf:     map[string]int{"dc1": 3, "dc2": 3},
+		},
+		{
+			name:   "tokenless host in another rack",
+			dcs:    []string{"dc1", "dc1", "dc1"},
+			racks:  []string{"r1", "r1", "r2"},
+			owners: []int{0, 0, 1, 1},
+			rf:     map[string]int{"dc1": 3},
+		},
+		{
+			name:   "absent datacenter",
+			dcs:    []string{"dc1", "dc1", "dc1"},
+			racks:  []string{"r1", "r1", "r2"},
+			owners: []int{0, 0, 1, 1, 2},
+			rf:     map[string]int{"dc1": 2, "dc2": 3},
+			want:   [][]int{{0, 2}, {0, 2}, {1, 2}, {1, 2}, {2, 0}},
+		},
+		{
+			name:   "replication factor exceeds hosts",
+			dcs:    []string{"dc1", "dc1", "dc1"},
+			racks:  []string{"r1", "r1", "r2"},
+			owners: []int{0, 0, 1, 1, 2},
+			rf:     map[string]int{"dc1": 5},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			hosts := make([]*HostInfo, len(test.dcs))
+			hostsInDC := make(map[string]int)
+			for i, dc := range test.dcs {
+				hosts[i] = &HostInfo{hostId: tUUID(i), dataCenter: dc, rack: test.racks[i]}
+			}
+			tokens := make([]hostToken, len(test.owners))
+			owners := make(map[int]bool)
+			for i, owner := range test.owners {
+				if !owners[owner] {
+					hostsInDC[test.dcs[owner]]++
+					owners[owner] = true
+				}
+				tokens[i] = hostToken{token: intToken(i), host: hosts[owner]}
+			}
+
+			replicas := (&networkTopology{dcs: test.rf}).replicaMap(&tokenRing{hosts: hosts, tokens: tokens})
+			if len(replicas) != len(tokens) {
+				t.Fatalf("expected %d token ranges, got %d", len(tokens), len(replicas))
+			}
+			for i, replica := range replicas {
+				if test.want != nil {
+					want := test.want[i]
+					if len(replica.hosts) != len(want) {
+						t.Fatalf("token %v: expected %d replicas, got %d", replica.token, len(want), len(replica.hosts))
+					}
+					for j, owner := range want {
+						if replica.hosts[j] != hosts[owner] {
+							t.Fatalf("token %v: replica %d: expected host %d, got %v", replica.token, j, owner, replica.hosts[j].HostID())
+						}
+					}
+				}
+				if replica.hosts[0] != tokens[i].host {
+					t.Fatalf("token %v: first replica is not its owner", replica.token)
+				}
+				seen := make(map[*HostInfo]bool)
+				counts := make(map[string]int)
+				for _, host := range replica.hosts {
+					if seen[host] {
+						t.Fatalf("token %v: duplicate replica %v", replica.token, host.HostID())
+					}
+					seen[host] = true
+					counts[host.DataCenter()]++
+				}
+				for dc, rf := range test.rf {
+					want := rf
+					if hostsInDC[dc] < want {
+						want = hostsInDC[dc]
+					}
+					if counts[dc] != want {
+						t.Fatalf("token %v: expected %d replicas in %s, got %d", replica.token, want, dc, counts[dc])
+					}
+				}
+			}
+		})
+	}
+}
+
+func BenchmarkNetworkTopologyReplicaMap(b *testing.B) {
+	hosts := make([]*HostInfo, 32)
+	for i := range hosts {
+		dc := "dc2"
+		if i < 2 {
+			dc = "dc1"
+		}
+		hosts[i] = &HostInfo{hostId: tUUID(i), dataCenter: dc, rack: "r1"}
+	}
+	tokens := make([]hostToken, len(hosts)*256)
+	for i := range tokens {
+		tokens[i] = hostToken{token: intToken(i), host: hosts[i%len(hosts)]}
+	}
+	ring := &tokenRing{hosts: hosts, tokens: tokens}
+	for _, test := range []struct {
+		name      string
+		dcs       map[string]int
+		tokenless bool
+	}{
+		{"healthy", map[string]int{"dc1": 2, "dc2": 3}, false},
+		{"insufficient_hosts", map[string]int{"dc1": 3, "dc2": 3}, false},
+		{"absent_datacenter", map[string]int{"dc2": 3, "dc3": 3}, false},
+		{"tokenless_host", map[string]int{"dc1": 3, "dc2": 3}, true},
+	} {
+		b.Run(test.name, func(b *testing.B) {
+			ring := *ring
+			if test.tokenless {
+				ring.hosts = append(append([]*HostInfo(nil), hosts...), &HostInfo{hostId: tUUID(32), dataCenter: "dc1", rack: "r2"})
+			}
+			strategy := &networkTopology{dcs: test.dcs}
+			b.ReportAllocs()
+			for b.Loop() {
+				strategy.replicaMap(&ring)
+			}
+		})
+	}
+}
