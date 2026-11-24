@@ -28,6 +28,161 @@ type fakeControlConn struct {
 	iter      *Iter
 }
 
+type blockingClientRoutesControl struct {
+	fakeControlConn
+	entered  chan struct{}
+	release  chan struct{}
+	finished chan struct{}
+}
+
+func (c *blockingClientRoutesControl) query(string, ...any) *Iter {
+	close(c.entered)
+	defer close(c.finished)
+	select {
+	case <-c.release:
+		return &Iter{}
+	case <-time.After(5 * time.Second):
+		return &Iter{err: errors.New("test query was not released")}
+	}
+}
+
+func waitClientRoutesTest(t *testing.T, done <-chan struct{}, operation string) bool {
+	t.Helper()
+	select {
+	case <-done:
+		return true
+	case <-time.After(time.Second):
+		t.Errorf("timed out waiting for %s", operation)
+		return false
+	}
+}
+
+func TestClientRoutesSyncStopsPendingUpdate(t *testing.T) {
+	h := NewClientRoutesAddressTranslator(ClientRoutesConfig{}, nil, false, nopLogger{})
+	done := make(chan error, 1)
+	finished := make(chan struct{})
+	go func() {
+		defer close(finished)
+		done <- h.updateHostPortMappingSync(updateTask{})
+	}()
+	var task updateTask
+	select {
+	case task = <-h.updateTasks:
+	case <-time.After(time.Second):
+		t.Fatal("update was not queued")
+	}
+	defer func() {
+		task.result <- errors.New("test cleanup")
+		waitClientRoutesTest(t, finished, "synchronous update cleanup")
+	}()
+	h.Stop()
+	select {
+	case err := <-done:
+		if err == nil || err.Error() != "client routes handler stopped" {
+			t.Fatalf("expected stopped error, got %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("queued update did not return after Stop")
+	}
+}
+
+func TestClientRoutesInitializeAfterStop(t *testing.T) {
+	h := NewClientRoutesAddressTranslator(ClientRoutesConfig{}, nil, false, nopLogger{})
+	h.Stop()
+	if err := h.Initialize(&Session{}); err == nil || err.Error() != "client routes handler stopped" {
+		t.Fatalf("expected stopped error, got %v", err)
+	}
+	h.Stop()
+}
+
+func TestClientRoutesStopDuringInitialize(t *testing.T) {
+	bus := eventbus.New[events.Event](eventbus.EventBusConfig{}, nil)
+	if err := bus.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer bus.Stop()
+	c := &blockingClientRoutesControl{
+		entered: make(chan struct{}), release: make(chan struct{}), finished: make(chan struct{}),
+	}
+	h := NewClientRoutesAddressTranslator(ClientRoutesConfig{
+		Endpoints: ClientRoutesEndpointList{{ConnectionID: "c1"}},
+	}, nil, false, nopLogger{})
+	stopped := make(chan struct{})
+	var stopOnce sync.Once
+	stop := func() {
+		stopOnce.Do(func() {
+			go func() { h.Stop(); close(stopped) }()
+		})
+	}
+	initialized := make(chan struct{})
+	defer func() {
+		close(c.release)
+		stop()
+		waitClientRoutesTest(t, stopped, "handler shutdown cleanup")
+		waitClientRoutesTest(t, initialized, "initialization cleanup")
+		select {
+		case <-c.entered:
+			waitClientRoutesTest(t, c.finished, "query cleanup")
+		default:
+		}
+	}()
+	done := make(chan error, 1)
+	go func() {
+		defer close(initialized)
+		done <- h.Initialize(&Session{control: c, eventBus: bus})
+	}()
+	select {
+	case <-c.entered:
+	case <-time.After(time.Second):
+		t.Fatal("initial refresh did not start")
+	}
+	stop()
+	if !waitClientRoutesTest(t, stopped, "handler shutdown while query is blocked") {
+		return
+	}
+	select {
+	case err := <-done:
+		if err == nil || err.Error() != "client routes handler stopped" {
+			t.Fatalf("expected stopped error, got %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Initialize waited for the in-flight query after Stop")
+	}
+	if count := bus.SubscriberCount(); count != 0 {
+		t.Fatalf("stopped handler retained %d subscribers", count)
+	}
+}
+
+func TestClientRoutesConcurrentInitializeStop(t *testing.T) {
+	for i := 0; i < 100; i++ {
+		bus := eventbus.New[events.Event](eventbus.EventBusConfig{}, nil)
+		h := NewClientRoutesAddressTranslator(ClientRoutesConfig{}, nil, false, nopLogger{})
+		var wg sync.WaitGroup
+		start := make(chan struct{})
+		for j := 0; j < 4; j++ {
+			wg.Add(1)
+			go func(initialize bool) {
+				defer wg.Done()
+				<-start
+				if initialize {
+					_ = h.Initialize(&Session{eventBus: bus})
+				} else {
+					h.Stop()
+				}
+			}(j < 2)
+		}
+		close(start)
+		finished := make(chan struct{})
+		go func() { wg.Wait(); close(finished) }()
+		if !waitClientRoutesTest(t, finished, "concurrent lifecycle calls") {
+			return
+		}
+		if count := bus.SubscriberCount(); count != 0 {
+			t.Fatalf("stopped handler retained %d subscribers", count)
+		}
+	}
+}
+
 func (f *fakeControlConn) getConn() *connHost          { return nil }
 func (f *fakeControlConn) awaitSchemaAgreement() error { return nil }
 func (f *fakeControlConn) query(statement string, values ...any) *Iter {

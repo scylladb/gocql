@@ -285,6 +285,7 @@ type ClientRoutesHandler struct {
 	updateTasks   chan updateTask
 	closeChan     chan struct{}
 	cfg           ClientRoutesConfig
+	lifecycleMu   sync.Mutex
 	pickTLSPorts  bool
 	initialized   bool
 }
@@ -350,7 +351,15 @@ type updateTask struct {
 }
 
 func (p *ClientRoutesHandler) Initialize(s *Session) error {
+	p.lifecycleMu.Lock()
+	select {
+	case <-p.closeChan:
+		p.lifecycleMu.Unlock()
+		return errors.New("client routes handler stopped")
+	default:
+	}
 	if p.initialized {
+		p.lifecycleMu.Unlock()
 		return errors.New("already initialized")
 	}
 	p.initialized = true
@@ -366,16 +375,29 @@ func (p *ClientRoutesHandler) Initialize(s *Session) error {
 	})
 	p.startUpdateWorker()
 	p.startReadingEvents(connectionIDs)
+	p.lifecycleMu.Unlock()
 	err := p.updateHostPortMappingSync(updateTask{connectionIDs: connectionIDs})
 	if err != nil {
+		select {
+		case <-p.closeChan:
+			return err
+		default:
+		}
 		p.log.Printf("error updating host ports: %v\n", err)
 	}
 	return nil
 }
 
 func (p *ClientRoutesHandler) Stop() {
+	p.lifecycleMu.Lock()
+	defer p.lifecycleMu.Unlock()
 	if p.closeChan != nil {
-		close(p.closeChan)
+		select {
+		case <-p.closeChan:
+			return
+		default:
+			close(p.closeChan)
+		}
 	}
 	if p.sub != nil {
 		p.sub.Stop()
@@ -400,7 +422,12 @@ func (p *ClientRoutesHandler) updateHostPortMappingSync(task updateTask) error {
 	case <-p.closeChan:
 		return errors.New("client routes handler stopped")
 	}
-	return <-task.result
+	select {
+	case err := <-task.result:
+		return err
+	case <-p.closeChan:
+		return errors.New("client routes handler stopped")
+	}
 }
 
 func (p *ClientRoutesHandler) startReadingEvents(connectionIDs []string) {
