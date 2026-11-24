@@ -25,6 +25,7 @@
 package gocql
 
 import (
+	"errors"
 	"fmt"
 	"math/rand"
 	"net"
@@ -286,6 +287,27 @@ type hostConnPool struct {
 	filling bool
 }
 
+var errPoolClosed = fmt.Errorf("gocql: connection pool closed during connect")
+
+type connRejectedError struct{ error }
+
+func (e connRejectedError) Unwrap() error { return e.error }
+
+func isHostFailure(err error) bool {
+	if err == nil || errors.Is(err, errPoolClosed) {
+		return false
+	}
+	var rejected connRejectedError
+	return !errors.As(err, &rejected)
+}
+
+func preferredPoolConnectError(current, next error) error {
+	if current == nil || isHostFailure(next) {
+		return next
+	}
+	return current
+}
+
 func (pool *hostConnPool) String() string {
 	pool.mu.RLock()
 	defer pool.mu.RUnlock()
@@ -402,8 +424,8 @@ func (pool *hostConnPool) Close() {
 	pool.connPicker.Close()
 }
 
-// Fill the connection pool
-func (pool *hostConnPool) fill() {
+// Fill the pool; the returned channel joins only the asynchronous refill worker.
+func (pool *hostConnPool) fill() (done <-chan struct{}) {
 	pool.mu.RLock()
 	// avoid filling a closed pool, or concurrent filling
 	if pool.closed || pool.filling {
@@ -452,7 +474,7 @@ func (pool *hostConnPool) fill() {
 			return
 		}
 		// notify the session that this node is connected
-		go pool.session.handleNodeConnected(pool.host)
+		go pool.notifyNodeConnected(true)
 
 		// filled one, let's reload it to see if it has changed
 		pool.mu.RLock()
@@ -461,24 +483,40 @@ func (pool *hostConnPool) fill() {
 	}
 
 	// fill the rest of the pool asynchronously
+	finished := make(chan struct{})
 	go func() {
-		err := pool.connectMany(fillCount)
+		defer close(finished)
+		accepted, err := pool.connectMany(fillCount)
 
 		// mark the end of filling
 		pool.fillingStopped(err)
 
-		if err == nil && startCount > 0 {
+		if !isHostFailure(err) && startCount > 0 {
 			// notify the session that this node is connected again
-			go pool.session.handleNodeConnected(pool.host)
+			pool.notifyNodeConnected(accepted)
 		}
 	}()
+	return finished
+}
+
+func (pool *hostConnPool) notifyNodeConnected(accepted bool) {
+	pool.mu.RLock()
+	picker := pool.connPicker
+	pool.mu.RUnlock()
+	count, _ := picker.Size()
+	if accepted && count > 0 && !pool.IsClosed() {
+		pool.session.handleNodeConnected(pool.host)
+	}
 }
 
 func (pool *hostConnPool) fill_debounce() {
-	pool.debouncer.Debounce(pool.fill)
+	pool.debouncer.Debounce(func() { pool.fill() })
 }
 
 func (pool *hostConnPool) logConnectErr(err error) {
+	if err != nil && !isHostFailure(err) {
+		return
+	}
 	if opErr, ok := err.(*net.OpError); ok && (opErr.Op == "dial" || opErr.Op == "read") {
 		// connection refused
 		// these are typical during a node outage so avoid log spam.
@@ -493,7 +531,7 @@ func (pool *hostConnPool) logConnectErr(err error) {
 
 // transition back to a not-filling state.
 func (pool *hostConnPool) fillingStopped(err error) {
-	if err != nil {
+	if isHostFailure(err) {
 		if debug.Enabled {
 			pool.logger.Printf("gocql: filling stopped %q: %v\n", pool.host.ConnectAddress(), err)
 		}
@@ -506,6 +544,7 @@ func (pool *hostConnPool) fillingStopped(err error) {
 	pool.mu.Lock()
 	pool.filling = false
 	count, _ := pool.connPicker.Size()
+	closed := pool.closed
 	host := pool.host
 	port := pool.host.Port()
 	pool.mu.Unlock()
@@ -515,7 +554,7 @@ func (pool *hostConnPool) fillingStopped(err error) {
 	if debug.Enabled {
 		pool.logger.Printf("gocql: conns of pool after stopped %q: %v\n", host.ConnectAddress(), count)
 	}
-	if err != nil && count == 0 {
+	if isHostFailure(err) && count == 0 && !closed {
 		if pool.session.cfg.ConvictionPolicy.AddFailure(err, host) {
 			pool.session.handleNodeDown(host.ConnectAddress(), port)
 		}
@@ -523,14 +562,15 @@ func (pool *hostConnPool) fillingStopped(err error) {
 }
 
 // connectMany creates new connections concurrent.
-func (pool *hostConnPool) connectMany(count int) error {
+func (pool *hostConnPool) connectMany(count int) (bool, error) {
 	if count == 0 {
-		return nil
+		return false, nil
 	}
 	var (
 		wg         sync.WaitGroup
 		mu         sync.Mutex
 		connectErr error
+		accepted   bool
 	)
 	wg.Add(count)
 	for i := 0; i < count; i++ {
@@ -538,17 +578,19 @@ func (pool *hostConnPool) connectMany(count int) error {
 			defer wg.Done()
 			err := pool.connect()
 			pool.logConnectErr(err)
+			mu.Lock()
 			if err != nil {
-				mu.Lock()
-				connectErr = err
-				mu.Unlock()
+				connectErr = preferredPoolConnectError(connectErr, err)
+			} else {
+				accepted = true
 			}
+			mu.Unlock()
 		}()
 	}
 	// wait for all connections are done
 	wg.Wait()
 
-	return connectErr
+	return accepted, connectErr
 }
 
 // create a new connection to the host and add it to the pool
@@ -604,7 +646,7 @@ func (pool *hostConnPool) connect() (err error) {
 	if pool.closed {
 		pool.mu.Unlock()
 		conn.Close()
-		return nil
+		return errPoolClosed
 	}
 
 	// lazily initialize the connPicker when we know the required type
@@ -615,7 +657,7 @@ func (pool *hostConnPool) connect() (err error) {
 		if debug.Enabled {
 			pool.logger.Printf("gocql: pool connection was not added to the pool: %w", err)
 		}
-		return nil
+		return connRejectedError{err}
 	}
 	pool.mu.Unlock()
 	conn.finalizeConnection()
