@@ -3053,6 +3053,16 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) (iter *Iter) {
 		entry := &batch.Entries[i]
 		b := &req.statements[i]
 
+		if i == 0 && len(entry.Args) == 0 && entry.binding == nil {
+			batch.routingInfo.mu.RLock()
+			missing := batch.routingInfo.batchValueCount
+			batch.routingInfo.mu.RUnlock()
+			if missing != nil && missing.statement == entry.Stmt {
+				putBatchQueryValues(req.statements)
+				return &Iter{err: fmt.Errorf("gocql: batch statement %d expected %d values send got 0", i, missing.expected)}
+			}
+		}
+
 		if len(entry.Args) > 0 || entry.binding != nil {
 			info, err := c.prepareStatement(batch.Context(), entry.Stmt, batch.trace, usedKeyspace, batch.GetRequestTimeout())
 			if err != nil {

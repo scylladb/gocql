@@ -1030,6 +1030,7 @@ func (s *Session) routingKeyInfo(ctx context.Context, stmt string, keyspace stri
 			indexes:     info.request.pkeyColumns,
 			types:       types,
 			columns:     info.request.columns,
+			valueCount:  info.request.actualColCount,
 			lwt:         info.request.lwt,
 			partitioner: partitioner,
 			keyspace:    keyspace,
@@ -1066,6 +1067,7 @@ func (s *Session) routingKeyInfo(ctx context.Context, stmt string, keyspace stri
 		indexes:     make([]int, size),
 		types:       make([]TypeInfo, size),
 		columns:     info.request.columns,
+		valueCount:  info.request.actualColCount,
 		lwt:         info.request.lwt,
 		partitioner: partitioner,
 		keyspace:    keyspace,
@@ -3356,14 +3358,25 @@ func (n *nextIter) fetch() *Iter {
 	return next
 }
 
+type batchRoutingValueCount struct {
+	statement string
+	expected  int
+}
+
+type batchRoutingInfo struct {
+	// Set only when routing knows the first batch entry is missing all values.
+	batchValueCount *batchRoutingValueCount
+	queryRoutingInfo
+}
+
 type Batch struct {
 	context  context.Context
 	rt       RetryPolicy
 	spec     SpeculativeExecutionPolicy
 	trace    Tracer
 	observer BatchObserver
-	// routingInfo is a pointer because Query can be copied and copyable struct can't hold a mutex.
-	routingInfo       *queryRoutingInfo
+	// routingInfo is a pointer because Batch can be copied and copyable struct can't hold a mutex.
+	routingInfo       *batchRoutingInfo
 	nowInSeconds      *int
 	metrics           *queryMetrics
 	cancelBatch       func()
@@ -3414,7 +3427,7 @@ func (s *Session) Batch(typ BatchType) *Batch {
 		defaultTimestamp: s.cfg.DefaultTimestamp,
 		metrics:          newQueryMetrics(),
 		spec:             defaultNonSpecExec,
-		routingInfo:      &queryRoutingInfo{},
+		routingInfo:      &batchRoutingInfo{},
 		requestTimeout:   s.cfg.Timeout,
 	}
 	batch.metricsOwner.self = &batch.metricsOwner
@@ -3693,6 +3706,10 @@ func (b *Batch) GetRoutingKey() ([]byte, error) {
 		b.routingInfo.mu.Lock()
 		b.routingInfo.lwt = routingKeyInfo.lwt
 		b.routingInfo.partitioner = routingKeyInfo.partitioner
+		b.routingInfo.batchValueCount = nil
+		if len(entry.Args) == 0 && routingKeyInfo.valueCount > 0 {
+			b.routingInfo.batchValueCount = &batchRoutingValueCount{entry.Stmt, routingKeyInfo.valueCount}
+		}
 		b.routingInfo.mu.Unlock()
 	}
 
@@ -3723,6 +3740,9 @@ func createRoutingKey(routingKeyInfo *routingKeyInfo, values []any) ([]byte, err
 	}
 
 	if len(routingKeyInfo.indexes) == 1 {
+		if len(values) <= routingKeyInfo.indexes[0] {
+			return nil, fmt.Errorf("gocql: expected %d values send got %d", len(routingKeyInfo.columns), len(values))
+		}
 		// single column routing key
 		routingKey, err := Marshal(
 			routingKeyInfo.types[0],
@@ -3741,6 +3761,9 @@ func createRoutingKey(routingKeyInfo *routingKeyInfo, values []any) ([]byte, err
 	var backing [256]byte
 	buf := backing[:0]
 	for i := range routingKeyInfo.indexes {
+		if len(values) <= routingKeyInfo.indexes[i] {
+			return nil, fmt.Errorf("gocql: expected %d values send got %d", len(routingKeyInfo.columns), len(values))
+		}
 		encoded, err := Marshal(
 			routingKeyInfo.types[i],
 			unwrapNamedValue(values[routingKeyInfo.indexes[i]]),
@@ -3794,7 +3817,7 @@ func (b *Batch) SetKeyspace(keyspace string) *Batch {
 	// caches the partitioner (and lwt) it resolved for the previous override, and
 	// Batch.Partitioner()/IsLWT() serve that cache. Detached for the same reasons
 	// as Query.SetKeyspace, including the sharing through Batch.WithContext.
-	b.routingInfo = &queryRoutingInfo{}
+	b.routingInfo = &batchRoutingInfo{}
 	return b
 }
 
@@ -3857,6 +3880,7 @@ type routingKeyInfo struct {
 	indexes     []int
 	types       []TypeInfo
 	columns     []ColumnInfo // bind markers, used to place NamedValues
+	valueCount  int
 	lwt         bool
 }
 

@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"net"
 	"slices"
 	"strings"
@@ -668,6 +669,123 @@ func TestRoutingKeyInfoFromTableMetadata(t *testing.T) {
 		}
 		if routingKeyInfoCached(s, "", routingInsertNoMeta) {
 			t.Fatal("the error was cached")
+		}
+	})
+}
+
+func TestRoutingKeyValueCount(t *testing.T) {
+	t.Parallel()
+
+	srv := newBatchTestServer(t, routingPrepared, nil, nil)
+	cfg := testCluster(protoVersion4, srv.Address)
+	cfg.PoolConfig.HostSelectionPolicy = TokenAwareHostPolicy(RoundRobinHostPolicy())
+	cfg.ConnectTimeout = 5 * time.Second
+	cfg.Timeout = 5 * time.Second
+	s, err := cfg.CreateSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(s.Close)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	t.Cleanup(cancel)
+
+	for _, stmt := range []string{routingInsertPerCol, routingInsertGlobal} {
+		expected := len(routingPrepared[stmt].cols)
+		for count := 0; count <= expected+1; count++ {
+			if count == expected {
+				continue
+			}
+			t.Run(fmt.Sprintf("%dMarkers/%dValues", expected, count), func(t *testing.T) {
+				values := make([]any, count)
+				for i := range values {
+					values[i] = int32(i)
+				}
+				want := fmt.Sprintf("gocql: expected %d values send got %d", expected, count)
+				var wantKey []byte
+				if expected == 2 && count >= 1 {
+					wantKey = int32Bytes(0)
+				} else if expected == 3 && count >= 3 {
+					wantKey = append(encodeRoutingKeyComponent(int32Bytes(2)), encodeRoutingKeyComponent(int32Bytes(0))...)
+				}
+				checkKey := func(key []byte, err error) {
+					t.Helper()
+					if wantKey != nil {
+						if err != nil || !bytes.Equal(key, wantKey) {
+							t.Fatalf("routing key = %x, %v; want %x, nil", key, err, wantKey)
+						}
+					} else if key != nil || err == nil || err.Error() != want {
+						t.Fatalf("routing key = %x, %v; want nil, %q", key, err, want)
+					}
+				}
+				q := s.Query(stmt, values...).WithContext(ctx)
+				checkKey(q.GetRoutingKey())
+				if err := q.Exec(); err == nil || !strings.Contains(err.Error(), want) {
+					t.Fatalf("query execution error = %v; want %q", err, want)
+				}
+				b := s.Batch(LoggedBatch).WithContext(ctx)
+				b.Query(stmt, values...)
+				checkKey(b.GetRoutingKey())
+				batchWant := fmt.Sprintf("batch statement 0 expected %d values send got %d", expected, count)
+				if err := b.Exec(); err == nil || !strings.Contains(err.Error(), batchWant) {
+					t.Fatalf("batch execution error = %v; want %q", err, batchWant)
+				}
+			})
+		}
+	}
+	if got := len(srv.received()); got != 0 {
+		t.Fatalf("invalid batches sent to server = %d; want 0", got)
+	}
+	t.Run("CallbackWithRoutingValues", func(t *testing.T) {
+		called := false
+		srv.setExecuteHook(func(id uint64, _ *framer, stream int, resp *framer) bool {
+			if id != uint64(routingPrepared[routingInsertPerCol].id) {
+				return false
+			}
+			writeVoidResult(resp, stream)
+			return true
+		})
+		q := s.Bind(routingInsertPerCol, func(*QueryInfo) ([]any, error) {
+			called = true
+			return []any{int32(7), int32(8)}, nil
+		}).Bind(int32(7)).WithContext(ctx)
+		defer q.Release()
+		if key, err := q.GetRoutingKey(); err != nil || !bytes.Equal(key, int32Bytes(7)) {
+			t.Fatalf("callback query routing key = %x, %v; want 00000007, nil", key, err)
+		}
+		if err := q.Exec(); err != nil || !called {
+			t.Fatalf("callback query execution = %v, callback called = %t", err, called)
+		}
+	})
+	t.Run("ReusedBatch", func(t *testing.T) {
+		b := s.Batch(LoggedBatch).WithContext(ctx)
+		b.Query(routingInsertPerCol)
+		if _, err := b.GetRoutingKey(); err == nil {
+			t.Fatal("missing values should fail routing")
+		}
+		b = b.WithContext(ctx)
+		b.Entries[0].Args = []any{int32(1), int32(2)}
+		if err := b.Exec(); err != nil {
+			t.Fatalf("corrected batch: %v", err)
+		}
+		b.Entries[0].Args = nil
+		if _, err := b.GetRoutingKey(); err == nil {
+			t.Fatal("removed values should fail routing")
+		}
+
+		const literal = "INSERT INTO ks2.tbl2 (a, b) VALUES (1, 2)"
+		b.Entries[0] = BatchEntry{Stmt: literal}
+		conn := s.getConn()
+		if conn == nil {
+			t.Fatal("no connection for raw batch")
+		}
+		if err := conn.executeBatch(ctx, b).Close(); err != nil {
+			t.Fatalf("raw batch after statement replacement: %v", err)
+		}
+		if got := srv.received(); len(got) != 2 || got[1].stmts[0].query != literal {
+			t.Fatalf("received batches = %+v; want corrected and raw batches", got)
+		}
+		if got := srv.prepareCount(literal); got != 0 {
+			t.Fatalf("raw batch PREPARE count = %d; want 0", got)
 		}
 	})
 }
