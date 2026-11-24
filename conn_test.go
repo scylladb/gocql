@@ -37,6 +37,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"math/rand"
 	"net"
 	"os"
@@ -776,6 +777,69 @@ func TestStream0(t *testing.T) {
 		t.Fatal("expected to get an error on stream 0")
 	} else if !strings.HasPrefix(err.Error(), expErr) {
 		t.Fatalf("expected to get error prefix %q got %q", expErr, err.Error())
+	}
+}
+
+func TestOversizedStreamLimitConcurrentResponses(t *testing.T) {
+	for _, limit := range []int{40000, math.MaxInt} {
+		t.Run(fmt.Sprint(limit), func(t *testing.T) {
+			c := &Conn{calls: make(map[int]*callReq), streams: streams.NewLimited(limit), version: protoVersion4, logger: nopLogger{}}
+			c.initFramerCache()
+			calls := make([]*callReq, 1024)
+			var wg sync.WaitGroup
+			wg.Add(len(calls))
+			for i := range calls {
+				go func() {
+					defer wg.Done()
+					stream, ok := c.streams.GetStream()
+					if !ok || stream <= 0 || stream > math.MaxInt16 {
+						t.Errorf("invalid stream %d, ok=%t", stream, ok)
+						return
+					}
+					call := &callReq{streamID: stream, timeout: make(chan struct{}), resp: make(chan callResp, 1)}
+					if err := c.addCall(call); err != nil {
+						t.Error(err)
+						return
+					}
+					calls[i] = call
+				}()
+			}
+			done := make(chan struct{})
+			go func() {
+				wg.Wait()
+				close(done)
+			}()
+			select {
+			case <-done:
+			case <-time.After(segmentTestTimeout):
+				t.Fatal("timed out allocating concurrent streams")
+			}
+			if t.Failed() {
+				t.FailNow()
+			}
+			require.Len(t, c.calls, len(calls))
+			// Route responses in reverse recorded order after all calls are in flight.
+			for i := len(calls) - 1; i >= 0; i-- {
+				call := calls[i]
+				want := fmt.Sprintf("owner-%d", i)
+				f := newFramer(nil, protoVersion4)
+				f.writeHeader(0, frm.OpResult, call.streamID)
+				f.writeInt(frm.ResultKindKeyspace)
+				f.writeString(want)
+				f.buf[0] |= protoDirectionMask
+				require.NoError(t, f.finish())
+				require.NoError(t, c.processFrameSource(context.Background(), frameSource{r: bytes.NewReader(f.buf)}))
+				resp := recvCallResp(t, call)
+				require.NoError(t, resp.err)
+				require.Equal(t, call.streamID, resp.framer.header.Stream)
+				require.Equal(t, int(frm.ResultKindKeyspace), resp.framer.readInt())
+				require.Equal(t, want, resp.framer.readString())
+				resp.framer.Release()
+				require.True(t, c.streams.Clear(call.streamID))
+			}
+			require.Empty(t, c.calls)
+			require.Zero(t, c.streams.InUse())
+		})
 	}
 }
 
