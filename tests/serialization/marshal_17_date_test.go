@@ -101,6 +101,30 @@ func TestMarshalsDate(t *testing.T) {
 					uint32(math.MaxUint32), int32(-1), maxDate.UnixMilli(), maxDate, "5881580-07-11",
 				}.AddVariants(mod.All...),
 			}.Run("max", t, marshal, unmarshal)
+
+			for _, tc := range []struct {
+				name  string
+				value time.Time
+				data  string
+			}{
+				{"before_epoch", time.UnixMilli(-1), "\x7f\xff\xff\xff"},
+				{"before_epoch_submillisecond", time.Unix(0, -1), "\x7f\xff\xff\xff"},
+				{"before_epoch_noon", time.Date(1969, 12, 31, 12, 0, 0, 0, time.UTC), "\x7f\xff\xff\xff"},
+				{"negative_midnight", time.UnixMilli(-86400000), "\x7f\xff\xff\xff"},
+				{"before_negative_midnight", time.UnixMilli(-86400001), "\x7f\xff\xff\xfe"},
+				{"negative_offset", time.Date(1960, 5, 1, 0, 0, 0, 0, time.FixedZone("west", -5*3600)), "\x7f\xff\xf2\x34"},
+				{"positive_offset", time.Date(1969, 12, 31, 0, 0, 0, 0, time.FixedZone("east", 5*3600)), "\x7f\xff\xff\xfe"},
+				{"minimum_date_nonmidnight", zeroDate.Add(time.Millisecond), "\x00\x00\x00\x00"},
+				{"epoch", middleDate, "\x80\x00\x00\x00"},
+				{"after_epoch_noon", time.Date(1970, 1, 1, 12, 0, 0, 0, time.UTC), "\x80\x00\x00\x00"},
+			} {
+				serialization.PositiveSet{
+					Data: []byte(tc.data),
+					Values: mod.Values{
+						tc.value, tc.value.UnixMilli(),
+					}.AddVariants(mod.All...),
+				}.Run(tc.name, t, marshal, nil)
+			}
 		})
 	}
 }

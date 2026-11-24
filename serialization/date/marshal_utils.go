@@ -219,5 +219,9 @@ func encTime(v time.Time) []byte {
 }
 
 func days(v int64) int64 {
-	return v/millisecondsInADay + centerEpoch
+	d := v / millisecondsInADay
+	if v%millisecondsInADay < 0 {
+		d--
+	}
+	return d + centerEpoch
 }
