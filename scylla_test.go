@@ -268,6 +268,62 @@ func TestScyllaConnPickerRemove(t *testing.T) {
 	}
 }
 
+func TestScyllaConnPickerRemoveExcessAndStaleConnections(t *testing.T) {
+	t.Parallel()
+
+	p := scyllaConnPicker{nrShards: 4, excessConnsLimitRate: 10}
+	primary, excess, otherExcess := mockConn(0), mockConn(0), mockConn(0)
+	for _, conn := range []*Conn{primary, excess, otherExcess} {
+		require.NoError(t, p.Put(conn))
+	}
+	backing := p.excessConns
+	p.Remove(excess)
+	require.Same(t, primary, p.conns[0])
+	require.Equal(t, 1, p.GetConnectionCount())
+	require.Equal(t, []*Conn{otherExcess}, p.excessConns)
+	require.Nil(t, backing[len(backing)-1], "removed excess must not remain in the backing array")
+
+	p.Remove(excess)
+	require.Equal(t, 1, p.GetConnectionCount())
+	require.Equal(t, []*Conn{otherExcess}, p.excessConns)
+	p.Remove(primary)
+	require.Zero(t, p.GetConnectionCount())
+	replacement := mockConn(0)
+	require.NoError(t, p.Put(replacement))
+	for _, conn := range []*Conn{primary, mockConn(0), otherExcess} {
+		p.Remove(conn)
+		require.Same(t, replacement, p.conns[0])
+		require.Equal(t, 1, p.GetConnectionCount())
+	}
+	require.Empty(t, p.excessConns)
+	p.Remove(replacement)
+	require.Zero(t, p.GetConnectionCount())
+	require.Nil(t, p.conns[0])
+}
+
+func TestScyllaConnPickerRemoveOutsideCurrentTopology(t *testing.T) {
+	t.Parallel()
+
+	for _, shard := range []int{-1, 2, 7} {
+		t.Run(fmt.Sprint(shard), func(t *testing.T) {
+			primary, stale := mockConn(0), mockConn(shard)
+			stale.scyllaSupported.nrShards = 8
+			p := scyllaConnPicker{
+				nrShards: 2, nrConns: 1, conns: []*Conn{primary, nil},
+				excessConns: []*Conn{stale},
+			}
+			require.NotPanics(t, func() { p.Remove(stale) })
+			require.Same(t, primary, p.conns[0])
+			require.Equal(t, 1, p.GetConnectionCount())
+			require.Empty(t, p.excessConns)
+		})
+	}
+	p := scyllaConnPicker{nrShards: 4}
+	p.Close()
+	require.NotPanics(t, func() { p.Remove(mockConn(0)) })
+	require.Zero(t, p.GetConnectionCount())
+}
+
 func TestScyllaConnPickerShardOf(t *testing.T) {
 	t.Parallel()
 

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"net"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -746,9 +747,16 @@ func (p *scyllaConnPicker) Remove(conn *Conn) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if p.conns[shard] != nil {
+	if shard >= 0 && shard < len(p.conns) && p.conns[shard] == conn {
 		p.conns[shard] = nil
 		p.nrConns--
+		return
+	}
+	for i, excess := range p.excessConns {
+		if excess == conn {
+			p.excessConns = slices.Delete(p.excessConns, i, i+1)
+			break
+		}
 	}
 }
 
