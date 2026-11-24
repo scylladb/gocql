@@ -1280,6 +1280,67 @@ func TestHostPolicy_TokenAware_NetworkStrategy(t *testing.T) {
 	expectNoMoreHosts(t, iter)
 }
 
+func TestHostPolicy_TokenAware_NonLocalReplicasEmptyTier(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name       string
+		localRack  string
+		downLocal  bool
+		downRemote bool
+		first      []int
+	}{
+		{name: "empty earlier tier", localRack: "a", first: []int{0, 1}},
+		{name: "local replica down", localRack: "a", downLocal: true, first: []int{1}},
+		{name: "populated earlier tier", localRack: "b", downLocal: true, first: []int{1}},
+		{name: "populated tiers preserve priority", localRack: "b", first: []int{0, 1}},
+		{name: "remote replica down", localRack: "a", downRemote: true, first: []int{0}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			const keyspace = "replica_tiers"
+			policy := TokenAwareHostPolicy(RackAwareRoundRobinPolicy("local", tc.localRack),
+				NonLocalReplicasFallback(), DontShuffleReplicas())
+			internal := policy.(*tokenAwareHostPolicy)
+			internal.getKeyspaceName = func() string { return keyspace }
+			internal.getKeyspaceMetadata = func(string) (*KeyspaceMetadata, error) {
+				return nil, errors.New("not initialized")
+			}
+			hosts := []*HostInfo{
+				{hostId: tUUID(0), connectAddress: net.IPv4(10, 0, 0, 1), tokens: []string{"10"}, dataCenter: "local", rack: "a"},
+				{hostId: tUUID(1), connectAddress: net.IPv4(10, 0, 0, 2), tokens: []string{"20"}, dataCenter: "remote", rack: "a"},
+				{hostId: tUUID(2), connectAddress: net.IPv4(10, 0, 0, 3), tokens: []string{"30"}, dataCenter: "local", rack: "a"},
+				{hostId: tUUID(3), connectAddress: net.IPv4(10, 0, 0, 4), tokens: []string{"40"}, dataCenter: "remote", rack: "a"},
+			}
+			for _, host := range hosts {
+				policy.AddHost(host)
+			}
+			policy.SetPartitioner("OrderedPartitioner")
+			internal.getKeyspaceMetadata = func(string) (*KeyspaceMetadata, error) {
+				return &KeyspaceMetadata{
+					Name: keyspace, StrategyClass: "NetworkTopologyStrategy",
+					StrategyOptions: map[string]any{"local": 1, "remote": 1},
+				}, nil
+			}
+			policy.KeyspaceChanged(KeyspaceUpdateEvent{Keyspace: keyspace})
+			for i, down := range []bool{tc.downLocal, tc.downRemote} {
+				if down {
+					hosts[i].setState(NodeDown)
+					policy.HostDown(hosts[i])
+				}
+			}
+			query := &Query{routingInfo: &queryRoutingInfo{}}
+			query.getKeyspace = func() string { return keyspace }
+			query.RoutingKey([]byte("05"))
+			iter := policy.Pick(query)
+			for _, i := range tc.first {
+				expectHosts(t, "replicas before fallback", iter, tID(i))
+			}
+			expectHosts(t, "non-replica fallback", iter, tID(2), tID(3))
+			expectNoMoreHosts(t, iter)
+		})
+	}
+}
+
 func TestHostPolicy_RackAwareRR(t *testing.T) {
 	t.Parallel()
 

@@ -1096,14 +1096,14 @@ func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 		}
 
 		if t.nonLocalReplicasFallback {
-			for st.j < len(remote) && st.k < len(remote[st.j]) {
-				h := remote[st.j][st.k]
-				st.k++
-
+			for st.j < len(remote) {
 				if st.k >= len(remote[st.j]) {
 					st.j++
 					st.k = 0
+					continue
 				}
+				h := remote[st.j][st.k]
+				st.k++
 
 				if h.IsUp() {
 					st.used.add(h)
