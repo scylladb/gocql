@@ -82,6 +82,15 @@ func TestDecStringFractionalSeconds(t *testing.T) {
 	}
 }
 
+func TestDecStrLargeMonths(t *testing.T) {
+	// Cover every month remainder near the int32 limits, including the
+	// two-digit month remainders that produce the longest duration strings.
+	for offset := int32(0); offset < 24; offset++ {
+		testDecString(t, math.MinInt32+offset, math.MinInt32, math.MinInt64)
+		testDecString(t, math.MaxInt32-offset, math.MaxInt32, math.MaxInt64)
+	}
+}
+
 func testDecString(t *testing.T, m, d int32, n int64) {
 	t.Helper()
 	expected := getTestString(m, d, n)

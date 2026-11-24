@@ -3,8 +3,8 @@ package duration
 func decString(m, d int32, n int64) string {
 	var neg bool
 	var tmp uint64
-	out := new([50]byte) // max string "-178956970y8mo306783378w2d2562047h47m16.854775808s"
-	pos := 49
+	out := new([51]byte) // max string "-178956969y10mo306783378w2d2562047h47m16.854775808s"
+	pos := len(out) - 1
 	if m < 0 || d < 0 || n < 0 {
 		neg = true
 	}
@@ -29,7 +29,7 @@ func decString(m, d int32, n int64) string {
 		}
 		pos = printMonths(out, tmp, pos)
 	}
-	if pos == 49 {
+	if pos == len(out)-1 {
 		return zeroDuration
 	}
 	if neg {
@@ -39,7 +39,7 @@ func decString(m, d int32, n int64) string {
 	return string(out[pos+1:])
 }
 
-func printMonths(out *[50]byte, m uint64, pos int) int {
+func printMonths(out *[51]byte, m uint64, pos int) int {
 	months := m % 12
 	if months == 0 {
 		m--
@@ -58,7 +58,7 @@ func printMonths(out *[50]byte, m uint64, pos int) int {
 	return pos
 }
 
-func printDays(out *[50]byte, d uint64, pos int) int {
+func printDays(out *[51]byte, d uint64, pos int) int {
 	days := d % 7
 	if days == 0 {
 		d--
@@ -76,7 +76,7 @@ func printDays(out *[50]byte, d uint64, pos int) int {
 	return pos
 }
 
-func printNanoseconds(out *[50]byte, n uint64, pos int) int {
+func printNanoseconds(out *[51]byte, n uint64, pos int) int {
 	if n < second {
 		// Special case: if nanoseconds is smaller than a second,
 		// use smaller units, like 1.2ms
@@ -130,7 +130,7 @@ func printNanoseconds(out *[50]byte, n uint64, pos int) int {
 	return pos
 }
 
-func printIntFrac(out *[50]byte, n uint64, dotPos, pos int) int {
+func printIntFrac(out *[51]byte, n uint64, dotPos, pos int) int {
 	start := false
 	for i := 0; n > 0 || i <= dotPos; i++ {
 		digit := n % 10
@@ -148,7 +148,7 @@ func printIntFrac(out *[50]byte, n uint64, dotPos, pos int) int {
 	return pos
 }
 
-func printInt(out *[50]byte, n uint64, pos int) int {
+func printInt(out *[51]byte, n uint64, pos int) int {
 	switch {
 	case n >= 100:
 		for n > 0 {
