@@ -981,6 +981,12 @@ func (s *Session) routingKeyInfo(ctx context.Context, stmt string, keyspace stri
 	if conn == nil {
 		// TODO: better error?
 		inflight.err = errors.New("gocql: unable to fetch prepared info: no connection available")
+		// Don't cache this error or remove a newer entry after eviction.
+		s.routingKeyInfoCache.mu.Lock()
+		if entry, _ := s.routingKeyInfoCache.lru.Get(cacheKey); entry == inflight {
+			s.routingKeyInfoCache.lru.Remove(cacheKey)
+		}
+		s.routingKeyInfoCache.mu.Unlock()
 		return nil, inflight.err
 	}
 

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	frm "github.com/gocql/gocql/internal/frame"
 )
@@ -498,12 +499,110 @@ func TestRoutingKeyInfoNoConnection(t *testing.T) {
 
 	srv := newRoutingTestServer(t, protoVersion4, routingPrepared)
 	s := srv.newSession(t)
-	for _, h := range s.hostSource.getHostsList() {
-		h.setState(NodeDown)
+	// Hide the hosts rather than marking them down: an asynchronous pool fill
+	// can mark a host up again while the lookup is running.
+	s.hostSource.mu.Lock()
+	hosts := s.hostSource.hosts
+	s.hostSource.hosts = nil
+	s.hostSource.mu.Unlock()
+	restoreHosts := func() {
+		s.hostSource.mu.Lock()
+		s.hostSource.hosts = hosts
+		s.hostSource.mu.Unlock()
+	}
+	defer restoreHosts()
+
+	for i := 0; i < 2; i++ {
+		if _, err := s.routingKeyInfo(context.Background(), routingInsertGlobal, "", 0); err == nil {
+			t.Fatal("expected an error with no connection available")
+		}
+		if routingKeyInfoCached(s, "", routingInsertGlobal) {
+			t.Fatal("no-connection error was cached")
+		}
 	}
 
-	if _, err := s.routingKeyInfo(context.Background(), routingInsertGlobal, "", 0); err == nil {
-		t.Fatal("expected an error with no host up")
+	restoreHosts()
+	if s.getConn() == nil {
+		t.Fatal("expected a connection after restoring hosts")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	info, err := s.routingKeyInfo(ctx, routingInsertGlobal, "", 0)
+	if err != nil || info == nil {
+		t.Fatalf("routingKeyInfo after recovery = %v, %v", info, err)
+	}
+	if !routingKeyInfoCached(s, "", routingInsertGlobal) {
+		t.Fatal("successful routing metadata was not cached")
+	}
+	want := append(encodeRoutingKeyComponent(int32Bytes(2)), encodeRoutingKeyComponent(int32Bytes(1))...)
+	q := s.Query(routingInsertGlobal, int32(1), "b", int32(2))
+	if key, err := q.GetRoutingKey(); err != nil || !bytes.Equal(key, want) {
+		t.Fatalf("query routing key after recovery = %x, %v; want %x", key, err, want)
+	}
+	b := s.Batch(LoggedBatch)
+	b.Query(routingInsertGlobal, int32(1), "b", int32(2))
+	if key, err := b.GetRoutingKey(); err != nil || !bytes.Equal(key, want) {
+		t.Fatalf("batch routing key after recovery = %x, %v; want %x", key, err, want)
+	}
+}
+
+func TestRoutingKeyInfoNoConnectionPreservesReplacement(t *testing.T) {
+	t.Parallel()
+
+	srv := newRoutingTestServer(t, protoVersion4, routingPrepared)
+	s := srv.newSession(t)
+	s.routingKeyInfoCache.Max(1)
+	cacheKey := routingKeyInfoCacheKey{keyspace: s.cfg.Keyspace, stmt: routingInsertGlobal}
+
+	// Block getConn after the inflight entry is inserted, then evict it.
+	s.hostSource.mu.Lock()
+	hosts := s.hostSource.hosts
+	s.hostSource.hosts = nil
+	locked := true
+	defer func() {
+		if !locked {
+			s.hostSource.mu.Lock()
+		}
+		s.hostSource.hosts = hosts
+		s.hostSource.mu.Unlock()
+	}()
+	result := make(chan error, 1)
+	go func() {
+		_, err := s.routingKeyInfo(context.Background(), routingInsertGlobal, "", 0)
+		result <- err
+	}()
+
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if routingKeyInfoCached(s, s.cfg.Keyspace, routingInsertGlobal) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("lookup did not insert its inflight entry")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	replacement := &inflightCachedEntry{value: &routingKeyInfo{}}
+	s.routingKeyInfoCache.mu.Lock()
+	s.routingKeyInfoCache.lru.Add(routingKeyInfoCacheKey{stmt: "evict original"}, new(inflightCachedEntry))
+	s.routingKeyInfoCache.lru.Add(cacheKey, replacement)
+	s.routingKeyInfoCache.mu.Unlock()
+	s.hostSource.mu.Unlock()
+	locked = false
+
+	select {
+	case err := <-result:
+		if err == nil {
+			t.Fatal("expected the original lookup to fail without a connection")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("original lookup did not complete")
+	}
+	s.routingKeyInfoCache.mu.Lock()
+	entry, cached := s.routingKeyInfoCache.lru.Get(cacheKey)
+	s.routingKeyInfoCache.mu.Unlock()
+	if !cached || entry != replacement {
+		t.Fatal("failed lookup removed the replacement entry")
 	}
 }
 
