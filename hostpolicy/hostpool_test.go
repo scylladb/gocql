@@ -479,3 +479,32 @@ func setHostPoolTestTranslation(t *testing.T, builder *gocql.HostInfoBuilder, ad
 		t.Fatal(err)
 	}
 }
+
+func TestHostPoolIDlessLookupPreservesIDRegistration(t *testing.T) {
+	for _, register := range []string{"SetHosts", "HostUp"} {
+		t.Run(register, func(t *testing.T) {
+			hp := hostpool.New(nil)
+			t.Cleanup(hp.Close)
+			policy := HostPool(hp).(*hostPoolHostPolicy)
+			builder := gocql.HostInfoBuilder{ConnectAddress: net.IPv4(10, 0, 0, 1)}
+			contact := builder.Build()
+			builder.HostId = "a0000000-0000-0000-0000-000000000000"
+			node := builder.Build()
+			if register == "SetHosts" {
+				policy.SetHosts([]*gocql.HostInfo{&node, &contact})
+			} else {
+				policy.AddHost(&contact)
+				policy.AddHost(&node)
+				policy.RemoveHost(&contact)
+				policy.HostUp(&contact)
+			}
+			if policy.hostMap[node.HostID()] != &node {
+				t.Fatal("ID-less record replaced the ID-keyed host")
+			}
+			policy.RemoveHost(&contact)
+			if selected := policy.Pick(nil)(); selected == nil || selected.Info() != &node {
+				t.Fatal("removing ID-less record affected the ID-keyed host")
+			}
+		})
+	}
+}

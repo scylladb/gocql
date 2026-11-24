@@ -13,6 +13,9 @@ import (
 // to distribute queries between hosts and prevent sending queries to
 // unresponsive hosts. When creating the host pool that is passed to the policy
 // use an empty slice of hosts as the hostpool will be populated later by gocql.
+// Peer names exposed by the supplied pool are host IDs or opaque registration
+// keys for hosts without IDs, rather than connection addresses. Treat these names
+// as opaque identifiers when logging or collecting per-peer statistics.
 // See below for examples of usage:
 //
 //	// Create host selection policy using a simple host pool
@@ -51,7 +54,7 @@ func (r *hostPoolHostPolicy) hostKey(host *gocql.HostInfo, pending map[string]*g
 	// Canonicalize this batch before consulting aliases in the previous map.
 	for _, hosts := range []map[string]*gocql.HostInfo{pending, r.hostMap} {
 		for key, registered := range hosts {
-			if registered.ConnectAddress().Equal(address) {
+			if registered.HostID() == "" && registered.ConnectAddress().Equal(address) {
 				return key
 			}
 		}
