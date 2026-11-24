@@ -1030,6 +1030,9 @@ func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 			token = tokenCasted
 		}
 		host, _ := meta.tokenRing.GetHostForToken(token)
+		if host == nil {
+			return t.fallback.Pick(qry)
+		}
 		replicas = []*HostInfo{host}
 	}
 

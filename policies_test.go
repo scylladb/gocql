@@ -1656,6 +1656,57 @@ func TestTokenAwareHostPolicy_Pick_FallbackToGetHostForToken_DefaultPartitioner(
 	}
 }
 
+func TestTokenAwareHostPolicyPickEmptyRing(t *testing.T) {
+	t.Parallel()
+
+	for _, partitioner := range []string{"OrderedPartitioner", "Murmur3Partitioner"} {
+		for _, fallback := range []struct {
+			name string
+			new  func() HostSelectionPolicy
+		}{
+			{"round-robin", RoundRobinHostPolicy},
+			{"dc-aware", func() HostSelectionPolicy { return DCAwareRoundRobinPolicy("local") }},
+			{"rack-aware", func() HostSelectionPolicy { return RackAwareRoundRobinPolicy("local", "rack") }},
+		} {
+			for _, topology := range []string{"empty", "removed", "tokenless"} {
+				t.Run(partitioner+"/"+fallback.name+"/"+topology, func(t *testing.T) {
+					policy := TokenAwareHostPolicy(fallback.new())
+					internal := policy.(*tokenAwareHostPolicy)
+					internal.getKeyspaceName = func() string { return "" }
+					policy.SetPartitioner(partitioner)
+
+					host := &HostInfo{hostId: tUUID(1), connectAddress: net.IPv4(10, 0, 0, 1), dataCenter: "local", rack: "rack"}
+					if topology == "removed" {
+						host.tokens = []string{"0"}
+						policy.AddHost(host)
+						policy.RemoveHost(host)
+					} else if topology == "tokenless" {
+						policy.AddHost(host)
+					}
+					meta := internal.getMetadataReadOnly()
+					if meta == nil || meta.tokenRing == nil || len(meta.tokenRing.tokens) != 0 {
+						t.Fatal("expected an initialized token ring with no tokens")
+					}
+
+					query := &Query{routingInfo: &queryRoutingInfo{}, routingKey: []byte("30")}
+					query.getKeyspace = func() string { return "unregistered-keyspace" }
+					iter := policy.Pick(query)
+					if got := iter(); topology == "tokenless" {
+						if got == nil || got.Info() != host {
+							t.Fatalf("expected tokenless host from fallback, got %v", got)
+						}
+					} else if got != nil {
+						t.Fatalf("expected no host, got %v", got)
+					}
+					if got := iter(); got != nil {
+						t.Fatalf("expected exhausted fallback iterator, got %v", got)
+					}
+				})
+			}
+		}
+	}
+}
+
 // TestSelectedHostTokenInt64 verifies the unboxed routing token: TokenInt64()
 // returns the raw int64, and Token() lazily boxes to a non-nil value so the
 // shard-aware invariant (a nil token would disable shard-aware picking) holds
