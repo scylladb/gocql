@@ -112,6 +112,9 @@ func decReflectInts(p []byte, v reflect.Value) error {
 }
 
 func decReflectUint8(p []byte, v reflect.Value) error {
+	if len(p) > 0 && p[0] > 127 {
+		return fmt.Errorf("failed to unmarshal varint: to unmarshal into %T, the data value should be in the uint8 range", v.Interface())
+	}
 	switch len(p) {
 	case 0:
 		v.SetUint(0)
@@ -132,6 +135,9 @@ func decReflectUint8(p []byte, v reflect.Value) error {
 }
 
 func decReflectUint16(p []byte, v reflect.Value) error {
+	if len(p) > 0 && p[0] > 127 {
+		return fmt.Errorf("failed to unmarshal varint: to unmarshal into %T, the data value should be in the uint16 range", v.Interface())
+	}
 	switch len(p) {
 	case 0:
 		v.SetUint(0)
@@ -154,6 +160,9 @@ func decReflectUint16(p []byte, v reflect.Value) error {
 }
 
 func decReflectUint32(p []byte, v reflect.Value) error {
+	if len(p) > 0 && p[0] > 127 {
+		return fmt.Errorf("failed to unmarshal varint: to unmarshal into %T, the data value should be in the uint32 range", v.Interface())
+	}
 	switch len(p) {
 	case 0:
 		v.SetUint(0)
@@ -180,6 +189,9 @@ func decReflectUint32(p []byte, v reflect.Value) error {
 }
 
 func decReflectUints(p []byte, v reflect.Value) error {
+	if len(p) > 0 && p[0] > 127 {
+		return fmt.Errorf("failed to unmarshal varint: to unmarshal into %T, the data value should be in the uint64 range", v.Interface())
+	}
 	switch len(p) {
 	case 0:
 		v.SetUint(0)
@@ -388,6 +400,9 @@ func decReflectIntsR(p []byte, v reflect.Value) error {
 }
 
 func decReflectUint8R(p []byte, v reflect.Value) error {
+	if len(p) > 0 && p[0] > 127 {
+		return fmt.Errorf("failed to unmarshal varint: to unmarshal into %T, the data value should be in the uint8 range", v.Interface())
+	}
 	switch len(p) {
 	case 0:
 		v.Elem().Set(decReflectNullableR(p, v))
@@ -412,6 +427,9 @@ func decReflectUint8R(p []byte, v reflect.Value) error {
 }
 
 func decReflectUint16R(p []byte, v reflect.Value) error {
+	if len(p) > 0 && p[0] > 127 {
+		return fmt.Errorf("failed to unmarshal varint: to unmarshal into %T, the data value should be in the uint16 range", v.Interface())
+	}
 	switch len(p) {
 	case 0:
 		v.Elem().Set(decReflectNullableR(p, v))
@@ -440,6 +458,9 @@ func decReflectUint16R(p []byte, v reflect.Value) error {
 }
 
 func decReflectUint32R(p []byte, v reflect.Value) error {
+	if len(p) > 0 && p[0] > 127 {
+		return fmt.Errorf("failed to unmarshal varint: to unmarshal into %T, the data value should be in the uint32 range", v.Interface())
+	}
 	switch len(p) {
 	case 0:
 		v.Elem().Set(decReflectNullableR(p, v))
@@ -476,6 +497,9 @@ func decReflectUint32R(p []byte, v reflect.Value) error {
 }
 
 func decReflectUintsR(p []byte, v reflect.Value) error {
+	if len(p) > 0 && p[0] > 127 {
+		return fmt.Errorf("failed to unmarshal varint: to unmarshal into %T, the data value should be in the uint64 range", v.Interface())
+	}
 	switch len(p) {
 	case 0:
 		v.Elem().Set(decReflectNullableR(p, v))
