@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/gocql/gocql/internal/streams"
+	"github.com/gocql/gocql/tablets"
 )
 
 func TestScyllaConnPickerPickNilToken(t *testing.T) {
@@ -68,6 +69,76 @@ func TestScyllaConnPickerPickNilToken(t *testing.T) {
 			t.Fatal("expected nil")
 		}
 	})
+}
+
+func TestScyllaConnPickerTabletShardBounds(t *testing.T) {
+	t.Parallel()
+
+	runBounded := func(t *testing.T, name string, operation func()) {
+		t.Helper()
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			operation()
+		}()
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Fatalf("%s timed out", name)
+		}
+	}
+
+	for _, tc := range []struct {
+		name   string
+		shard  int
+		shrink bool
+	}{
+		{"first-shard", 0, false},
+		{"last-shard", 1, false},
+		{"negative-one", -1, false},
+		{"negative", -2, false},
+		{"at-limit", 2, false},
+		{"large", math.MaxInt, false},
+		{"shard-count-decrease", 7, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			s := newSchemaEventTestSessionWithMock(&schemaDataMock{})
+			t.Cleanup(func() { runBounded(t, "session close", s.Close) })
+			hostID := tUUID(99)
+			tablet, err := (tablets.TabletInfoBuilder{
+				KeyspaceName: "ks", TableName: "tb",
+				FirstToken: math.MinInt64, LastToken: math.MaxInt64,
+				Replicas: [][]any{{hostID, tc.shard}},
+			}).Build()
+			require.NoError(t, err)
+			s.metadataDescriber.AddTablet(tablet)
+			runBounded(t, "tablet metadata flush", s.metadataDescriber.metadata.tabletsMetadata.Flush)
+			picker := &scyllaConnPicker{nrShards: 2, msbIgnore: 12, hostId: hostID, logger: &testLogger{}}
+			picker.conns = []*Conn{mockConn(0), mockConn(1)}
+			for _, conn := range picker.conns {
+				conn.session = s
+				conn.setTabletSupported(true)
+			}
+			if tc.shrink {
+				picker.nrShards = 8
+				picker.conns = append(picker.conns, make([]*Conn, 6)...)
+				picker.mu.Lock()
+				picker.handleShardCountChange(picker.conns[0], 2)
+				picker.mu.Unlock()
+			}
+			query := &Query{session: s, routingInfo: &queryRoutingInfo{keyspace: "ks", table: "tb"}}
+			for _, token := range []int64{0, -1} {
+				wantShard := tc.shard
+				if wantShard < 0 || wantShard >= len(picker.conns) {
+					wantShard = picker.shardOf(int64Token(token))
+				}
+				require.Same(t, picker.conns[wantShard], picker.Pick(int64Token(token), query))
+				require.Same(t, picker.conns[wantShard], picker.PickInt64(token, query))
+			}
+		})
+	}
 }
 
 // TestScyllaConnPickerPickInt64MatchesPick verifies the raw-int64 fast path
