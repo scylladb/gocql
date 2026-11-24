@@ -48,6 +48,88 @@ import (
 	"github.com/gocql/gocql/internal/tests"
 )
 
+func TestIterRejectsTruncatedCellLength(t *testing.T) {
+	readers := []struct {
+		name string
+		read func(*testing.T, *Iter) error
+	}{
+		{"Scan", func(t *testing.T, iter *Iter) error {
+			var a, b int
+			require.False(t, iter.Scan(&a, &b))
+			return iter.Close()
+		}},
+		{"Scanner", func(t *testing.T, iter *Iter) error {
+			scanner := iter.Scanner()
+			require.False(t, scanner.Next())
+			return scanner.Err()
+		}},
+		{"MapScan", func(t *testing.T, iter *Iter) error {
+			require.False(t, iter.MapScan(make(map[string]any)))
+			return iter.Close()
+		}},
+		{"SliceMap", func(t *testing.T, iter *Iter) error {
+			rows, err := iter.SliceMap()
+			require.Empty(t, rows)
+			return err
+		}},
+	}
+	for _, reader := range readers {
+		for remaining := 0; remaining < 4; remaining++ {
+			t.Run(fmt.Sprintf("%s/%d", reader.name, remaining), func(t *testing.T) {
+				f := &framer{proto: protoVersion4}
+				f.header = &f.headerStore
+				f.buf = append([]byte{0, 0, 0, 4, 0, 0, 0, 42}, make([]byte, remaining)...)
+				iter := &Iter{
+					framer:  f,
+					numRows: 1,
+					meta: resultMetadata{
+						columns: []ColumnInfo{
+							{Name: "a", TypeInfo: NativeType{proto: protoVersion4, typ: TypeInt}},
+							{Name: "b", TypeInfo: NativeType{proto: protoVersion4, typ: TypeInt}},
+						},
+						actualColCount: 2,
+						colCount:       2,
+					},
+				}
+				defer iter.Close()
+				err := reader.read(t, iter)
+				require.ErrorContains(t, err, "not enough bytes in buffer")
+				require.Nil(t, iter.framer)
+			})
+		}
+	}
+}
+
+func TestReadBytesInternal(t *testing.T) {
+	tests := []struct {
+		name      string
+		data      []byte
+		value     []byte
+		remaining []byte
+		wantError bool
+	}{
+		{name: "null", data: []byte{255, 255, 255, 255}},
+		{name: "empty", data: []byte{0, 0, 0, 0}, value: []byte{}},
+		{name: "value", data: []byte{0, 0, 0, 2, 1, 2, 99}, value: []byte{1, 2}, remaining: []byte{99}},
+		{name: "truncated length", data: []byte{0, 0}, wantError: true},
+		{name: "truncated value", data: []byte{0, 0, 0, 4, 1, 2}, wantError: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			f := &framer{buf: test.data}
+			value, err := f.ReadBytesInternal()
+			if test.wantError {
+				require.ErrorContains(t, err, "not enough bytes in buffer")
+				require.Nil(t, value)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, test.value, value)
+			require.Equal(t, test.remaining, append([]byte(nil), f.buf...))
+		})
+	}
+}
+
 func TestFuzzBugs(t *testing.T) {
 	t.Parallel()
 
