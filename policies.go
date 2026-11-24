@@ -1024,6 +1024,9 @@ func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 	}
 
 	if len(replicas) == 0 {
+		if replicaRing, known := meta.replicas[qry.Keyspace()]; known && len(replicaRing) == 0 {
+			return t.fallback.Pick(qry)
+		}
 		// Rare fallback (no tablet/replica-map match): GetHostForToken needs a
 		// boxed Token, so box only here instead of on every query.
 		if token == nil {

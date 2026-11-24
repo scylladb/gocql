@@ -239,6 +239,64 @@ func TestPlacementStrategy_NetworkStrategy(t *testing.T) {
 	}
 }
 
+func TestPlacementStrategy_NetworkStrategyDifferentDCs(t *testing.T) {
+	t.Parallel()
+
+	host0 := &HostInfo{hostId: tUUID(0), dataCenter: "dc1", rack: "rack1"}
+	host1 := &HostInfo{hostId: tUUID(1), dataCenter: "dc2", rack: "rack1"}
+	ring := &tokenRing{
+		hosts: []*HostInfo{host0, host1},
+		tokens: []hostToken{
+			{intToken(0), host0},
+			{intToken(10), host1},
+			{intToken(20), host0},
+			{intToken(30), host1},
+		},
+	}
+	tests := []struct {
+		name     string
+		dcs      map[string]int
+		tokens   []int
+		replicas []*HostInfo
+	}{
+		{"disjoint", map[string]int{"dc3": 1, "dc4": 1}, nil, nil},
+		{"partial_overlap", map[string]int{"dc1": 1, "dc3": 1}, []int{0, 2}, []*HostInfo{host0}},
+		{"zero_replaced", map[string]int{"dc1": 1, "dc2": 0, "dc3": 1}, []int{0, 2}, []*HostInfo{host0}},
+		{"missing", map[string]int{"dc2": 1}, []int{1, 3}, []*HostInfo{host1}},
+		{"extra", map[string]int{"dc1": 1, "dc2": 1, "dc3": 1}, []int{0, 1, 2, 3}, []*HostInfo{host0, host1}},
+		{"matching", map[string]int{"dc1": 1, "dc2": 1}, []int{0, 1, 2, 3}, []*HostInfo{host0, host1}},
+		{"all_zero", map[string]int{"dc1": 0, "dc2": 0}, nil, nil},
+		{"no_replication", nil, nil, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			replicas := (&networkTopology{dcs: tt.dcs}).replicaMap(ring)
+			if len(replicas) != len(tt.tokens) {
+				t.Fatalf("expected %d token ranges, got %d", len(tt.tokens), len(replicas))
+			}
+			for i, tokenIndex := range tt.tokens {
+				want := ring.tokens[tokenIndex]
+				got := replicas[i]
+				if got.token != want.token || len(got.hosts) != len(tt.replicas) {
+					t.Fatalf("unexpected token range: %+v", got)
+				}
+				if got.hosts[0] != want.host {
+					t.Fatalf("expected primary host %v, got %v", want.host, got.hosts[0])
+				}
+				for _, host := range tt.replicas {
+					found := false
+					for _, replica := range got.hosts {
+						found = found || replica == host
+					}
+					if !found {
+						t.Fatalf("missing replica %v for token %v", host, got.token)
+					}
+				}
+			}
+		})
+	}
+}
+
 // TestTokenRingReplicas_ReplicasForInt64MatchesReplicasFor checks replicasForInt64
 // matches replicasFor for every query token, including boundaries and wraparound.
 func TestTokenRingReplicas_ReplicasForInt64MatchesReplicasFor(t *testing.T) {

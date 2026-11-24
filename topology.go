@@ -327,16 +327,5 @@ func (n *networkTopology) replicaMap(tokenRing *tokenRing) tokenRingReplicas {
 		replicaRing = append(replicaRing, hostTokens{token: th.token, hosts: replicas})
 	}
 
-	dcsWithReplicas := 0
-	for _, dc := range n.dcs {
-		if dc > 0 {
-			dcsWithReplicas++
-		}
-	}
-
-	if dcsWithReplicas == len(dcRacks) && len(replicaRing) != len(tokens) {
-		panic(fmt.Sprintf("token map different size to token ring: got %d expected %d", len(replicaRing), len(tokens)))
-	}
-
 	return replicaRing
 }
