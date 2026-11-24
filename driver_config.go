@@ -523,18 +523,16 @@ const maxReportableInFlight = 32767
 // the limit up to a multiple of 64 and then reserves stream 0, so a configured
 // 100 really permits 127, and the 32768-stream default really permits 32767.
 //
-// A configured value above the stream-id range is clamped: gocql does not
-// reject it, but the protocol cannot address those streams, so reporting it
-// verbatim would claim a concurrency the connection can never reach.
+// A value above the stream-id range is clamped, matching streams.NewLimited.
+// ClusterConfig.Validate rejects such values before a session is created.
 func effectiveInFlightMax(configured int) int {
 	if configured <= 0 {
 		configured = defaultMaxStreams
 	}
 	if configured >= maxReportableInFlight {
 		// Short-circuit before the rounding below, which overflows to a
-		// negative within 63 of the integer limit. The result is capped here
-		// anyway, so nothing is lost. ClusterConfig.Validate rejects only a
-		// negative MaxRequestsPerConn, so a value that large does reach this.
+		// negative within 63 of the integer limit. Reporting also accepts
+		// configurations that have not passed validation.
 		return maxReportableInFlight
 	}
 	inFlight := (((configured + 63) / 64) * 64) - 1

@@ -161,8 +161,7 @@ func TestBuildRequestsReport_InFlightMax(t *testing.T) {
 		{"a value that is not a multiple of 64 is rounded up", 100, 127},
 		{"a value above the CQL stream-id range is clamped", 40000, 32767},
 		// Rounding up to a multiple of 64 overflows to a negative within 63 of
-		// the integer limit, and Validate rejects only a negative
-		// MaxRequestsPerConn, so such a value does reach the report.
+		// the integer limit. Reporting also accepts unvalidated configurations.
 		{"a value near the integer limit does not overflow", math.MaxInt, 32767},
 		{"the largest value that would overflow the rounding", math.MaxInt - 1, 32767},
 	}
@@ -187,7 +186,7 @@ func TestBuildRequestsReport_InFlightMax(t *testing.T) {
 // generator it describes, so the two cannot drift: Available() on a freshly
 // built generator is exactly the number of requests that can be in flight.
 func TestEffectiveInFlightMaxMatchesStreamGenerator(t *testing.T) {
-	for _, configured := range []int{0, 1, 63, 64, 100, 512, 1000, 32766, 32767, 32768} {
+	for _, configured := range []int{0, 1, 63, 64, 100, 512, 1000, 32766, 32767, 32768, 32769, 65537, math.MaxInt} {
 		gen := streams.New()
 		if configured > 0 {
 			gen = streams.NewLimited(configured)

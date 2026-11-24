@@ -89,6 +89,28 @@ func TestFullStreams(t *testing.T) {
 	}
 }
 
+func TestNewLimitedCapsStreamIDs(t *testing.T) {
+	for _, limit := range []int{32768, 32769, 40000, 65537, math.MaxInt} {
+		t.Run(strconv.Itoa(limit), func(t *testing.T) {
+			generator := NewLimited(limit)
+			if generator.NumStreams != 32768 {
+				t.Fatalf("stream count = %d, want 32768", generator.NumStreams)
+			}
+			seen := make(map[int]bool)
+			for i := 0; i < 32767; i++ {
+				stream, ok := generator.GetStream()
+				if !ok || stream <= 0 || stream > math.MaxInt16 || seen[stream] {
+					t.Fatalf("invalid or duplicate stream %d, ok=%t", stream, ok)
+				}
+				seen[stream] = true
+			}
+			if stream, ok := generator.GetStream(); ok {
+				t.Fatalf("allocated stream %d after exhausting valid stream IDs", stream)
+			}
+		})
+	}
+}
+
 func TestClearStreams(t *testing.T) {
 	t.Parallel()
 

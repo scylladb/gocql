@@ -47,6 +47,9 @@ func New() *IDGenerator {
 }
 
 func NewLimited(maxStreams int) *IDGenerator {
+	if maxStreams > 32768 {
+		maxStreams = 32768
+	}
 	// Round up maxStreams to a nearest
 	// multiple of 64
 	maxStreams = ((maxStreams + 63) / 64) * 64
