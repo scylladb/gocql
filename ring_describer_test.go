@@ -435,3 +435,67 @@ func TestRing_AddHostIfMissing_Existing(t *testing.T) {
 		t.Fatalf("returned host same pointer: %p != %p", h1, host)
 	}
 }
+
+func TestRing_RemoveHostPreservesReplacementAddress(t *testing.T) {
+	t.Parallel()
+
+	for _, addr := range []string{"10.0.0.1", "2001:db8::1"} {
+		t.Run(addr, func(t *testing.T) {
+			ring := &ringDescriber{}
+			ip := net.ParseIP(addr)
+			old := &HostInfo{hostId: MustRandomUUID(), connectAddress: ip, broadcastAddress: ip}
+			replacement := &HostInfo{hostId: MustRandomUUID(), connectAddress: ip, broadcastAddress: ip}
+			ring.addHostIfMissing(old)
+			ring.addHostIfMissing(replacement)
+			// Duplicate observations must not replace the live host's address entry.
+			ring.addHostIfMissing(old)
+			if host, ok := ring.getHostByIP(addr); !ok || host != replacement {
+				t.Fatalf("duplicate old observation replaced live address entry: %v, %v", host, ok)
+			}
+			refreshed := &HostInfo{hostId: replacement.hostId, connectAddress: ip, broadcastAddress: ip}
+			ring.addOrUpdate(refreshed)
+			if !ring.removeHost(old.HostID()) {
+				t.Fatal("old host was not removed")
+			}
+			if host, ok := ring.getHostByIP(addr); !ok || host != replacement {
+				t.Fatalf("address lookup got %v, %v; want replacement", host, ok)
+			}
+			if ring.removeHost(old.HostID()) || ring.getHost(old.HostID()) != nil {
+				t.Fatal("old host remains after removal")
+			}
+			refreshed = &HostInfo{hostId: replacement.hostId, connectAddress: ip, broadcastAddress: ip}
+			ring.addOrUpdate(refreshed)
+			if host, ok := ring.getHostByIP(addr); !ok || host != replacement {
+				t.Fatalf("refresh lost replacement: %v, %v", host, ok)
+			}
+			if !ring.removeHost(replacement.HostID()) {
+				t.Fatal("replacement host was not removed")
+			}
+			if _, ok := ring.getHostByIP(addr); ok {
+				t.Fatal("address entry remains after its owner was removed")
+			}
+		})
+	}
+}
+
+func TestRing_RemoveHostPreservesMovedHostAddress(t *testing.T) {
+	t.Parallel()
+
+	ring := &ringDescriber{}
+	oldIP, newIP := net.ParseIP("10.0.0.1"), net.ParseIP("10.0.0.2")
+	moving := &HostInfo{hostId: MustRandomUUID(), connectAddress: oldIP, broadcastAddress: oldIP}
+	previous := &HostInfo{hostId: MustRandomUUID(), connectAddress: newIP, broadcastAddress: newIP}
+	ring.addHostIfMissing(moving)
+	ring.addHostIfMissing(previous)
+	// refreshRing removes and re-adds a host whose address changes before removing leftovers.
+	ring.removeHost(moving.HostID())
+	moved := &HostInfo{hostId: moving.hostId, connectAddress: newIP, broadcastAddress: newIP}
+	ring.addHostIfMissing(moved)
+	ring.removeHost(previous.HostID())
+	if host, ok := ring.getHostByIP(newIP.String()); !ok || host != moved {
+		t.Fatalf("address lookup got %v, %v; want moved host", host, ok)
+	}
+	if _, ok := ring.getHostByIP(oldIP.String()); ok {
+		t.Fatal("old address entry remains after move")
+	}
+}

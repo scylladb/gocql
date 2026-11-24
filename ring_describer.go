@@ -250,7 +250,10 @@ func (r *ringDescriber) removeHost(hostID string) bool {
 
 	h, ok := r.hosts[hostID]
 	if ok {
-		delete(r.hostIPToUUID, h.nodeToNodeAddress().String())
+		addr := h.nodeToNodeAddress().String()
+		if r.hostIPToUUID[addr] == hostID {
+			delete(r.hostIPToUUID, addr)
+		}
 	}
 	delete(r.hosts, hostID)
 	r.mu.Unlock()
