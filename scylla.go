@@ -539,7 +539,7 @@ outer:
 		break
 	}
 
-	if idx == -1 {
+	if idx < 0 || idx >= len(p.conns) {
 		idx = p.shardOf(mmt)
 	}
 
