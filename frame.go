@@ -2031,6 +2031,9 @@ func (f *framer) readStringList() []string {
 }
 
 func (f *framer) ReadBytesInternal() ([]byte, error) {
+	if len(f.buf) < 4 {
+		return nil, fmt.Errorf("not enough bytes in buffer to read int require 4 got: %d", len(f.buf))
+	}
 	size := f.readInt()
 	if size < 0 {
 		return nil, nil
