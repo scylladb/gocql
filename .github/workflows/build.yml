@@ -38,9 +38,26 @@ jobs:
               print(f"arch={json.dumps(arch, separators=(',', ':'))}", file=output)
           PY
 
+  automation:
+    name: Test release-note automation
+    runs-on: ubuntu-latest
+    steps:
+      # Historical release candidates need not contain the current workflow tools.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+      - name: Test release-note automation
+        run: |
+          npm ci --ignore-scripts --prefix .github
+          node --test .github/tests/*.test.cjs
+
   build:
     name: Build (${{ matrix.arch }})
-    needs: [matrix]
+    needs: [matrix, automation]
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     timeout-minutes: 45
     permissions:

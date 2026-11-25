@@ -203,6 +203,7 @@ func TestReleaseStates(t *testing.T) {
 		{"nothing", fakeAPI{}, nil, actionCreateBoth, ""},
 		{"tag only", fakeAPI{tagInfo: goodTag, tagExists: true}, nil, actionCreateRelease, ""},
 		{"complete", fakeAPI{tagInfo: goodTag, tagExists: true, releaseInfo: goodRelease, releaseExists: true, latestInfo: goodRelease, latestExists: true}, nil, actionComplete, ""},
+		{"draft", fakeAPI{tagInfo: goodTag, tagExists: true, releaseInfo: releaseInfo{TagName: c.tag, Name: c.title, Draft: true}, releaseExists: true}, nil, "", "draft=true"},
 		{"release without tag", fakeAPI{releaseInfo: goodRelease, releaseExists: true}, nil, "", "without its tag"},
 		{"lightweight", fakeAPI{tagInfo: tagInfo{Target: sha}, tagExists: true}, nil, "", "lightweight"},
 		{"unverified", fakeAPI{tagInfo: tagInfo{Target: sha, Annotated: true}, tagExists: true}, nil, "", "verified signature"},
