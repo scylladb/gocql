@@ -717,6 +717,18 @@ func TestMarshalNil(t *testing.T) {
 	}
 }
 
+func TestMarshalNilPointerToValueReceiverMarshaler(t *testing.T) {
+	t.Parallel()
+
+	var p *CustomString
+	data, err := Marshal(NativeType{proto: protoVersion3, typ: TypeVarchar}, p)
+	if err != nil {
+		t.Fatalf("unable to marshal nil *CustomString: %v", err)
+	} else if data != nil {
+		t.Errorf("expected nil byte for nil *CustomString, got % X", data)
+	}
+}
+
 func TestUnmarshalInetCopyBytes(t *testing.T) {
 	t.Parallel()
 
