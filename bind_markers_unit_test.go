@@ -476,8 +476,9 @@ func TestMixedNodeSynthesizedNames(t *testing.T) {
 	t.Parallel()
 
 	// The driver requires every node on the same port.
-	srvA, serverA := newBindMarkerTestServer(t, "127.0.0.1:0", 1000)
-	srvB, serverB := newBindMarkerTestServer(t, fmt.Sprintf("127.0.0.2:%d", srvA.port()), 2000)
+	srvs := newTestServersSharedPort(t, context.Background(), newTestServerOpts{protocol: protoVersion4}, "127.0.0.1", "127.0.0.2")
+	srvA, srvB := srvs[0], srvs[1]
+	serverA, serverB := newBindMarkerServer(srvA, 1000), newBindMarkerServer(srvB, 2000)
 	for _, s := range []struct {
 		server   *bindMarkerServer
 		spelling string

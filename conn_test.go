@@ -41,6 +41,7 @@ import (
 	"math/rand"
 	"net"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -452,19 +453,8 @@ func TestQueryMultinodeWithMetrics(t *testing.T) {
 	}()
 
 	// Build a 3 node cluster to test host metric mapping
-	var nodes []*TestServer
-	var addresses = []string{
-		"127.0.0.1",
-		"127.0.0.2",
-		"127.0.0.3",
-	}
-	// Can do with 1 context for all servers
-	ctx := context.Background()
-	for _, ip := range addresses {
-		srv := NewTestServerWithAddress(ip+":9042", t, defaultProto, ctx)
-		defer srv.Stop()
-		nodes = append(nodes, srv)
-	}
+	addresses := []string{"127.0.0.1", "127.0.0.2", "127.0.0.3"}
+	nodes := newTestServersSharedPort(t, context.Background(), newTestServerOpts{protocol: defaultProto}, addresses...)
 
 	db, err := newTestSession(defaultProto, nodes[0].Address, nodes[1].Address, nodes[2].Address)
 	if err != nil {
@@ -541,19 +531,7 @@ func TestSpeculativeExecution(t *testing.T) {
 	}()
 
 	// Build a 3 node cluster
-	var nodes []*TestServer
-	var addresses = []string{
-		"127.0.0.1",
-		"127.0.0.2",
-		"127.0.0.3",
-	}
-	// Can do with 1 context for all servers
-	ctx := context.Background()
-	for _, ip := range addresses {
-		srv := NewTestServerWithAddress(ip+":9042", t, defaultProto, ctx)
-		defer srv.Stop()
-		nodes = append(nodes, srv)
-	}
+	nodes := newTestServersSharedPort(t, context.Background(), newTestServerOpts{protocol: defaultProto}, "127.0.0.1", "127.0.0.2", "127.0.0.3")
 
 	db, err := newTestSession(defaultProto, nodes[0].Address, nodes[1].Address, nodes[2].Address)
 	if err != nil {
@@ -1982,14 +1960,22 @@ type newTestServerOpts struct {
 }
 
 func (nts newTestServerOpts) newServer(t testing.TB, ctx context.Context) *TestServer {
-	laddr, err := net.ResolveTCPAddr("tcp", nts.addr)
+	srv, err := nts.tryNewServer(t, ctx)
 	if err != nil {
 		t.Fatal(err)
+	}
+	return srv
+}
+
+func (nts newTestServerOpts) tryNewServer(t testing.TB, ctx context.Context) (*TestServer, error) {
+	laddr, err := net.ResolveTCPAddr("tcp", nts.addr)
+	if err != nil {
+		return nil, err
 	}
 
 	listen, err := net.ListenTCP("tcp", laddr)
 	if err != nil {
-		t.Fatal(err)
+		return nil, err
 	}
 
 	headerSize := 9
@@ -2011,7 +1997,44 @@ func (nts newTestServerOpts) newServer(t testing.TB, ctx context.Context) *TestS
 	go srv.closeWatch()
 	go srv.serve()
 
-	return srv
+	return srv, nil
+}
+
+// newTestServersSharedPort starts one server per IP, all on one free port,
+// retrying with a fresh port if another process holds it on a later IP. Only
+// opts.addr is overridden per IP.
+func newTestServersSharedPort(t testing.TB, ctx context.Context, opts newTestServerOpts, ips ...string) []*TestServer {
+	t.Helper()
+	var err error
+	for range 5 {
+		var servers []*TestServer
+		port := "0"
+		for _, ip := range ips {
+			var srv *TestServer
+			o := opts
+			o.addr = net.JoinHostPort(ip, port)
+			srv, err = o.tryNewServer(t, ctx)
+			if err != nil {
+				break
+			}
+			servers = append(servers, srv)
+			port = strconv.Itoa(srv.port())
+		}
+		if err == nil {
+			for _, srv := range servers {
+				t.Cleanup(srv.Stop)
+			}
+			return servers
+		}
+		for _, srv := range servers {
+			srv.Stop()
+		}
+		if !errors.Is(err, syscall.EADDRINUSE) {
+			t.Fatal(err)
+		}
+	}
+	t.Fatalf("no free port shared by %v: %v", ips, err)
+	return nil
 }
 
 func NewTestServer(t testing.TB, protocol uint8, ctx context.Context) *TestServer {
