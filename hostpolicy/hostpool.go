@@ -16,6 +16,8 @@ import (
 // Peer names exposed by the supplied pool are host IDs or opaque registration
 // keys for hosts without IDs, rather than connection addresses. Treat these names
 // as opaque identifiers when logging or collecting per-peer statistics.
+// An ID-less contact point and an identified node at the same address remain
+// separate registrations until the contact point is explicitly removed.
 // See below for examples of usage:
 //
 //	// Create host selection policy using a simple host pool
@@ -25,7 +27,6 @@ import (
 //	cluster.PoolConfig.HostSelectionPolicy = HostPool(
 //	    hostpool.NewEpsilonGreedy(nil, 0, &hostpool.LinearEpsilonValueCalculator{}),
 //	)
-
 func HostPool(hp hostpool.HostPool) gocql.HostSelectionPolicy {
 	return &hostPoolHostPolicy{hostMap: map[string]*gocql.HostInfo{}, hp: hp}
 }

@@ -498,10 +498,16 @@ func TestHostPoolIDlessLookupPreservesIDRegistration(t *testing.T) {
 				policy.RemoveHost(&contact)
 				policy.HostUp(&contact)
 			}
+			if peers := hp.Hosts(); len(peers) != 2 {
+				t.Fatalf("contact point and identified node have %d backend peers, want 2", len(peers))
+			}
 			if policy.hostMap[node.HostID()] != &node {
 				t.Fatal("ID-less record replaced the ID-keyed host")
 			}
 			policy.RemoveHost(&contact)
+			if peers := hp.Hosts(); len(peers) != 1 || peers[0] != node.HostID() {
+				t.Fatalf("backend peers after removing contact point = %v, want only %s", peers, node.HostID())
+			}
 			if selected := policy.Pick(nil)(); selected == nil || selected.Info() != &node {
 				t.Fatal("removing ID-less record affected the ID-keyed host")
 			}
