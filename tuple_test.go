@@ -423,3 +423,37 @@ func TestTuple_NullableNestedCollection(t *testing.T) {
 		})
 	}
 }
+
+func TestTupleBindMarker(t *testing.T) {
+	session := createSession(t)
+	defer session.Close()
+	table := testTableName(t)
+	if err := createTable(session, fmt.Sprintf("CREATE TABLE IF NOT EXISTS gocql_test.%s (id int PRIMARY KEY, coord frozen<tuple<int, int>>)", table)); err != nil {
+		t.Fatal(err)
+	}
+	insert := fmt.Sprintf("INSERT INTO %s (id, coord) VALUES (?, ?)", table)
+	read := fmt.Sprintf("SELECT coord FROM %s WHERE id = ?", table)
+	for id, method := range []string{"query", "batch"} {
+		t.Run(method, func(t *testing.T) {
+			var err error
+			coord := []any{12, -34}
+			if method == "batch" {
+				batch := session.NewBatch(LoggedBatch)
+				batch.Query(insert, id, coord)
+				err = session.ExecuteBatch(batch)
+			} else {
+				err = session.Query(insert, id, coord).Exec()
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			var x, y int
+			if err := session.Query(read, id).Scan(&x, &y); err != nil {
+				t.Fatal(err)
+			}
+			if x != 12 || y != -34 {
+				t.Fatalf("read tuple (%d, %d), want (12, -34)", x, y)
+			}
+		})
+	}
+}
