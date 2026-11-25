@@ -37,13 +37,22 @@ import (
 func ParseHint(data []byte, keyspace, table string) (TabletInfo, error) {
 	r := cqlproto.NewReader(data)
 
-	firstToken, _ := r.ReadBigInt()
-	lastToken, _ := r.ReadBigInt()
+	firstToken, ok := r.ReadBigInt()
+	if !ok {
+		return TabletInfo{}, hintFieldErr(r.Err(), "first token")
+	}
+	lastToken, ok := r.ReadBigInt()
+	if !ok {
+		return TabletInfo{}, hintFieldErr(r.Err(), "last token")
+	}
 
 	// list<tuple<uuid, int>>: read the list [bytes] envelope, then element count.
 	listBody := r.ReadBytes()
 	if r.Err() != nil {
 		return TabletInfo{}, r.Err()
+	}
+	if listBody == nil {
+		return TabletInfo{}, hintFieldErr(nil, "replica list")
 	}
 
 	listR := cqlproto.NewReader(listBody)
@@ -62,16 +71,32 @@ func ParseHint(data []byte, keyspace, table string) (TabletInfo, error) {
 		if listR.Err() != nil {
 			return TabletInfo{}, listR.Err()
 		}
+		if tupleBody == nil {
+			return TabletInfo{}, fmt.Errorf("replica %d: %w", i, hintFieldErr(nil, "replica tuple"))
+		}
 		tupleR := cqlproto.NewReader(tupleBody)
 
-		hostUUID, _ := tupleR.ReadUUID()
-		shardID, _ := tupleR.ReadInt()
-		if tupleR.Err() != nil {
-			return TabletInfo{}, fmt.Errorf("replica %d: %w", i, tupleR.Err())
+		hostUUID, ok := tupleR.ReadUUID()
+		if !ok {
+			return TabletInfo{}, fmt.Errorf("replica %d: %w", i, hintFieldErr(tupleR.Err(), "host UUID"))
+		}
+		shardID, ok := tupleR.ReadInt()
+		if !ok {
+			return TabletInfo{}, fmt.Errorf("replica %d: %w", i, hintFieldErr(tupleR.Err(), "shard ID"))
 		}
 
 		replicas[i] = NewReplicaInfo(HostUUID(hostUUID), int(shardID))
 	}
 
 	return NewTabletInfo(keyspace, table, firstToken, lastToken, replicas)
+}
+
+// hintFieldErr explains why a field could not be read. The readers report a
+// CQL null and a truncated or wrong-length payload the same way (ok == false),
+// so the reader's own error takes precedence when it has one.
+func hintFieldErr(readErr error, field string) error {
+	if readErr != nil {
+		return fmt.Errorf("invalid hint: %s: %w", field, readErr)
+	}
+	return fmt.Errorf("invalid hint: %s is null", field)
 }
