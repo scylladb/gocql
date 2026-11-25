@@ -170,7 +170,8 @@ func (s *Session) handleKeyspaceChange(keyspace, change string) {
 }
 
 func (s *Session) handleTableChange(keyspace, table, change string) {
-	if change == "DROPPED" || change == "UPDATED" {
+	// Not on ALTER: later splits/migrations, even ones it triggers, are fixed by tablets-routing-v1 hints.
+	if change == "DROPPED" {
 		s.metadataDescriber.RemoveTabletsWithTable(keyspace, table)
 	}
 }

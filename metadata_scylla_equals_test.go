@@ -24,12 +24,8 @@ import (
 	"testing"
 )
 
-// The Equals family decides whether a schema refresh sees a table as changed
-// (see refreshAllSchema). A comparison that silently ignores a field makes a
-// real change invisible, so most of what follows is field-by-field drift
-// detection rather than a handful of hand-written pairs: a new field on one of
-// these structs fails the test until it is either compared or listed as
-// deliberately ignored.
+// Drift detection for the Equals family: a new struct field fails the test
+// until it is compared or listed as deliberately ignored.
 
 // differentValue returns a value of the same type as v that is never equal to
 // it. The bool reports whether the kind is handled; callers fail rather than
@@ -698,7 +694,7 @@ func TestMetadataEqualsNilHandling(t *testing.T) {
 }
 
 // TestTableMetadataEqualsEmptyAndZero covers the shapes a table can legitimately
-// have before any rows are compiled into it, which is when refreshAllSchema is
+// have before any rows are compiled into it, which is when a schema refresh is
 // most likely to compare two of them.
 func TestTableMetadataEqualsEmptyAndZero(t *testing.T) {
 	t.Parallel()
