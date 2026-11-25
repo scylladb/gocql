@@ -52,6 +52,68 @@ Leave `tls.Config.InsecureSkipVerify` as `false`. Setting
 `EnableHostVerification` also forces verification on if the supplied
 `tls.Config` requested otherwise.
 
+## TLS with Client Routes
+
+Client Routes dial a proxy endpoint, while ScyllaDB Cloud node certificates
+may contain only each node's broadcast RPC IP. The proxy address is then absent
+from the certificate. The initial contact point has no known node identity,
+so the driver cannot automatically verify its certificate against a node IP.
+The same issue affects the discovered nodes when the default TLS check uses
+the translated address. See [Client routes](../client-routes.md#tls) for routing
+and port selection.
+
+If the certificate does not cover the proxy endpoint, explicitly verify the
+cluster CA chain without matching a hostname. Go's `InsecureSkipVerify` skips
+its built-in chain check too; setting it alone is **not** verification. Supply
+`VerifyConnection` to perform the chain check yourself:
+
+```go
+cluster := gocql.NewCluster("private-endpoint.example.com:9100") // TLS discovery port
+cluster.WithOptions(gocql.WithClientRoutes(
+	gocql.WithEndpoints(gocql.ClientRoutesEndpoint{
+		ConnectionID: "connection-id-from-provider",
+	}),
+))
+
+roots := x509.NewCertPool()
+caPEM, err := os.ReadFile("/etc/scylla/ca.crt")
+if err != nil {
+	return err
+}
+if !roots.AppendCertsFromPEM(caPEM) {
+	return errors.New("no CA certificates found")
+}
+
+cluster.SslOpts = &gocql.SslOptions{
+	Config: &tls.Config{
+		MinVersion:         tls.VersionTLS12,
+		InsecureSkipVerify: true, // Replace Go's default checks below.
+		VerifyConnection: func(state tls.ConnectionState) error {
+			if len(state.PeerCertificates) == 0 {
+				return errors.New("server sent no certificate")
+			}
+			intermediates := x509.NewCertPool()
+			for _, cert := range state.PeerCertificates[1:] {
+				intermediates.AddCert(cert)
+			}
+			_, err := state.PeerCertificates[0].Verify(x509.VerifyOptions{
+				Roots:         roots,
+				Intermediates: intermediates,
+				KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+			})
+			return err
+		},
+	},
+}
+```
+
+This checks that the server presents a currently valid certificate signed by
+the configured CA for server authentication. It does **not** verify that the
+connection reached the intended node or proxy. Use a CA dedicated to the
+cluster, and keep normal hostname verification when certificates cover the
+proxy endpoint. Do not set `EnableHostVerification` in this configuration:
+that option turns Go's built-in hostname check back on.
+
 ## Mutual TLS
 
 When the server requires a client certificate, provide both certificate and
