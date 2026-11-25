@@ -31,10 +31,12 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"net"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -202,6 +204,96 @@ func TestHostConnPoolCloseDeadlock(t *testing.T) {
 		// Success — Close returned without deadlocking.
 	case <-time.After(5 * time.Second):
 		t.Fatal("hostConnPool.Close() deadlocked: timed out after 5 seconds")
+	}
+}
+
+type poolNotifierCloseConn struct {
+	errorConn
+	entered chan struct{}
+	release <-chan struct{}
+}
+
+func (c poolNotifierCloseConn) Close() error {
+	close(c.entered)
+	<-c.release
+	return c.errorConn.Close()
+}
+
+// The cancellation path releases a broken notifier's pool lock so the test can
+// report a failure and join both goroutines instead of leaking a deadlock.
+type poolNotifierClosePicker struct {
+	ConnPicker
+	entered chan struct{}
+	stop    <-chan struct{}
+}
+
+func (p poolNotifierClosePicker) Size() (int, int) {
+	close(p.entered)
+	result := make(chan [2]int, 1)
+	go func() {
+		count, missing := p.ConnPicker.Size()
+		result <- [2]int{count, missing}
+	}()
+	select {
+	case size := <-result:
+		return size[0], size[1]
+	case <-p.stop:
+		return 0, 0
+	}
+}
+
+func TestHostConnPoolNotifierDuringClose(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	closeEntered, releaseClose := make(chan struct{}), make(chan struct{})
+	var releaseOnce sync.Once
+	release := func() { releaseOnce.Do(func() { close(releaseClose) }) }
+	defer release()
+	sizeEntered := make(chan struct{})
+	pool := &hostConnPool{logger: nopLogger{}}
+	picker := newDefaultConnPicker(1)
+	connCtx, connCancel := context.WithCancel(context.Background())
+	defer connCancel()
+	conn := &Conn{
+		r:            poolNotifierCloseConn{entered: closeEntered, release: releaseClose},
+		errorHandler: pool,
+		ctx:          connCtx,
+		cancel:       connCancel,
+		logger:       nopLogger{},
+	}
+	if err := picker.Put(conn); err != nil {
+		t.Fatal(err)
+	}
+	pool.connPicker = poolNotifierClosePicker{ConnPicker: picker, entered: sizeEntered, stop: ctx.Done()}
+	closeDone := make(chan struct{})
+	go func() { pool.Close(); close(closeDone) }()
+	select {
+	case <-closeEntered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Close did not reach the connection transport")
+	}
+	notifyDone := make(chan struct{})
+	go func() { pool.notifyNodeConnected(true); close(notifyDone) }()
+	select {
+	case <-sizeEntered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("notifier did not reach picker Size")
+	}
+	// Close owns the picker mutex; the notifier is now waiting for Size. The
+	// transport error calls HandleError, which must be able to lock pool.mu.
+	release()
+	select {
+	case <-closeDone:
+	case <-time.After(2 * time.Second):
+		t.Error("Close deadlocked with the notifier")
+		cancel()
+		<-closeDone
+	}
+	select {
+	case <-notifyDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("notifier did not finish after Close")
 	}
 }
 
@@ -573,5 +665,407 @@ func TestHostConnPoolConnectNoAttempts(t *testing.T) {
 				t.Fatalf("connect() = %v, want the no-attempts error", err)
 			}
 		})
+	}
+}
+
+type poolFillDialer struct {
+	started chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (d *poolFillDialer) DialHost(ctx context.Context, host *HostInfo) (*DialedHost, error) {
+	d.once.Do(func() { close(d.started) })
+	select {
+	case <-d.release:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	conn, err := (&net.Dialer{}).DialContext(ctx, "tcp", host.ConnectAddressAndPort())
+	if err != nil {
+		return nil, err
+	}
+	return &DialedHost{Conn: conn}, nil
+}
+
+func TestHostConnPoolNotifyNodeConnected(t *testing.T) {
+	for _, state := range []string{"closed", "empty", "connected", "rejected"} {
+		t.Run(state, func(t *testing.T) {
+			f := newNodeEventFixture(t)
+			host := f.addHost(t, "127.0.10.1")
+			host.setState(NodeDown)
+			pool := newHostConnPool(f.session, host, 1, "")
+			picker := newDefaultConnPicker(1)
+			if state != "empty" {
+				picker.conns = []*Conn{nil}
+			}
+			pool.connPicker = picker
+			if state == "closed" {
+				// Observe Close after the flag is set, before picker cleanup.
+				pool.mu.Lock()
+				pool.closed = true
+				pool.mu.Unlock()
+				t.Cleanup(picker.Close)
+			}
+			f.session.cfg.HostFilter = HostFilterFunc(func(*HostInfo) bool {
+				pool.Close()
+				return true
+			})
+			done := make(chan struct{})
+			go func() { pool.notifyNodeConnected(state != "rejected"); close(done) }()
+			select {
+			case <-done:
+			case <-time.After(time.Second):
+				t.Fatal("notification held the pool lock across a callback")
+			}
+			if got := len(f.policy.hostUpCalls()); got != map[string]int{"closed": 0, "empty": 0, "connected": 1, "rejected": 0}[state] {
+				t.Fatalf("HostUp called %d times for %s pool", got, state)
+			}
+		})
+	}
+}
+
+type poolFillPolicy struct {
+	roundRobinHostPolicy
+	up chan struct{}
+}
+
+func (p *poolFillPolicy) HostUp(host *HostInfo) {
+	p.roundRobinHostPolicy.HostUp(host)
+	p.up <- struct{}{}
+}
+
+type poolFillConvictionPolicy struct {
+	ConvictionPolicy
+	failures chan error
+}
+
+func (p poolFillConvictionPolicy) AddFailure(err error, _ *HostInfo) bool {
+	p.failures <- err
+	return false
+}
+
+type rejectingPoolPicker struct {
+	ConnPicker
+	err error
+}
+
+func (p rejectingPoolPicker) Put(*Conn) error { return p.err }
+
+func TestHostConnPoolConnectionOutcomes(t *testing.T) {
+	for _, initiallyConnected := range []bool{false, true} {
+		for _, outcome := range []string{"closed", "rejected", "accepted"} {
+			t.Run(strconv.FormatBool(initiallyConnected)+"/"+outcome, func(t *testing.T) {
+				srv := NewTestServer(t, defaultProto, context.Background())
+				t.Cleanup(srv.Stop)
+				dialer := &poolFillDialer{started: make(chan struct{}), release: make(chan struct{})}
+				unblock := sync.OnceFunc(func() { close(dialer.release) })
+				t.Cleanup(unblock)
+				policy := &poolFillPolicy{up: make(chan struct{}, 1)}
+				cfg := testCluster(defaultProto, srv.Address)
+				cfg.HostDialer = dialer
+				failures := make(chan error, 1)
+				cfg.ConvictionPolicy = poolFillConvictionPolicy{ConvictionPolicy: &SimpleConvictionPolicy{}, failures: failures}
+				cfg.PoolConfig.HostSelectionPolicy = policy
+				cfg.Logger = nopLogger{}
+				session, err := newSessionCommon(*cfg)
+				if err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(session.Close)
+				host := srv.host()
+				host.setState(NodeDown)
+				size := 1
+				if initiallyConnected {
+					size = 2
+				}
+				pool := newHostConnPool(session, host, size, "")
+				t.Cleanup(pool.Close)
+				picker := newDefaultConnPicker(size)
+				if initiallyConnected {
+					picker.conns = []*Conn{nil}
+				}
+				rejection := errors.New("rejected connection")
+				if outcome == "rejected" {
+					pool.connPicker = rejectingPoolPicker{ConnPicker: picker, err: rejection}
+				} else {
+					pool.connPicker = picker
+				}
+				done := make(chan struct{})
+				var workerErr error
+				var workerAccepted bool
+				go func() {
+					if initiallyConnected {
+						// Test the asynchronous fill worker's return contract directly.
+						// Returning from fill itself does not join this worker.
+						workerAccepted, workerErr = pool.connectMany(1)
+					} else {
+						pool.fill()
+					}
+					close(done)
+				}()
+				select {
+				case <-dialer.started:
+				case <-time.After(5 * time.Second):
+					t.Fatal("pool did not start connecting")
+				}
+				if outcome == "closed" {
+					pool.Close()
+				}
+				unblock()
+				select {
+				case <-done:
+				case <-time.After(5 * time.Second):
+					t.Fatal("fill did not return")
+				}
+				if initiallyConnected {
+					switch outcome {
+					case "accepted":
+						if !workerAccepted || workerErr != nil || pool.GetConnectionCount() != 2 {
+							t.Fatalf("accepted worker: err=%v count=%d", workerErr, pool.GetConnectionCount())
+						}
+					case "closed":
+						if workerAccepted || workerErr != errPoolClosed {
+							t.Fatalf("closed worker returned %v", workerErr)
+						}
+					case "rejected":
+						if workerAccepted || !errors.Is(workerErr, rejection) {
+							t.Fatalf("rejected worker lost cause: %v", workerErr)
+						}
+						pool.connPicker = picker
+						retryDone := make(chan error, 1)
+						go func() { _, err := pool.connectMany(1); retryDone <- err }()
+						select {
+						case err := <-retryDone:
+							if err != nil || pool.GetConnectionCount() != 2 {
+								t.Fatalf("retry after rejection: err=%v count=%d", err, pool.GetConnectionCount())
+							}
+						case <-time.After(5 * time.Second):
+							t.Fatal("retry after rejection did not finish")
+						}
+					}
+					return
+				}
+				if outcome == "accepted" {
+					select {
+					case <-policy.up:
+					case <-time.After(5 * time.Second):
+						t.Fatal("accepted connection did not announce the host UP")
+					}
+					if !host.IsUp() {
+						t.Fatal("accepted connection left the host DOWN")
+					}
+					return
+				}
+				if count := pool.GetConnectionCount(); count != 0 {
+					t.Fatalf("discarded first connection left %d pool connections", count)
+				}
+				select {
+				case err := <-failures:
+					t.Fatalf("discarded connection convicted host: %v", err)
+				default:
+				}
+			})
+		}
+	}
+}
+
+func TestHostConnPoolFillFailureClassification(t *testing.T) {
+	cause := errors.New("picker rejected connection")
+	rejected := connRejectedError{cause}
+	if !errors.Is(rejected, cause) {
+		t.Fatal("rejection lost its original cause")
+	}
+	dialErr := errors.New("dial failed")
+	for _, err := range []error{nil, errPoolClosed, rejected, dialErr,
+		fmt.Errorf("wrapped: %w", errPoolClosed), fmt.Errorf("wrapped: %w", rejected), fmt.Errorf("wrapped: %w", dialErr)} {
+		policy := poolFillConvictionPolicy{ConvictionPolicy: &SimpleConvictionPolicy{}, failures: make(chan error, 1)}
+		session := &Session{cfg: ClusterConfig{ConvictionPolicy: policy}, logger: nopLogger{}}
+		pool := newUndialedHostPool(t, session, "127.0.0.1")
+		pool.fillingStopped(err)
+		wantFailure := errors.Is(err, dialErr)
+		select {
+		case got := <-policy.failures:
+			if !wantFailure || got != err {
+				t.Fatalf("conviction got %v for %v", got, err)
+			}
+		default:
+			if wantFailure {
+				t.Fatal("connection failure did not reach conviction policy")
+			}
+		}
+	}
+}
+
+type poolOneFailureDialer struct {
+	HostDialer
+	failure error
+	once    sync.Once
+}
+
+func (d *poolOneFailureDialer) DialHost(ctx context.Context, host *HostInfo) (*DialedHost, error) {
+	var failure error
+	d.once.Do(func() { failure = d.failure })
+	if failure != nil {
+		return nil, failure
+	}
+	return d.HostDialer.DialHost(ctx, host)
+}
+
+type poolOneRejectionPicker struct {
+	ConnPicker
+	once sync.Once
+}
+
+func (p *poolOneRejectionPicker) Put(conn *Conn) error {
+	reject := false
+	p.once.Do(func() { reject = true })
+	if reject {
+		return errors.New("first connection rejected")
+	}
+	return p.ConnPicker.Put(conn)
+}
+
+func newPoolFillTestSession(t *testing.T, dialer HostDialer, policy HostSelectionPolicy) (*Session, *HostInfo) {
+	t.Helper()
+	srv := NewTestServer(t, defaultProto, context.Background())
+	t.Cleanup(srv.Stop)
+	cfg := testCluster(defaultProto, srv.Address)
+	cfg.HostDialer = dialer
+	cfg.ReconnectionPolicy = &ConstantReconnectionPolicy{MaxRetries: 1}
+	cfg.PoolConfig.HostSelectionPolicy = policy
+	cfg.Logger = nopLogger{}
+	session, err := newSessionCommon(*cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(session.Close)
+	return session, srv.host()
+}
+
+func TestHostConnPoolMixedRefillNotifies(t *testing.T) {
+	dialer := &poolFillDialer{started: make(chan struct{}), release: make(chan struct{})}
+	close(dialer.release)
+	policy := &poolFillPolicy{up: make(chan struct{}, 1)}
+	session, host := newPoolFillTestSession(t, dialer, policy)
+	host.setState(NodeDown)
+	pool := newHostConnPool(session, host, 3, "")
+	t.Cleanup(pool.Close)
+	picker := newDefaultConnPicker(3)
+	picker.conns = []*Conn{nil}
+	pool.connPicker = &poolOneRejectionPicker{ConnPicker: picker}
+	pool.fill()
+	select {
+	case <-policy.up:
+	case <-time.After(5 * time.Second):
+		t.Fatal("accepted/rejected refill did not notify the host UP")
+	}
+	if !host.IsUp() || pool.GetConnectionCount() != 2 {
+		t.Fatalf("mixed refill: up=%v count=%d", host.IsUp(), pool.GetConnectionCount())
+	}
+}
+
+type countingRejectingPoolPicker struct {
+	rejectingPoolPicker
+	rejected atomic.Int32
+}
+
+func (p *countingRejectingPoolPicker) Put(conn *Conn) error {
+	p.rejected.Add(1)
+	return p.rejectingPoolPicker.Put(conn)
+}
+
+func TestHostConnPoolRejectedRefillDoesNotNotify(t *testing.T) {
+	dialer := &poolFillDialer{started: make(chan struct{}), release: make(chan struct{})}
+	close(dialer.release)
+	policy := &poolFillPolicy{up: make(chan struct{}, 1)}
+	session, host := newPoolFillTestSession(t, dialer, policy)
+	host.setState(NodeDown)
+	pool := newHostConnPool(session, host, 3, "")
+	t.Cleanup(pool.Close)
+	picker := newDefaultConnPicker(3)
+	picker.conns = []*Conn{nil}
+	rejecting := &countingRejectingPoolPicker{
+		rejectingPoolPicker: rejectingPoolPicker{ConnPicker: picker, err: errors.New("local rejection")},
+	}
+	pool.connPicker = rejecting
+	select {
+	case <-pool.fill():
+		// The refill worker has completed its notification decision and callback.
+	case <-time.After(5 * time.Second):
+		t.Fatal("rejected refill did not finish")
+	}
+	if got := rejecting.rejected.Load(); got != 2 {
+		t.Fatalf("refill rejected %d connections, want 2", got)
+	}
+	select {
+	case <-policy.up:
+		t.Fatal("all-rejected refill announced the host UP")
+	default:
+	}
+	if host.IsUp() || pool.GetConnectionCount() != 1 {
+		t.Fatalf("rejected refill: up=%v count=%d", host.IsUp(), pool.GetConnectionCount())
+	}
+}
+
+func TestHostConnPoolMixedFailures(t *testing.T) {
+	for _, outcome := range []string{"accepted/rejected", "failure/rejected", "rejected/rejected"} {
+		t.Run(outcome, func(t *testing.T) {
+			dialErr := &net.OpError{Op: "dial", Net: "tcp", Err: errors.New("unreachable host")}
+			inner := &poolFillDialer{started: make(chan struct{}), release: make(chan struct{})}
+			close(inner.release)
+			var dialer HostDialer = inner
+			if outcome == "failure/rejected" {
+				dialer = &poolOneFailureDialer{HostDialer: inner, failure: dialErr}
+			}
+			policy := &poolFillPolicy{up: make(chan struct{}, 1)}
+			session, host := newPoolFillTestSession(t, dialer, policy)
+			pool := newHostConnPool(session, host, 3, "")
+			t.Cleanup(pool.Close)
+			picker := newDefaultConnPicker(3)
+			picker.conns = []*Conn{nil}
+			if outcome == "accepted/rejected" {
+				pool.connPicker = &poolOneRejectionPicker{ConnPicker: picker}
+			} else {
+				pool.connPicker = rejectingPoolPicker{ConnPicker: picker, err: errors.New("local rejection")}
+			}
+			type result struct {
+				err      error
+				accepted bool
+			}
+			done := make(chan result, 1)
+			go func() { accepted, err := pool.connectMany(2); done <- result{err, accepted} }()
+			select {
+			case got := <-done:
+				if got.accepted != (outcome == "accepted/rejected") {
+					t.Fatalf("%s accepted=%v", outcome, got.accepted)
+				}
+				if outcome == "failure/rejected" {
+					if !errors.Is(got.err, dialErr) || !isHostFailure(got.err) {
+						t.Fatalf("mixed failures lost the genuine dial error: %v", got.err)
+					}
+				} else if got.err == nil || isHostFailure(got.err) {
+					t.Fatalf("local rejection classification lost: %v", got.err)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("mixed connection attempts did not finish")
+			}
+		})
+	}
+}
+
+func TestPreferredPoolConnectError(t *testing.T) {
+	dialErr := errors.New("dial failed")
+	rejected := connRejectedError{errors.New("local rejection")}
+	for _, order := range [][]error{{dialErr, rejected}, {rejected, dialErr},
+		{dialErr, errPoolClosed}, {errPoolClosed, dialErr},
+		{dialErr, fmt.Errorf("wrapped rejection: %w", rejected)}} {
+		var got error
+		for _, err := range order {
+			got = preferredPoolConnectError(got, err)
+		}
+		if got != dialErr {
+			t.Fatalf("order %v lost genuine failure: %v", order, got)
+		}
 	}
 }
