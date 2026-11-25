@@ -1726,14 +1726,79 @@ type writeExecuteFrame struct {
 	customPayload    map[string][]byte
 	preparedID       []byte
 	resultMetadataID []byte
-	params           queryParams
+	// prefix is preparedStatment.execPrefix; nil means build the frame from scratch.
+	prefix []byte
+	// valuesBuf backs params.values and survives pool round trips.
+	valuesBuf []queryValues
+	params    queryParams
+}
+
+// Pooled because passing it to Conn.exec through frameBuilder escapes it to the heap.
+var executeFramePool = sync.Pool{New: func() any { return new(writeExecuteFrame) }}
+
+func getExecuteFrame() *writeExecuteFrame { return executeFramePool.Get().(*writeExecuteFrame) }
+
+// values returns n zeroed queryValues; reset clears the ones handed out.
+func (e *writeExecuteFrame) values(n int) []queryValues {
+	if n > 128 {
+		return make([]queryValues, n) // unpooled; keep the retained small buffer for the next call
+	}
+	if cap(e.valuesBuf) < n {
+		e.valuesBuf = make([]queryValues, n, 8<<queryValuesBucket(n)) // bucket sizes, so mixed widths stop reallocating
+	}
+	e.valuesBuf = e.valuesBuf[:n]
+	return e.valuesBuf
+}
+
+func (e *writeExecuteFrame) reset() {
+	clear(e.valuesBuf) // drop references to marshaled values
+	*e = writeExecuteFrame{valuesBuf: e.valuesBuf[:0]}
+}
+
+func putExecuteFrame(e *writeExecuteFrame) {
+	e.reset()
+	executeFramePool.Put(e)
 }
 
 func (e *writeExecuteFrame) String() string {
 	return fmt.Sprintf("[execute id=% X params=%v]", e.preparedID, &e.params)
 }
 
+// buildExecPrefix pre-encodes the EXECUTE header and ids; buildFrame patches flags and stream.
+// nil for ids the slow path must reject, so that path reports the error.
+func buildExecPrefix(proto byte, withMetadataID bool, id, metadataID []byte) []byte {
+	if validateShortBytes("prepared id", id) != nil ||
+		(withMetadataID && validateShortBytes("result metadata id", metadataID) != nil) {
+		return nil
+	}
+	f := framer{proto: proto}
+	f.writeHeader(0, frm.OpExecute, 0)
+	_ = f.writeShortBytes(id)
+	if withMetadataID {
+		_ = f.writeShortBytes(metadataID)
+	}
+	return f.buf
+}
+
 func (e *writeExecuteFrame) buildFrame(fr *framer, streamID int) error {
+	// A custom payload goes between header and id; the exact prefix length must match
+	// what this framer would write for these ids, with or without the metadata id.
+	want := headSize + 2 + len(e.preparedID)
+	if fr.proto > protoVersion4 || fr.scyllaUseMetadataID {
+		want += 2 + len(e.resultMetadataID)
+	}
+	if p := e.prefix; len(p) == want && len(e.customPayload) == 0 && p[0] == fr.proto {
+		if err := fr.validateV5Options(e.params.keyspace, e.params.nowInSeconds); err != nil {
+			return err
+		}
+		fr.buf = append(fr.buf[:0], p...)
+		fr.buf[1] = fr.flags
+		fr.buf[2], fr.buf[3] = byte(streamID>>8), byte(streamID)
+		if err := fr.writeQueryParams(&e.params); err != nil {
+			return err
+		}
+		return fr.finish()
+	}
 	return fr.writeExecuteFrame(streamID, e.preparedID, e.resultMetadataID, &e.params, &e.customPayload)
 }
 

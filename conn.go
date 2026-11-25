@@ -974,6 +974,12 @@ func (c *Conn) tracksResultMetadataID() bool {
 	return c.framers.defaults.proto > protoVersion4 || c.framers.defaults.scyllaUseMetadataID
 }
 
+// buildExecPrefix encodes the prefix with the framer config, which is what buildFrame
+// compares it against.
+func (c *Conn) buildExecPrefix(id, metadataID []byte) []byte {
+	return buildExecPrefix(c.framers.defaults.proto, c.tracksResultMetadataID(), id, metadataID)
+}
+
 func (c *Conn) close() error {
 	return c.r.Close()
 }
@@ -2442,7 +2448,10 @@ type preparedStatment struct {
 	response         resultMetadata
 	id               []byte
 	resultMetadataID []byte
-	request          preparedMetadata
+	// execPrefix is the pre-encoded EXECUTE header and ids (see buildExecPrefix).
+	// Immutable: a METADATA_CHANGED refresh installs a new preparedStatment.
+	execPrefix []byte
+	request    preparedMetadata
 }
 
 type inflightPrepare struct {
@@ -2504,6 +2513,7 @@ func (c *Conn) prepareStatement(ctx context.Context, stmt string, tracer Tracer,
 					// in the frame parser; resultMetadataID likewise.
 					id:               x.preparedID,
 					resultMetadataID: x.resultMetadataID,
+					execPrefix:       c.buildExecPrefix(x.preparedID, x.resultMetadataID),
 					request:          x.reqMeta,
 					response:         x.respMeta,
 				}
@@ -2692,8 +2702,9 @@ func (c *Conn) executeQueryWithMetrics(ctx context.Context, qry *Query, metrics 
 	}
 
 	var (
-		frame frameBuilder
-		info  *preparedStatment
+		frame     frameBuilder
+		execFrame *writeExecuteFrame
+		info      *preparedStatment
 	)
 
 	// The keyspace and table this attempt routes by, used below to attribute a
@@ -2738,13 +2749,14 @@ func (c *Conn) executeQueryWithMetrics(ctx context.Context, qry *Query, metrics 
 			return &Iter{err: fmt.Errorf("gocql: expected %d values send got %d", info.request.actualColCount, len(values))}
 		}
 
-		params.values = getQueryValues(len(values))
+		execFrame = getExecuteFrame()
+		params.values = execFrame.values(len(values))
 		for i := 0; i < len(values); i++ {
 			v := &params.values[i]
 			value := values[i]
 			typ := info.request.columns[i].TypeInfo
 			if err := marshalQueryValue(typ, value, v); err != nil {
-				putQueryValues(params.values)
+				putExecuteFrame(execFrame)
 				return &Iter{err: err}
 			}
 		}
@@ -2756,12 +2768,12 @@ func (c *Conn) executeQueryWithMetrics(ctx context.Context, qry *Query, metrics 
 			len(info.response.columns) != 0,
 		)
 
-		frame = &writeExecuteFrame{
-			preparedID:       info.id,
-			resultMetadataID: info.resultMetadataID,
-			params:           params,
-			customPayload:    qry.customPayload,
-		}
+		execFrame.preparedID = info.id
+		execFrame.resultMetadataID = info.resultMetadataID
+		execFrame.prefix = info.execPrefix
+		execFrame.params = params
+		execFrame.customPayload = qry.customPayload
+		frame = execFrame
 
 		// Set "lwt", keyspace", "table" property in the query if it is present in preparedMetadata
 		routingKeyspace = info.request.keyspace
@@ -2784,9 +2796,10 @@ func (c *Conn) executeQueryWithMetrics(ctx context.Context, qry *Query, metrics 
 	}
 
 	framer, err := c.exec(ctx, frame, qry.trace, qry.GetRequestTimeout())
-	// Return pooled values; consumed by buildFrame at the start of c.exec().
-	// Returned after round-trip (not right after serialization) for simplicity.
-	putQueryValues(params.values)
+	// buildFrame consumed the frame and its values synchronously inside c.exec().
+	if execFrame != nil {
+		putExecuteFrame(execFrame)
+	}
 	if err != nil {
 		return &Iter{err: err}
 	}
@@ -2879,6 +2892,7 @@ func (c *Conn) executeQueryWithMetrics(ctx context.Context, qry *Query, metrics 
 					preparedStatment: &preparedStatment{
 						id:               info.id,
 						resultMetadataID: x.meta.newMetadataID,
+						execPrefix:       c.buildExecPrefix(info.id, x.meta.newMetadataID),
 						request:          info.request,
 						response:         x.meta,
 					},
