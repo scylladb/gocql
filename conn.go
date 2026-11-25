@@ -2094,17 +2094,50 @@ func (w *writeCoalescer) writeFlusher(interval time.Duration) {
 	w.writeFlusherImpl(timer.C, func() { timer.Reset(interval) })
 }
 
+// coalesceBatch holds the per-flush slices, pooled to avoid re-allocating them on every flush.
+type coalesceBatch struct {
+	buffers     net.Buffers
+	resultChans []chan<- writeResult
+	scratch     net.Buffers // WriteTo consumes its receiver
+}
+
+var coalesceBatchPool = sync.Pool{New: func() any { return new(coalesceBatch) }}
+
+// maxPooledBatchLen bounds pooled batches by frame count (len); pooled capacity can reach ~1.25x via append rounding.
+const maxPooledBatchLen = 1024
+
+// resetCoalesceBatch clears b for reuse; it reports false, leaving b untouched, if b is oversized.
+func resetCoalesceBatch(b *coalesceBatch) bool {
+	if len(b.buffers) > maxPooledBatchLen {
+		return false
+	}
+	clear(b.buffers)
+	clear(b.resultChans)
+	// flush already cleared scratch.
+	b.buffers, b.resultChans, b.scratch = b.buffers[:0], b.resultChans[:0], b.scratch[:0]
+	return true
+}
+
+// releaseCoalesceBatch returns b to the pool; oversized batches are dropped.
+func releaseCoalesceBatch(b *coalesceBatch) {
+	if resetCoalesceBatch(b) {
+		coalesceBatchPool.Put(b)
+	}
+}
+
 func (w *writeCoalescer) writeFlusherImpl(timerC <-chan time.Time, resetTimer func()) {
 	running := false
 
-	var buffers net.Buffers
-	var resultChans []chan<- writeResult
+	var b *coalesceBatch // nil when nothing is queued
 
 	for {
 		select {
 		case req := <-w.writeCh:
-			buffers = append(buffers, req.data)
-			resultChans = append(resultChans, req.resultChan)
+			if b == nil {
+				b = coalesceBatchPool.Get().(*coalesceBatch)
+			}
+			b.buffers = append(b.buffers, req.data)
+			b.resultChans = append(b.resultChans, req.resultChan)
 			if !running {
 				// Start timer on first write.
 				resetTimer()
@@ -2116,16 +2149,21 @@ func (w *writeCoalescer) writeFlusherImpl(timerC <-chan time.Time, resetTimer fu
 				err: io.EOF, // TODO: better error here?
 			}
 			// Unblock whoever was waiting.
-			for _, resultChan := range resultChans {
-				// resultChan has capacity 1, so it does not block.
-				resultChan <- result
+			if b != nil {
+				for _, resultChan := range b.resultChans {
+					// resultChan has capacity 1, so it does not block.
+					resultChan <- result
+				}
+				releaseCoalesceBatch(b)
 			}
 			return
 		case <-timerC:
 			running = false
-			w.flush(resultChans, buffers)
-			buffers = nil
-			resultChans = nil
+			if b != nil {
+				w.flush(b)
+				releaseCoalesceBatch(b)
+				b = nil
+			}
 			if w.testFlushedHook != nil {
 				w.testFlushedHook()
 			}
@@ -2133,7 +2171,8 @@ func (w *writeCoalescer) writeFlusherImpl(timerC <-chan time.Time, resetTimer fu
 	}
 }
 
-func (w *writeCoalescer) flush(resultChans []chan<- writeResult, buffers net.Buffers) {
+func (w *writeCoalescer) flush(b *coalesceBatch) {
+	resultChans, buffers := b.resultChans, b.buffers
 	// Flush everything we have so far.
 	timeout := w.timeout.Load()
 	if timeout > 0 {
@@ -2148,10 +2187,11 @@ func (w *writeCoalescer) flush(resultChans []chan<- writeResult, buffers net.Buf
 			return
 		}
 	}
-	// Copy buffers because WriteTo modifies buffers in-place.
-	buffers2 := make(net.Buffers, len(buffers))
-	copy(buffers2, buffers)
-	n, err := buffers2.WriteTo(w.c)
+	b.scratch = append(b.scratch[:0], buffers...)
+	full := b.scratch
+	n, err := b.scratch.WriteTo(w.c)
+	clear(full)          // a partial write leaves frame refs behind
+	b.scratch = full[:0] // WriteTo advanced the slice; restore capacity
 	// Writes of bytes before n succeeded, writes of bytes starting from n failed with err.
 	// Use n as remaining byte counter.
 	for i := range buffers {

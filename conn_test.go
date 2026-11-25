@@ -55,6 +55,7 @@ import (
 	frm "github.com/gocql/gocql/internal/frame"
 
 	"github.com/gocql/gocql/internal/streams"
+	"github.com/gocql/gocql/internal/tests"
 )
 
 const (
@@ -5352,6 +5353,291 @@ func TestStartupCompressionIsDriverOwned(t *testing.T) {
 				// because ApplicationInfo was ignored wholesale.
 				require.Contains(t, opts, "DRIVER_NAME")
 			}
+		})
+	}
+}
+
+type recordingConn struct {
+	net.Conn
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (c *recordingConn) Write(p []byte) (int, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.buf.Write(p)
+}
+
+func (c *recordingConn) SetWriteDeadline(time.Time) error { return nil }
+
+// recvOrFatalf fails fast if ch does not deliver within 5s.
+func recvOrFatalf(t *testing.T, ch <-chan struct{}, format string, args ...any) {
+	t.Helper()
+	select {
+	case <-ch:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("timed out waiting for %s", fmt.Sprintf(format, args...))
+	}
+}
+
+// recvResultOrFatalf fails fast if ch does not deliver a result within 5s.
+func recvResultOrFatalf(t *testing.T, ch <-chan writeResult, idx int) writeResult {
+	t.Helper()
+	select { // fast path avoids the timer allocation (alloc-count test)
+	case r := <-ch:
+		return r
+	default:
+	}
+	select {
+	case r := <-ch:
+		return r
+	case <-time.After(5 * time.Second):
+		t.Fatalf("timed out waiting for result of frame %d", idx)
+		return writeResult{}
+	}
+}
+
+// Checks byte ordering and one result per writer across batch sizes,
+// including a burst above maxPooledBatchLen.
+func TestWriteCoalescerFlushOrderAcrossBatchSizes(t *testing.T) {
+	// Deferred first so it runs after cancel(): writers exit before the test returns.
+	var all sync.WaitGroup
+	defer all.Wait()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	conn := &recordingConn{}
+	enqueued := make(chan struct{})
+	flushed := make(chan struct{})
+	w := &writeCoalescer{
+		writeCh: make(chan writeRequest),
+		c:       conn,
+		quit:    ctx.Done(),
+		testEnqueuedHook: func() {
+			select {
+			case enqueued <- struct{}{}:
+			case <-ctx.Done():
+			}
+		},
+		testFlushedHook: func() {
+			select {
+			case flushed <- struct{}{}:
+			case <-ctx.Done():
+			}
+		},
+	}
+	w.setWriteTimeout(time.Second)
+	timerC := make(chan time.Time, 1)
+	all.Add(1)
+	go func() { defer all.Done(); w.writeFlusherImpl(timerC, func() {}) }()
+
+	var want []byte
+	seq := 0
+	// A burst past maxPooledBatchLen, then small batches.
+	for _, size := range []int{3, maxPooledBatchLen + 50, 2, 1, 5, 2} {
+		var wg sync.WaitGroup
+		for i := 0; i < size; i++ {
+			p := []byte(fmt.Sprintf("<%d>", seq))
+			seq++
+			want = append(want, p...)
+			wg.Add(1)
+			all.Add(1)
+			go func() {
+				defer all.Done()
+				defer wg.Done()
+				n, err := w.writeContext(context.Background(), p)
+				if err != nil || n != len(p) {
+					t.Errorf("write %q: n=%d err=%v", p, n, err)
+				}
+			}()
+			recvOrFatalf(t, enqueued, "enqueue of write %d in batch of %d", i, size) // sequential enqueue keeps the byte order deterministic
+		}
+		timerC <- time.Now()
+		recvOrFatalf(t, flushed, "flush of batch of %d (seq=%d)", size, seq)
+		done := make(chan struct{})
+		go func() { wg.Wait(); close(done) }()
+		recvOrFatalf(t, done, "writers of batch of %d (seq=%d)", size, seq)
+	}
+
+	conn.mu.Lock()
+	defer conn.mu.Unlock()
+	if !bytes.Equal(conn.buf.Bytes(), want) {
+		t.Fatalf("written bytes differ: got %d bytes, want %d", conn.buf.Len(), len(want))
+	}
+}
+
+// limitedConn accepts only the first limit bytes, then fails.
+type limitedConn struct {
+	net.Conn
+	limit int
+	buf   []byte
+}
+
+func (c *limitedConn) Write(p []byte) (int, error) {
+	room := c.limit - len(c.buf)
+	if len(p) <= room {
+		c.buf = append(c.buf, p...)
+		return len(p), nil
+	}
+	c.buf = append(c.buf, p[:room]...)
+	return room, errors.New("conn broke")
+}
+
+func (c *limitedConn) SetWriteDeadline(time.Time) error { return nil }
+
+func TestWriteCoalescerFlushPartialWrite(t *testing.T) {
+	conn := &limitedConn{limit: 7}
+	frames := [][]byte{[]byte("abc"), []byte("defg"), []byte("hij"), []byte("kl")}
+	// 7 bytes: "abc" and "defg" fully written, "hij" and "kl" fail with n=0.
+	wantN := []int{3, 4, 0, 0}
+	wantErr := []bool{false, false, true, true}
+
+	b := &coalesceBatch{}
+	chans := make([]chan writeResult, len(frames))
+	for i, f := range frames {
+		chans[i] = make(chan writeResult, 1)
+		b.buffers = append(b.buffers, f)
+		b.resultChans = append(b.resultChans, chans[i])
+	}
+	(&writeCoalescer{c: conn}).flush(b)
+	for i, ch := range chans {
+		r := recvResultOrFatalf(t, ch, i)
+		if r.n != wantN[i] || (r.err != nil) != wantErr[i] {
+			t.Errorf("frame %d: got n=%d err=%v, want n=%d err=%v", i, r.n, r.err, wantN[i], wantErr[i])
+		}
+	}
+
+	if len(b.scratch) != 0 {
+		t.Errorf("scratch len=%d, want 0", len(b.scratch))
+	}
+	for i, buf := range b.scratch[:cap(b.scratch)] {
+		if buf != nil {
+			t.Errorf("scratch[%d] retains a frame ref", i)
+		}
+	}
+
+	// Writer straddling the limit gets the partial count.
+	conn = &limitedConn{limit: 5}
+	b = &coalesceBatch{buffers: net.Buffers{[]byte("abc"), []byte("defg")}}
+	c0, c1 := make(chan writeResult, 1), make(chan writeResult, 1)
+	b.resultChans = []chan<- writeResult{c0, c1}
+	(&writeCoalescer{c: conn}).flush(b)
+	if r := recvResultOrFatalf(t, c0, 0); r.n != 3 || r.err != nil {
+		t.Errorf("first: n=%d err=%v", r.n, r.err)
+	}
+	if r := recvResultOrFatalf(t, c1, 1); r.n != 2 || r.err == nil {
+		t.Errorf("second: n=%d err=%v, want n=2 and an error", r.n, r.err)
+	}
+}
+
+func TestResetCoalesceBatch(t *testing.T) {
+	mk := func(n int) *coalesceBatch {
+		b := &coalesceBatch{}
+		for i := 0; i < n; i++ {
+			b.buffers = append(b.buffers, []byte("x"))
+			b.resultChans = append(b.resultChans, make(chan writeResult, 1))
+		}
+		return b
+	}
+
+	b := mk(3)
+	if !resetCoalesceBatch(b) {
+		t.Fatal("small batch reported as oversized")
+	}
+	if len(b.buffers) != 0 || len(b.resultChans) != 0 {
+		t.Errorf("lens not reset: %d %d", len(b.buffers), len(b.resultChans))
+	}
+	for i, v := range b.buffers[:cap(b.buffers)] {
+		if v != nil {
+			t.Errorf("buffers[%d] not cleared", i)
+		}
+	}
+	for i, v := range b.resultChans[:cap(b.resultChans)] {
+		if v != nil {
+			t.Errorf("resultChans[%d] not cleared", i)
+		}
+	}
+
+	// Oversized batches are left untouched.
+	b = mk(maxPooledBatchLen + 1)
+	if resetCoalesceBatch(b) {
+		t.Error("oversized batch reported as poolable")
+	}
+	if len(b.buffers) != maxPooledBatchLen+1 || len(b.resultChans) != maxPooledBatchLen+1 {
+		t.Errorf("dropped batch was modified: %d %d", len(b.buffers), len(b.resultChans))
+	}
+}
+
+type discardConn struct{ net.Conn }
+
+func (discardConn) Write(p []byte) (int, error)      { return len(p), nil }
+func (discardConn) SetWriteDeadline(time.Time) error { return nil }
+
+// Deterministic (no sync.Pool) check that flush reuses a batch's scratch.
+func TestWriteCoalescerFlushZeroAllocs(t *testing.T) {
+	w := &writeCoalescer{c: discardConn{}}
+	w.timeout.Store(int64(time.Second))
+	const n = 8
+	b := &coalesceBatch{}
+	chans := make([]chan writeResult, n)
+	for i := range chans {
+		chans[i] = make(chan writeResult, 1)
+		b.buffers = append(b.buffers, []byte("frame"))
+		b.resultChans = append(b.resultChans, chans[i])
+	}
+	b.scratch = make(net.Buffers, 0, n)
+	if allocs := tests.MinAllocsPerRun(3, 100, func() {
+		w.flush(b)
+		for i, c := range chans {
+			recvResultOrFatalf(t, c, i)
+		}
+	}); allocs != 0 {
+		t.Errorf("flush allocs = %v, want 0", allocs)
+	}
+}
+
+func BenchmarkWriteCoalescerFlush(b *testing.B) {
+	for _, par := range []int{1, 4, 16, 64} { // x GOMAXPROCS goroutines
+		b.Run(fmt.Sprintf("par%d", par), func(b *testing.B) {
+			ln, err := net.Listen("tcp", "127.0.0.1:0")
+			if err != nil {
+				b.Fatal(err)
+			}
+			defer ln.Close()
+			acceptDone := make(chan struct{})
+			go func() {
+				defer close(acceptDone)
+				c, err := ln.Accept()
+				if err == nil {
+					defer c.Close()
+					io.Copy(io.Discard, c)
+				}
+			}()
+			conn, err := net.Dial("tcp", ln.Addr().String())
+			if err != nil {
+				b.Fatal(err)
+			}
+			defer func() {
+				conn.Close()
+				<-acceptDone
+			}()
+			quit := make(chan struct{})
+			defer close(quit)
+			wc := newWriteCoalescer(conn, time.Second, 200*time.Microsecond, quit)
+			frame := make([]byte, 128)
+			b.SetParallelism(par)
+			b.ReportAllocs()
+			b.ResetTimer()
+			b.RunParallel(func(pb *testing.PB) {
+				ctx := context.Background()
+				for pb.Next() {
+					if _, err := wc.writeContext(ctx, frame); err != nil {
+						b.Error(err)
+						return
+					}
+				}
+			})
 		})
 	}
 }
