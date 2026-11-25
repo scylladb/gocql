@@ -1170,6 +1170,7 @@ func (s *Session) MapExecuteBatchCAS(batch *Batch, dest map[string]any) (applied
 		return false, nil, err
 	}
 	iter.MapScan(dest)
+	iter.releaseMapScanCaches() // single row; don't pin buffers on the live iter
 	if iter.err != nil {
 		return false, iter, iter.err
 	}
@@ -2594,6 +2595,7 @@ func (q *Query) MapScanCAS(dest map[string]any) (applied bool, err error) {
 		return false, err
 	}
 	iter.MapScan(dest)
+	iter.releaseMapScanCaches() // single row; don't pin buffers on the live iter
 	if iter.err != nil {
 		return false, iter.Close()
 	}
@@ -2734,11 +2736,15 @@ type Iter struct {
 	// are appended here so they are not lost.
 	allWarnings []string
 
-	// scanColumns caches the column names computed by RowData() so that
-	// MapScan does not recompute them on every row. Populated lazily on
-	// the first call to getScanColumns().
-	scanColumns       []string
-	meta              resultMetadata
+	// MapScan caches reused across rows: column names, default and override destinations.
+	scanColumns     []string
+	mapScanDefaults []any
+	mapScanWorking  []any
+	meta            resultMetadata
+	// metaEpoch bumps when a page turn installs different metadata (RESULT_METADATA_CHANGED), invalidating *Epoch caches.
+	scanColumnsEpoch  int
+	mapScanEpoch      int
+	metaEpoch         int
 	pos               int
 	numRows           int
 	closed            int32
@@ -2766,6 +2772,12 @@ func (iter *Iter) copyPageData(src *Iter) {
 	iter.framer = src.framer
 	iter.next = src.next
 	iter.host = src.host
+	// A changed result set gets fresh columns; only skip-metadata pages reuse the
+	// prepared slice, so other pages usually bump the epoch (a harmless rebuild).
+	if len(iter.meta.columns) != len(src.meta.columns) || iter.meta.actualColCount != src.meta.actualColCount ||
+		(len(src.meta.columns) > 0 && &iter.meta.columns[0] != &src.meta.columns[0]) {
+		iter.metaEpoch++
+	}
 	iter.meta = src.meta
 	iter.allWarnings = append(iter.allWarnings, src.allWarnings...)
 	iter.releasedCustomPayload = src.releasedCustomPayload
@@ -2942,6 +2954,21 @@ func (iter *Iter) fetchNextPage() bool {
 	return iter.err == nil
 }
 
+// ensureRowsAvailable fetches pages until a row is available, finalizing and
+// returning false on close, exhaustion or error. Call it before reading iter.meta.
+func (iter *Iter) ensureRowsAvailable() bool {
+	if atomic.LoadInt32(&iter.closed) != 0 {
+		return false
+	}
+	for iter.pos >= iter.numRows {
+		if !iter.fetchNextPage() {
+			iter.finalize(true)
+			return false
+		}
+	}
+	return true
+}
+
 type Scanner interface {
 	// Next advances the row pointer to point at the next row, the row is valid until
 	// the next call of Next. It returns true if there is a row which is available to be
@@ -2974,15 +3001,8 @@ func (is *iterScanner) Next() bool {
 		return false
 	}
 
-	if atomic.LoadInt32(&iter.closed) != 0 {
+	if !iter.ensureRowsAvailable() {
 		return false
-	}
-
-	for iter.pos >= iter.numRows {
-		if !iter.fetchNextPage() {
-			iter.finalize(true)
-			return false
-		}
 	}
 
 	// A page turn can install new metadata (RESULT_METADATA_CHANGED), so the
@@ -2990,6 +3010,12 @@ func (is *iterScanner) Next() bool {
 	// Scanner() sized cols for.
 	if len(is.cols) != len(iter.meta.columns) {
 		is.cols = make([][]byte, len(iter.meta.columns))
+	}
+
+	// Trigger async prefetch of next page when we've consumed enough rows,
+	// matching the timing of Iter.Scan() — before column reading and pos++.
+	if iter.next != nil && iter.pos >= iter.next.pos {
+		iter.next.fetchAsync()
 	}
 
 	for i := 0; i < len(is.cols); i++ {
@@ -3008,22 +3034,24 @@ func (is *iterScanner) Next() bool {
 }
 
 func scanColumn(p []byte, col *ColumnInfo, dest []any) (int, error) {
-	if dest[0] == nil {
-		return 1, nil
-	}
-
 	if col.TypeInfo.Type() == TypeTuple {
 		// this will panic, actually a bug, please report
 		tuple := col.TypeInfo.(TupleTypeInfo)
 
 		count := len(tuple.Elems)
+		if !slices.ContainsFunc(dest[:count], func(d any) bool { return d != nil }) {
+			return count, nil // fully skipped: don't decode a possibly malformed tuple
+		}
 		// here we pass in a slice of the struct which has the number number of
-		// values as elements in the tuple
+		// values as elements in the tuple; nil elements are skipped.
 		if err := Unmarshal(col.TypeInfo, p, dest[:count]); err != nil {
 			return 0, err
 		}
 		return count, nil
 	} else {
+		if dest[0] == nil {
+			return 1, nil
+		}
 		if err := Unmarshal(col.TypeInfo, p, dest[0]); err != nil {
 			return 0, err
 		}
@@ -3099,19 +3127,8 @@ func (iter *Iter) Scan(dest ...any) bool {
 		return false
 	}
 
-	if atomic.LoadInt32(&iter.closed) != 0 {
+	if !iter.ensureRowsAvailable() {
 		return false
-	}
-
-	for iter.pos >= iter.numRows {
-		if !iter.fetchNextPage() {
-			iter.finalize(true)
-			return false
-		}
-	}
-
-	if iter.next != nil && iter.pos >= iter.next.pos {
-		iter.next.fetchAsync()
 	}
 
 	// currently only support scanning into an expand tuple, such that its the same
@@ -3120,6 +3137,10 @@ func (iter *Iter) Scan(dest ...any) bool {
 		iter.err = fmt.Errorf("gocql: not enough columns to scan into: have %d want %d", len(dest), iter.meta.actualColCount)
 		iter.finalize(true)
 		return false
+	}
+
+	if iter.next != nil && iter.pos >= iter.next.pos {
+		iter.next.fetchAsync()
 	}
 
 	// i is the current position in dest, could posible replace it and just use
@@ -3188,6 +3209,8 @@ func (iter *Iter) Warnings() []string {
 // the query or the iteration.
 func (iter *Iter) Close() error {
 	iter.finalize(true)
+	// Not in finalize: that also runs on other goroutines, racing with MapScan.
+	iter.releaseMapScanCaches()
 	return iter.err
 }
 
