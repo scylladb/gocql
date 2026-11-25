@@ -141,20 +141,21 @@ type SslOptions struct {
 }
 
 type ConnConfig struct {
-	Dialer          Dialer
-	Logger          StdLogger
-	Authenticator   Authenticator
-	Compressor      Compressor
-	HostDialer      HostDialer
-	AuthProvider    func(h *HostInfo) (Authenticator, error)
-	tlsConfig       *tls.Config
-	CQLVersion      string
-	ConnectTimeout  time.Duration
-	ReadTimeout     time.Duration
-	WriteTimeout    time.Duration
-	ProtoVersion    int
-	Keepalive       time.Duration
-	disableCoalesce bool
+	Dialer                 Dialer
+	Logger                 StdLogger
+	Authenticator          Authenticator
+	Compressor             Compressor
+	HostDialer             HostDialer
+	AuthProvider           func(h *HostInfo) (Authenticator, error)
+	tlsConfig              *tls.Config
+	CQLVersion             string
+	ConnectTimeout         time.Duration
+	ReadTimeout            time.Duration
+	WriteTimeout           time.Duration
+	ProtoVersion           int
+	Keepalive              time.Duration
+	HeartbeatSlowThreshold time.Duration
+	disableCoalesce        bool
 	// isControlConn marks the connection used by the control connection, which is
 	// the only one reporting the driver configuration on startup.
 	isControlConn bool
@@ -262,10 +263,12 @@ type Conn struct {
 	// for server push events: a SCHEMA_CHANGE arriving inside that window makes
 	// the event-debouncer goroutine run querySystem on this connection
 	// concurrently with the write.
-	systemRequest    atomic.Pointer[systemRequestState]
-	cqlProtoExts     []cqlProtocolExtension
-	scyllaSupported  ScyllaConnectionFeatures
-	writeTimeout     atomic.Int64
+	systemRequest   atomic.Pointer[systemRequestState]
+	cqlProtoExts    []cqlProtocolExtension
+	scyllaSupported ScyllaConnectionFeatures
+	writeTimeout    atomic.Int64
+	// activity counts responses received; only the recv goroutine writes it.
+	activity         atomic.Int64
 	mu               sync.Mutex
 	tabletsRoutingV1 int32
 	headerBuf        [headSize]byte
@@ -663,9 +666,14 @@ func (s *startupCoordinator) write(ctx context.Context, frame frameBuilder, star
 }
 
 func (s *startupCoordinator) options(ctx context.Context, startupCompleted *atomic.Bool) error {
+	start := time.Now()
 	frame, err := s.write(ctx, &writeOptionsFrame{}, startupCompleted)
 	if err != nil {
 		return err
+	}
+	// Free latency sample of the control node, reported on every (re)connect.
+	if s.conn.cfg.isControlConn {
+		s.conn.logger.Printf("gocql: control connection to %s: OPTIONS round-trip %v\n", s.conn.addr, time.Since(start))
 	}
 
 	v, ok := frame.(*frm.SupportedFrame)
@@ -1037,12 +1045,26 @@ func (p *protocolError) Error() string {
 	return fmt.Sprintf("gocql: received unexpected frame on stream %d: %v", p.frame.Header().Stream, p.frame)
 }
 
+// warnSlowHeartbeat logs once per streak of heartbeats slower than threshold; a fast one re-arms it.
+func warnSlowHeartbeat(logger StdLogger, addr string, elapsed, threshold time.Duration, warned *bool) {
+	if elapsed <= threshold {
+		*warned = false
+		return
+	}
+	if !*warned {
+		*warned = true
+		logger.Printf("gocql: heartbeat to %s took %v, exceeding threshold %v\n", addr, elapsed, threshold)
+	}
+}
+
 func (c *Conn) heartBeat(ctx context.Context) {
 	sleepTime := 1 * time.Second
 	timer := time.NewTimer(sleepTime)
 	defer timer.Stop()
 
 	var failures int
+	var heartbeatSlow bool
+	prev := c.activity.Load()
 
 	for {
 		if failures > 5 {
@@ -1058,7 +1080,25 @@ func (c *Conn) heartBeat(ctx context.Context) {
 		case <-timer.C:
 		}
 
+		// Recent activity proves liveness, as in the Python driver, but not after a failed
+		// probe: a late reply must not reset failures. Detection may take 2x the interval.
+		cur := c.activity.Load()
+		if cur != prev && failures == 0 {
+			prev = cur
+			sleepTime = 30 * time.Second
+			continue
+		}
+
+		var start time.Time
+		// Timed on control connections too: which of the two loops probes depends on timer phase.
+		slowThreshold := c.cfg.HeartbeatSlowThreshold
+		if slowThreshold > 0 {
+			start = time.Now()
+		}
+
 		framer, err := c.exec(context.Background(), &writeOptionsFrame{}, nil, c.cfg.ConnectTimeout)
+		// The probe's own response must not count as activity.
+		prev = c.activity.Load()
 		if err != nil {
 			failures++
 			continue
@@ -1076,6 +1116,9 @@ func (c *Conn) heartBeat(ctx context.Context) {
 		switch resp.(type) {
 		case *frm.SupportedFrame:
 			// Everything ok
+			if slowThreshold > 0 {
+				warnSlowHeartbeat(c.logger, c.addr, time.Since(start), slowThreshold, &heartbeatSlow)
+			}
 			sleepTime = 30 * time.Second
 			failures = 0
 		case error:
@@ -1303,6 +1346,10 @@ func (c *Conn) processFrameSource(ctx context.Context, src frameSource) error {
 	framer := c.getReadFramer()
 
 	err = src.readBody(framer, &head)
+	// Count only complete responses: a peer stalled mid-body must not defer the heartbeat.
+	if err == nil {
+		c.activity.Add(1)
+	}
 
 	desynced := bodyReadDesyncedConn(err)
 

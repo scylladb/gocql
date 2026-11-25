@@ -107,6 +107,12 @@ func (c *controlConn) heartBeat() {
 	timer := time.NewTimer(sleepTime)
 	defer timer.Stop()
 
+	// Conn and activity counter at the last check; new activity on the same
+	// conn means it is alive and the probe is skipped. A new conn is probed once.
+	var prevConn *Conn
+	var prevActivity int64
+	var heartbeatSlow bool
+
 	for {
 		timer.Reset(sleepTime)
 
@@ -116,7 +122,26 @@ func (c *controlConn) heartBeat() {
 		case <-timer.C:
 		}
 
+		conn := c.underlyingConn()
+		if conn != nil {
+			if conn != prevConn {
+				heartbeatSlow = false
+			}
+			cur := conn.activity.Load()
+			skip := conn == prevConn && cur != prevActivity
+			prevConn, prevActivity = conn, cur
+			if skip {
+				sleepTime = 30 * time.Second
+				continue
+			}
+		}
+
+		start := time.Now()
 		resp, err := c.writeFrame(&writeOptionsFrame{})
+		if conn != nil {
+			// The probe's own response must not count as activity.
+			prevActivity = conn.activity.Load()
+		}
 		if err != nil {
 			goto reconn
 		}
@@ -124,6 +149,9 @@ func (c *controlConn) heartBeat() {
 		switch resp.(type) {
 		case *frm.SupportedFrame:
 			// Everything ok
+			if threshold := c.session.cfg.HeartbeatSlowThreshold; threshold > 0 && conn != nil {
+				warnSlowHeartbeat(c.session.logger, conn.addr, time.Since(start), threshold, &heartbeatSlow)
+			}
 			sleepTime = 30 * time.Second
 			continue
 		case error:
@@ -144,6 +172,16 @@ func (c *controlConn) heartBeat() {
 		c.reconnect()
 		continue
 	}
+}
+
+// underlyingConn returns the current control *Conn, or nil (none, or a mock).
+func (c *controlConn) underlyingConn() *Conn {
+	ch := c.getConn()
+	if ch == nil {
+		return nil
+	}
+	conn, _ := ch.conn.(*Conn)
+	return conn
 }
 
 func resolveInitialEndpoint(resolver DNSResolver, addr string, defaultPort int) ([]*HostInfo, error) {
