@@ -24,6 +24,7 @@ package gocql
 
 import (
 	"context"
+	"reflect"
 	"testing"
 
 	"github.com/gocql/gocql/internal/tests/mock"
@@ -122,5 +123,112 @@ func TestIterScannerColumnCountChangeAcrossPageTurn(t *testing.T) {
 	}
 	if d != 4 || e != 5 {
 		t.Fatalf("third row: got d=%d e=%d, want 4 and 5", d, e)
+	}
+}
+
+// TestRowDataColumnNamesAcrossSchemaChangingPageTurn: MapScan/SliceMap key each
+// row by the column names from RowData(), which must reflect the page the row
+// is read from, including the row that triggers the page turn.
+func TestRowDataColumnNamesAcrossSchemaChangingPageTurn(t *testing.T) {
+	intType := NativeType{typ: TypeInt, proto: 4}
+	marshalInt := func(v int32) []byte {
+		b, err := Marshal(intType, v)
+		if err != nil {
+			t.Fatalf("unexpected error from reference Marshal: %v", err)
+		}
+		return b
+	}
+	meta := func(names ...string) resultMetadata {
+		cols := make([]ColumnInfo, len(names))
+		for i, n := range names {
+			cols[i] = ColumnInfo{Name: n, TypeInfo: intType}
+		}
+		return resultMetadata{columns: cols, actualColCount: len(names)}
+	}
+	// Page 1: one row keyed "a". Page 2 (schema changed): two rows keyed "b","c".
+	newIter := func() *Iter {
+		conn := &pagingTestConn{
+			executeQueryFunc: func(_ context.Context, _ *Query) *Iter {
+				return &Iter{
+					meta: meta("b", "c"),
+					framer: &mock.MockFramer{Data: [][]byte{
+						marshalInt(2), marshalInt(3), marshalInt(4), marshalInt(5),
+					}},
+					numRows: 2,
+				}
+			},
+		}
+		qry := newWarningTestQuery()
+		qry.conn = conn
+		return &Iter{
+			meta:    meta("a"),
+			framer:  &mock.MockFramer{Data: [][]byte{marshalInt(1)}},
+			numRows: 1,
+			next:    newNextIter(qry, 1),
+		}
+	}
+	want := []map[string]any{{"a": 1}, {"b": 2, "c": 3}, {"b": 4, "c": 5}}
+
+	t.Run("MapScan", func(t *testing.T) {
+		iter := newIter()
+		defer iter.Close()
+		for i, w := range want {
+			got := map[string]any{}
+			if !iter.MapScan(got) {
+				t.Fatalf("row %d: MapScan failed, err: %v", i, iter.Close())
+			}
+			if !reflect.DeepEqual(got, w) {
+				t.Fatalf("row %d: got %v, want %v", i, got, w)
+			}
+		}
+	})
+
+	t.Run("SliceMap", func(t *testing.T) {
+		got, err := newIter().SliceMap()
+		if err != nil {
+			t.Fatalf("SliceMap: %v", err)
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("got %v, want %v", got, want)
+		}
+	})
+}
+
+// TestRowDataColumnNamesAcrossSamePageTurn: names stay correct when the next
+// page has the same metadata.
+func TestRowDataColumnNamesAcrossSamePageTurn(t *testing.T) {
+	intType := NativeType{typ: TypeInt, proto: 4}
+	marshalInt := func(v int32) []byte {
+		b, err := Marshal(intType, v)
+		if err != nil {
+			t.Fatalf("unexpected error from reference Marshal: %v", err)
+		}
+		return b
+	}
+	meta := resultMetadata{columns: []ColumnInfo{{Name: "a", TypeInfo: intType}}, actualColCount: 1}
+	conn := &pagingTestConn{
+		executeQueryFunc: func(_ context.Context, _ *Query) *Iter {
+			return &Iter{
+				meta:    meta,
+				framer:  &mock.MockFramer{Data: [][]byte{marshalInt(2), marshalInt(3)}},
+				numRows: 2,
+			}
+		},
+	}
+	qry := newWarningTestQuery()
+	qry.conn = conn
+	iter := &Iter{
+		meta:    meta,
+		framer:  &mock.MockFramer{Data: [][]byte{marshalInt(1)}},
+		numRows: 1,
+		next:    newNextIter(qry, 1),
+	}
+	got, err := iter.SliceMap()
+	if err != nil {
+		t.Fatalf("SliceMap: %v", err)
+	}
+	want := []map[string]any{{"a": 1}, {"a": 2}, {"a": 3}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
 	}
 }
