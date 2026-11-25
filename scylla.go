@@ -937,7 +937,17 @@ func (sd *scyllaDialer) DialShard(ctx context.Context, host *HostInfo, shardID, 
 		sd.logger.Printf("scylla: connecting to shard %d", shardID)
 	}
 
-	conn, err := sd.dialShardAware(ctx, addr, shardAwareAddr, iter)
+	var (
+		conn net.Conn
+		err  error
+	)
+	if shardAwareAddr == "" {
+		// The node advertises no shard-aware port usable with the current
+		// TLS setting, so there is nothing to dial from a chosen source port.
+		conn, err = sd.dialer.DialContext(ctx, "tcp", addr)
+	} else {
+		conn, err = sd.dialShardAware(ctx, addr, shardAwareAddr, iter)
+	}
 	if err != nil {
 		return nil, err
 	}
