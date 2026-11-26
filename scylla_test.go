@@ -923,3 +923,80 @@ func mockConnForPicker(shard, nrShards int) *Conn {
 		streams: streams.New(),
 	}
 }
+
+type recordingShardDialer struct {
+	mu    sync.Mutex
+	addrs []string
+	ports []uint16
+}
+
+func (d *recordingShardDialer) DialContext(ctx context.Context, network, addr string) (net.Conn, error) {
+	d.mu.Lock()
+	d.addrs = append(d.addrs, addr)
+	d.ports = append(d.ports, ScyllaGetSourcePort(ctx))
+	d.mu.Unlock()
+	if addr == "" {
+		return nil, fmt.Errorf("dial %s: missing address", network)
+	}
+	client, server := net.Pipe()
+	server.Close()
+	return client, nil
+}
+
+func TestScyllaDialerDialShardSkipsMissingShardAwarePort(t *testing.T) {
+	t.Parallel()
+
+	cqlAddr := AddressPort{Address: net.ParseIP("10.0.0.1"), Port: 9042}
+	shardAwareAddr := AddressPort{Address: net.ParseIP("10.0.0.1"), Port: 19042}
+
+	tests := []struct {
+		name        string
+		translated  *translatedAddresses
+		wantAddrs   []string
+		wantSrcPort bool
+	}{
+		{
+			name:       "no translated addresses",
+			translated: nil,
+			wantAddrs:  []string{"10.0.0.1:9042"},
+		},
+		{
+			name:       "no shard-aware port advertised",
+			translated: &translatedAddresses{CQL: cqlAddr},
+			wantAddrs:  []string{"10.0.0.1:9042"},
+		},
+		{
+			name:        "shard-aware port advertised",
+			translated:  &translatedAddresses{CQL: cqlAddr, ShardAware: shardAwareAddr},
+			wantAddrs:   []string{"10.0.0.1:19042"},
+			wantSrcPort: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			rec := &recordingShardDialer{}
+			sd := &scyllaDialer{dialer: rec, logger: nopLogger{}}
+			host := &HostInfo{
+				connectAddress:      net.ParseIP("10.0.0.1"),
+				port:                9042,
+				translatedAddresses: tc.translated,
+			}
+
+			dialed, err := sd.DialShard(context.Background(), host, 1, 4)
+			require.NoError(t, err)
+			defer dialed.Conn.Close()
+
+			rec.mu.Lock()
+			defer rec.mu.Unlock()
+			assert.Equal(t, tc.wantAddrs, rec.addrs)
+			if tc.wantSrcPort {
+				assert.NotZero(t, rec.ports[0], "shard-aware dial should carry a source port")
+			} else {
+				assert.Zero(t, rec.ports[0], "regular CQL dial should not carry a source port")
+			}
+		})
+	}
+}
